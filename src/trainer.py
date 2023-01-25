@@ -201,25 +201,3 @@ class Trainer(HooksMixin):
 
     def test_step(self, model: torch.nn.Module, batch: Any, batch_idx: int):
         pass
-
-
-class ActiveTrainer(Trainer):
-    def active_learning_loop(self, query_strategy, model, hparams):
-        for round in trange(hparams.num_rounds):
-            train_output, val_output = self.fit_loop()
-            test_output = self.test_loop()
-            query_output = self.strategy.query()
-
-        return
-
-    def transfer_to_device(self, batch):
-        data_on_cpu = batch.pop("data_on_cpu", None)
-
-        # transfer the rest on gpu
-        batch = self.fabric.to_device(batch)
-
-        # add the columns on cpu to the batch
-        if data_on_cpu is not None:
-            batch["data_on_cpu"] = data_on_cpu
-
-        return batch
