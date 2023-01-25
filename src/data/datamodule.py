@@ -1,9 +1,9 @@
 # Here we define DataModule that work with HuggingFace Datasets.
 # We assume that each dataset is already processed and ready for training.
 # Think of the DataModule is the last step of the data preparation pipeline.
-# 
+#
 #   download data -> (process data -> prepare data) -> datamodule -> model
-# 
+#
 # That is, the DataModule is only used to feed data to the model during training
 # and evaluation.
 import os
@@ -18,7 +18,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import PreTrainedTokenizerBase
 
-from src.enums import RunningStage, InputColumns
+from src.enums import InputColumns, RunningStage
 
 
 class DataModule(LightningDataModule):
@@ -96,7 +96,7 @@ class DataModule(LightningDataModule):
         # we get an `IndexError` for Arrow. Here we avoid this
         batch_size = min(batch_size, len(dataset))
         return _get_sampler(
-            dataset=dataset, 
+            dataset=dataset,
             batch_size=batch_size,
             shuffle=self.shuffle if stage == RunningStage.TRAIN else False,
             replacement=self.replacement,
@@ -180,6 +180,7 @@ def collate_fn(
     batch["labels"] = labels
 
     return batch
+
 
 def _get_sampler(
     dataset: Dataset,
