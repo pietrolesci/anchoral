@@ -254,25 +254,3 @@ class Estimator:
     def _compute_num_training_steps(train_loader: DataLoader) -> int:
         # FIXME: when accumulate batches is added
         return len(train_loader)
-
-
-# class ActiveTrainer(Trainer):
-#     def active_learning_loop(self, query_strategy, model, hparams):
-#         for round in trange(hparams.num_rounds):
-#             train_output, val_output = self.fit_loop()
-#             test_output = self.test_loop()
-#             query_output = self.strategy.query()
-
-#         return
-
-#     def transfer_to_device(self, batch):
-#         data_on_cpu = batch.pop("data_on_cpu", None)
-
-#         # transfer the rest on gpu
-#         batch = self.fabric.to_device(batch)
-
-#         # add the columns on cpu to the batch
-#         if data_on_cpu is not None:
-#             batch["data_on_cpu"] = data_on_cpu
-
-#         return batch
