@@ -1,3 +1,4 @@
+import inspect
 import os
 import warnings
 from typing import Any, Dict, List, Optional, Union
@@ -20,7 +21,6 @@ from src.types import BATCH_OUTPUT, EpochOutput, EvaluationOutput, FitOutput
 from src.utilities import get_hparams
 
 warnings.filterwarnings("ignore", message="The ``compute`` method of")
-import inspect
 
 
 class Estimator:
@@ -158,7 +158,9 @@ class Estimator:
         self.fabric.call("on_train_epoch_start", model=model)
 
         # define metrics
-        metrics = self.configure_metrics(RunningStage.TRAIN).to(self.fabric.device)
+        metrics = self.configure_metrics(RunningStage.TRAIN)
+        if metrics is not None:
+            metrics = metrics.to(self.fabric.device)
 
         outputs = EpochOutput(epoch=epoch_idx)
 
@@ -214,6 +216,7 @@ class Estimator:
         # compute loss
         output = self.training_step(model, batch, batch_idx, metrics)
         loss = output if isinstance(output, torch.Tensor) else output["loss"]
+        self.log(output, batch_idx=batch_idx, stage=RunningStage.TRAIN)
 
         # compute gradients
         self.fabric.backward(loss)  # instead of loss.backward()
@@ -238,7 +241,9 @@ class Estimator:
         self.fabric.call(f"on_{stage}_epoch_start", model=model)
 
         # define metrics
-        metrics = self.configure_metrics(stage).to(self.fabric.device)
+        metrics = self.configure_metrics(stage)
+        if metrics is not None:
+            metrics = metrics.to(self.fabric.device)
 
         outputs = EpochOutput(epoch=kwargs.get("epoch_idx", None))
 
@@ -251,6 +256,7 @@ class Estimator:
                 self.fabric.call(f"on_{stage}_batch_start", model=model, batch=batch, batch_idx=batch_idx)
 
                 output = getattr(self, f"{stage}_step")(model, batch, batch_idx, metrics)
+                self.log(output, batch_idx=batch_idx, stage=stage)
 
                 # call callback hook
                 self.fabric.call(f"on_{stage}_batch_end", model=model, output=output, batch=batch, batch_idx=batch_idx)
@@ -371,7 +377,11 @@ class Estimator:
         return scheduler
 
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Union[MetricCollection, Metric, None]:
-        return
+        pass
+
+    def log(self, output: BATCH_OUTPUT, batch_idx: int, stage: RunningStage) -> None:
+        """Runs after the `*_step` methods and is used to log anything."""
+        pass
 
     def training_step(
         self, model: torch.nn.Module, batch: Any, batch_idx: int, metrics: Optional[Any] = None
