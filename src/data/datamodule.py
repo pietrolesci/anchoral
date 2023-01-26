@@ -177,7 +177,7 @@ def collate_fn(
         )
         for k in ("input_ids", "attention_mask")
     }
-    batch["labels"] = labels
+    batch["labels"] = torch.tensor(labels, dtype=torch.long)
 
     return batch
 
