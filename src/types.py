@@ -36,6 +36,9 @@ class EpochOutput(Output):
     def append(self, _x: BATCH_OUTPUT) -> None:
         return self.output.append(move_to_cpu(_x))
 
+    def add_metrics(self, _x: Union[MetricCollection, Metric]) -> None:
+        self.metrics = move_to_cpu(_x)
+
 
 @dataclass
 class RunningStageOutput(Output):

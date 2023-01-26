@@ -1,4 +1,5 @@
 import os
+import warnings
 from typing import Any, Dict, List, Optional, Union
 
 import torch
@@ -15,8 +16,11 @@ from tqdm.auto import tqdm, trange
 
 from src.enums import RunningStage
 from src.registries import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
-from src.types import BATCH_OUTPUT, BatchOutput, EpochOutput, EvaluationOutput, FitOutput
+from src.types import BATCH_OUTPUT, EpochOutput, EvaluationOutput, FitOutput
 from src.utilities import get_hparams
+
+warnings.filterwarnings("ignore", message="The ``compute`` method of")
+import inspect
 
 
 class Estimator:
@@ -154,7 +158,7 @@ class Estimator:
         self.fabric.call("on_train_epoch_start", model=model)
 
         # define metrics
-        metrics = self.configure_metrics(RunningStage.TRAIN)
+        metrics = self.configure_metrics(RunningStage.TRAIN).to(self.fabric.device)
 
         outputs = EpochOutput(epoch=epoch_idx)
 
@@ -189,7 +193,7 @@ class Estimator:
 
         # aggregate metric over epoch
         if metrics is not None:
-            outputs.metrics = metrics.compute()
+            outputs.add_metrics(metrics.compute())
 
         return outputs
 
@@ -234,7 +238,7 @@ class Estimator:
         self.fabric.call(f"on_{stage}_epoch_start", model=model)
 
         # define metrics
-        metrics = self.configure_metrics(stage)
+        metrics = self.configure_metrics(stage).to(self.fabric.device)
 
         outputs = EpochOutput(epoch=kwargs.get("epoch_idx", None))
 
@@ -263,7 +267,7 @@ class Estimator:
 
         # aggregate metric over epoch
         if metrics is not None:
-            outputs.metrics = metrics.compute()
+            outputs.add_metrics(metrics.compute())
 
         return outputs
 
@@ -283,7 +287,7 @@ class Estimator:
 
         # run validation
         output = self.eval_epoch_loop(
-            model, validation_loader, RunningStage.VALIDATION, dry_run=dry_run, limit_batches=limit_batches
+            model, validation_loader, stage=RunningStage.VALIDATION, dry_run=dry_run, limit_batches=limit_batches
         )
 
         return EvaluationOutput(hparams=hparams, output=output)
@@ -304,7 +308,7 @@ class Estimator:
 
         # run testing
         output = self.eval_epoch_loop(
-            model, test_loader, RunningStage.TEST, dry_run=dry_run, limit_batches=limit_batches
+            model, test_loader, stage=RunningStage.TEST, dry_run=dry_run, limit_batches=limit_batches
         )
 
         return EvaluationOutput(hparams=hparams, output=output)
@@ -354,14 +358,20 @@ class Estimator:
         if num_warmup_steps is not None and isinstance(num_warmup_steps, float):
             num_warmup_steps *= num_training_steps
 
-        scheduler = SCHEDULER_REGISTRY.get(scheduler)(
-            optimizer, num_training_steps=num_training_steps, num_warmup_steps=num_warmup_steps
-        )
+        scheduler_fn = SCHEDULER_REGISTRY.get(scheduler)
+        params = list(inspect.signature(scheduler_fn).parameters.keys())
+
+        if "num_training_steps" in params:
+            scheduler_kwargs["num_training_steps"] = num_training_steps
+        if "num_warmup_steps" in params:
+            scheduler_kwargs["num_warmup_steps"] = num_warmup_steps
+
+        scheduler = scheduler_fn(optimizer, **scheduler_kwargs)
 
         return scheduler
 
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Union[MetricCollection, Metric, None]:
-        pass
+        return
 
     def training_step(
         self, model: torch.nn.Module, batch: Any, batch_idx: int, metrics: Optional[Any] = None
