@@ -139,6 +139,21 @@ class ClassificationDataModule(DataModule):
             pad_fn=_pad,
         )
 
+    @property
+    def labels(self) -> List[str]:
+        assert InputColumns.TARGET in self.train_dataset.features, KeyError(
+            "A prepared dataset needs to have a `labels` column."
+        )
+        return self.train_dataset.features[InputColumns.TARGET].names
+
+    @property
+    def id2label(self) -> Dict[int, str]:
+        return dict(enumerate(self.labels))
+
+    @property
+    def label2id(self) -> Dict[str, int]:
+        return {v: k for k, v in self.id2label.items()}
+
 
 """
 Define as globals otherwise pickle complains when running in multi-gpu

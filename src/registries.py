@@ -7,6 +7,8 @@ import torch_optimizer
 import transformers
 from transformers.optimization import TYPE_TO_SCHEDULER_FUNCTION
 
+from src.query_strategies import acquisition_functions
+
 
 class _Registry(dict):
     def __call__(self, cls: Type, key: Optional[str] = None, override: bool = False) -> Type:
@@ -26,6 +28,10 @@ class _Registry(dict):
             self[key.lower()] = cls
 
         return cls
+
+    def register_functions(self, module: ModuleType) -> None:
+        for k, v in inspect.getmembers(module, inspect.isfunction):
+            self[k] = v
 
     def register_classes(
         self,
@@ -73,3 +79,6 @@ OPTIMIZER_REGISTRY.register_classes(torch.optim, torch.optim.Optimizer, override
 SCHEDULER_REGISTRY = _Registry()
 SCHEDULER_REGISTRY.register_classes(torch.optim.lr_scheduler, torch.optim.lr_scheduler._LRScheduler)
 SCHEDULER_REGISTRY.update({v.__name__[4:]: v for v in TYPE_TO_SCHEDULER_FUNCTION.values()})
+
+SCORE_FUNCTIONS = _Registry()
+SCORE_FUNCTIONS.register_functions(acquisition_functions)
