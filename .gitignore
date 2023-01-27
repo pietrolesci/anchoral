@@ -131,5 +131,5 @@ dmypy.json
 # custom
 .ruff_cache
 _graveyard
-data/
+data/*
 outputs

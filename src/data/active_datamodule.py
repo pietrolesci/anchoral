@@ -21,7 +21,7 @@ from transformers import PreTrainedTokenizerBase
 
 from src.data.datamodule import DataModule, _pad
 from src.enums import InputColumns, RunningStage, SpecialColumns
-
+from datasets import DatasetDict
 
 class ActiveDataModule(DataModule):
     _df: pd.DataFrame = None
@@ -142,7 +142,7 @@ class ActiveDataModule(DataModule):
             ]
             val_dataset = Dataset.from_pandas(val_df, preserve_index=False)
         else:
-            val_dataset = self.val_dataset
+            val_dataset = self.validation_dataset
 
         if val_dataset is not None and len(val_dataset) > 0:
             return DataLoader(
@@ -179,10 +179,25 @@ class ActiveClassificationDataModule(ActiveDataModule):
         return partial(
             collate_fn,
             max_source_length=self.max_source_length,
-            columns_on_cpu=[SpecialColumns.ID],
+            columns_on_cpu=[SpecialColumns.ID] if stage == RunningStage.POOL else [],
             pad_token_id=self.tokenizer.pad_token_id,
             pad_fn=_pad,
         )
+    
+    @property
+    def labels(self) -> List[str]:
+        assert InputColumns.TARGET in self.train_dataset.features, KeyError(
+            "A prepared dataset needs to have a `labels` column."
+        )
+        return self.train_dataset.features[InputColumns.TARGET].names
+
+    @property
+    def id2label(self) -> Dict[int, str]:
+        return dict(enumerate(self.labels))
+
+    @property
+    def label2id(self) -> Dict[str, int]:
+        return {v: k for k, v in self.id2label.items()}
 
 
 """
