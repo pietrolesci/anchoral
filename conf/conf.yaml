@@ -1,0 +1,72 @@
+defaults:
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
+  - _self_
+
+hydra:
+  job:
+    chdir: true
+  run:
+    dir: ./outputs/${dataset_name}_${now:%Y-%m-%d}T${now:%H-%M-%S}
+  job_logging:
+    formatters:
+      colorlog:
+        format: '[%(cyan)s%(asctime)s%(reset)s][%(blue)s%(name)s%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message)s'
+        log_colors:
+          DEBUG: purple
+          INFO: green
+          WARNING: yellow
+          ERROR: red
+          CRITICAL: bold_red
+
+trainer:
+  accelerator: null
+  strategy: null
+  devices: null
+  num_nodes: 1
+  precision: 32
+  plugins: null
+  callbacks: null
+  loggers: null
+  deterministic: true
+
+model:
+  name_or_path: null
+
+data:
+  batch_size: 32
+  eval_batch_size: 32
+  num_workers: 12
+  pin_memory: true
+  drop_last: false
+  persistent_workers: true
+  shuffle: true
+  seed_dataloader: ${seed}
+  replacement: false
+  max_source_length: 512
+
+fit:
+  num_epochs: 3
+  learning_rate: 0.001
+  optimizer: adamw
+  optimizer_kwargs: null
+  scheduler: constant_schedule
+  scheduler_kwargs: null
+  log_interval: 1
+  dry_run: ${dry_run}
+  limit_train_batches: ${limit_batches}
+  limit_validation_batches: ${limit_batches}
+
+validation:
+  dry_run: ${dry_run}
+  limit_batches: ${limit_batches}
+
+test:
+  dry_run: ${dry_run}
+  limit_batches: ${limit_batches}
+
+# global settings
+dataset_name: '???'
+seed: 42
+limit_batches: null
+dry_run: false
