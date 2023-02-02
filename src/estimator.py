@@ -2,7 +2,6 @@ import inspect
 import os
 import warnings
 from typing import Any, Dict, List, Optional, Union
-
 import torch
 from lightning.fabric import Fabric
 from lightning.fabric.accelerators.accelerator import Accelerator
@@ -14,12 +13,11 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from torchmetrics import Metric, MetricCollection
 from tqdm.auto import tqdm, trange
-
-from src.containers import EpochOutput, EvaluationOutput, FitOutput, FitEpochOutput
+from src.containers import EpochOutput, EvaluationOutput, FitOutput, FitEpochOutput, BatchOutput
 from src.enums import RunningStage
 from src.registries import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT
-from src.utilities import get_hparams
+from src.utilities import get_hparams, Timer
 
 # remove warning from torchmetrics
 warnings.filterwarnings("ignore", message="The ``compute`` method of")
@@ -178,7 +176,12 @@ class Estimator:
             self.fabric.call("on_train_batch_start", model=model, batch=batch, batch_idx=batch_idx)
 
             # run model on batch
-            output = self.train_batch_loop(model, batch, batch_idx, optimizer, scheduler, metrics)
+            with Timer() as t:
+                output = self.train_batch_loop(model, batch, batch_idx, optimizer, scheduler, metrics)
+            
+            # pass the output: BATCH_OUTPUT to the logger as is, then wrap
+            self.log(output, batch_idx=batch_idx, stage=RunningStage.TRAIN)            
+            output = BatchOutput(batch=batch_idx, output=output, time=t.runtime)
 
             # call callback hook
             self.fabric.call("on_train_batch_end", model=model, output=output, batch=batch, batch_idx=batch_idx)
@@ -220,7 +223,6 @@ class Estimator:
         # compute loss
         output = self.training_step(model, batch, batch_idx, metrics)
         loss = output if isinstance(output, torch.Tensor) else output["loss"]
-        self.log(output, batch_idx=batch_idx, stage=RunningStage.TRAIN)
 
         # compute gradients
         self.fabric.backward(loss)  # instead of loss.backward()
@@ -259,8 +261,13 @@ class Estimator:
                 # call callback hook
                 self.fabric.call(f"on_{stage}_batch_start", model=model, batch=batch, batch_idx=batch_idx)
 
-                output = self.eval_batch_loop(model, batch, batch_idx, metrics, stage)
+                # run on batch
+                with Timer() as t:
+                    output = self.eval_batch_loop(model, batch, batch_idx, metrics, stage)
+                
+                # pass the output: EVALUATION_BATCH_OUTPUT to the logger as is, then wrap
                 self.log(output, batch_idx=batch_idx, stage=stage)
+                output = BatchOutput(batch=batch_idx, output=output, time=t.runtime)
 
                 # call callback hook
                 self.fabric.call(f"on_{stage}_batch_end", model=model, output=output, batch=batch, batch_idx=batch_idx)

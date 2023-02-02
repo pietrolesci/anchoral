@@ -22,9 +22,9 @@ class Output:
 
 @dataclass
 class BatchOutput(Output):
-    loss: Tensor
-    metrics: Union[MetricCollection, Metric, None] = None
-
+    batch: int
+    output: BATCH_OUTPUT = None
+    time: float = None
 
 @dataclass
 class EpochOutput(Output):
@@ -34,7 +34,7 @@ class EpochOutput(Output):
     output: List of individual outputs at the batch level.
     """
     metrics: Optional[Any] = None
-    output: List[BATCH_OUTPUT] = field(default_factory=list)
+    output: List[BatchOutput] = field(default_factory=list)
 
     def append(self, _x: Union[BATCH_OUTPUT, EVAL_BATCH_OUTPUT, None]) -> None:
         if _x is None:
