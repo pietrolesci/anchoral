@@ -2,22 +2,25 @@ import inspect
 import os
 import warnings
 from typing import Any, Dict, List, Optional, Union
+
 import torch
 from lightning.fabric import Fabric
 from lightning.fabric.accelerators.accelerator import Accelerator
 from lightning.fabric.connector import _PLUGIN_INPUT, _PRECISION_INPUT
 from lightning.fabric.loggers import Logger
 from lightning.fabric.strategies import Strategy
+from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule, _FabricOptimizer
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from torchmetrics import Metric, MetricCollection
 from tqdm.auto import tqdm, trange
-from src.containers import EpochOutput, EvaluationOutput, FitOutput, FitEpochOutput, BatchOutput
+
+from src.containers import BatchOutput, EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
 from src.enums import RunningStage
 from src.registries import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT
-from src.utilities import get_hparams, Timer
+from src.utilities import Timer, get_hparams
 
 # remove warning from torchmetrics
 warnings.filterwarnings("ignore", message="The ``compute`` method of")
@@ -109,14 +112,56 @@ class Estimator:
 
         outputs = FitOutput(hparams=hparams)
 
-        # Training loop over epochs
+        # training loop over epochs
         pbar = self._get_epoch_progress_bar(num_epochs)
-        for epoch_idx in pbar:
 
-            fit_output = FitEpochOutput(epoch=epoch_idx)
+        # time the entire fit_loop
+        with Timer() as t:
 
-            # run train epoch
-            fit_output.train = self.train_epoch_loop(
+            for epoch_idx in pbar:
+
+                # time the individual epoch
+                with Timer() as epoch_timer:
+                    output = self.fit_epoch_loop(
+                        epoch_idx=epoch_idx,
+                        model=model,
+                        train_loader=train_loader,
+                        validation_loader=validation_loader,
+                        optimizer=optimizer,
+                        scheduler=scheduler,
+                        log_interval=log_interval,
+                        dry_run=dry_run,
+                        limit_train_batches=limit_train_batches,
+                        limit_validation_batches=limit_validation_batches,
+                    )
+
+                output.time = epoch_timer.runtime
+
+                outputs.append(output)
+
+        outputs.time = t.runtime
+
+        return outputs
+
+    def fit_epoch_loop(
+        self,
+        epoch_idx: int,
+        model: _FabricModule,
+        train_loader: _FabricDataLoader,
+        validation_loader: Optional[_FabricDataLoader],
+        optimizer: _FabricOptimizer,
+        scheduler: Optional[str],
+        log_interval: int,
+        dry_run: Optional[bool],
+        limit_train_batches: Optional[int],
+        limit_validation_batches: Optional[int],
+    ) -> FitEpochOutput:
+
+        output = FitEpochOutput(epoch=epoch_idx)
+
+        # time the training loop train epoch
+        with Timer() as t:
+            output.train = self.train_epoch_loop(
                 model,
                 train_loader,
                 optimizer,
@@ -126,20 +171,23 @@ class Estimator:
                 dry_run=dry_run,
                 limit_batches=limit_train_batches,
             )
+        output.train.time = t.runtime
 
-            # and maybe validates at the end of each epoch
-            if validation_loader is not None:
-                fit_output.validation = self.eval_epoch_loop(
+        # and maybe validates at the end of each epoch
+        if validation_loader is not None:
+
+            # time the validation loop train epoch
+            with Timer() as t:
+                output.validation = self.eval_epoch_loop(
                     model,
                     validation_loader,
                     RunningStage.VALIDATION,
                     dry_run=dry_run,
                     limit_batches=limit_validation_batches,
                 )
+            output.validation.time = t.runtime
 
-            outputs.append(fit_output)
-
-        return outputs
+        return output
 
     def train_epoch_loop(
         self,
@@ -178,9 +226,14 @@ class Estimator:
             # run model on batch
             with Timer() as t:
                 output = self.train_batch_loop(model, batch, batch_idx, optimizer, scheduler, metrics)
-            
+
+            # update progress
+            if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
+                pbar.set_postfix(loss=round(output["loss"].item(), ndigits=4))
+
             # pass the output: BATCH_OUTPUT to the logger as is, then wrap
-            self.log(output, batch_idx=batch_idx, stage=RunningStage.TRAIN)            
+            self.log(output, batch_idx=batch_idx, stage=RunningStage.TRAIN)
+
             output = BatchOutput(batch=batch_idx, output=output, time=t.runtime)
 
             # call callback hook
@@ -188,10 +241,6 @@ class Estimator:
 
             # record output
             outputs.append(output)
-
-            # update progress
-            if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
-                pbar.set_postfix(loss=round(output["loss"].item(), ndigits=4))
 
             # check stopping conditions
             if self._is_done(batch_idx, dry_run, limit_batches):
@@ -264,7 +313,7 @@ class Estimator:
                 # run on batch
                 with Timer() as t:
                     output = self.eval_batch_loop(model, batch, batch_idx, metrics, stage)
-                
+
                 # pass the output: EVALUATION_BATCH_OUTPUT to the logger as is, then wrap
                 self.log(output, batch_idx=batch_idx, stage=stage)
                 output = BatchOutput(batch=batch_idx, output=output, time=t.runtime)
@@ -293,7 +342,7 @@ class Estimator:
     ) -> EVAL_BATCH_OUTPUT:
         # this might seems redundant but it's useful for active learning
         return getattr(self, f"{stage}_step")(model, batch, batch_idx, metrics)
-    
+
     def validate(
         self,
         validation_loader: DataLoader,
@@ -429,10 +478,8 @@ class Estimator:
     def _get_batch_progress_bar(self, loader: DataLoader, stage: RunningStage, **kwargs) -> tqdm:
         if stage != RunningStage.TRAIN:
             return tqdm(loader, desc=f"{stage.title()}", dynamic_ncols=True, leave=False)
-        
+
         return tqdm(loader, desc=f"Epoch {kwargs.get('epoch_idx', '')}".strip(), dynamic_ncols=True, leave=False)
 
     def _get_epoch_progress_bar(self, num_epochs: int) -> tqdm:
         return trange(num_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
-
-

@@ -17,10 +17,10 @@ import torch
 from datasets import Dataset
 from torch import Tensor
 from torch.utils.data import DataLoader
-from transformers import PreTrainedTokenizerBase
 
 from src.data.datamodule import DataModule, _pad
 from src.enums import InputColumns, RunningStage, SpecialColumns
+from transformers import PreTrainedTokenizerBase
 
 
 class ActiveDataModule(DataModule):
@@ -183,7 +183,7 @@ class ActiveClassificationDataModule(ActiveDataModule):
             pad_token_id=self.tokenizer.pad_token_id,
             pad_fn=_pad,
         )
-    
+
     @property
     def labels(self) -> List[str]:
         assert InputColumns.TARGET in self.train_dataset.features, KeyError(

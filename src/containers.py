@@ -1,6 +1,7 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
+from numpy import ndarray
 from torch import Tensor
 from torch.utils.data import BatchSampler, DataLoader, SequentialSampler
 from torchmetrics import Metric, MetricCollection
@@ -8,11 +9,12 @@ from torchmetrics import Metric, MetricCollection
 from src.enums import RunningStage
 from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT
 from src.utilities import move_to_cpu
-from numpy import ndarray
 
 
 @dataclass
 class Output:
+    time: float = None
+
     def to_dict(self) -> Dict:
         return asdict(self)
 
@@ -22,9 +24,9 @@ class Output:
 
 @dataclass
 class BatchOutput(Output):
-    batch: int
+    batch: int = None
     output: BATCH_OUTPUT = None
-    time: float = None
+
 
 @dataclass
 class EpochOutput(Output):
@@ -33,6 +35,7 @@ class EpochOutput(Output):
     metrics: Metrics aggregated over the entire dataloader.
     output: List of individual outputs at the batch level.
     """
+
     metrics: Optional[Any] = None
     output: List[BatchOutput] = field(default_factory=list)
 
@@ -46,15 +49,16 @@ class EpochOutput(Output):
 
     def __repr__(self) -> str:
         self.__class__.__name__
-        s = f"{self.__class__.__name__}(metrics={self.metrics}, output="
+        s = f"{self.__class__.__name__}(time={self.time}, metrics={self.metrics}, output="
         return f"{s} ..{len(self.output)} batches.. )"
 
 
 @dataclass
 class FitEpochOutput(Output):
-    epoch: int
+    epoch: int = None
     train: EpochOutput = None
     validation: EpochOutput = None
+
 
 @dataclass
 class RunningStageOutput(Output):
@@ -112,9 +116,11 @@ class EvaluationOutput(RunningStageOutput):
             self.output = self.output.output
         return super().__post_init__()
 
+
 """
 Active learning
 """
+
 
 @dataclass
 class PoolEpochOutput(EpochOutput):
@@ -125,13 +131,14 @@ class PoolEpochOutput(EpochOutput):
     topk_scores: TopK scores for the pool instances.
     indices: Indices corresponding to the topk instances to query.
     """
+
     topk_scores: ndarray = None
     indices: List[int] = None
 
 
 @dataclass
 class RoundOutput(Output):
-    round: int
+    round: int = None
     fit: FitOutput = None
     test: EpochOutput = None
     pool: PoolEpochOutput = None
@@ -140,7 +147,7 @@ class RoundOutput(Output):
 @dataclass
 class ActiveFitOutput(RunningStageOutput):
     output = List[RoundOutput]
-    
+
     def __post_init__(self) -> None:
         ignore = ["self", "datamodule"]
         hparams = {k: v for k, v in self.hparams.items() if not any([x in k for x in ignore])}
@@ -150,7 +157,7 @@ class ActiveFitOutput(RunningStageOutput):
             loader = datamodule.get(f"{stage}_loader", None)
             if loader is None:
                 continue
-            
+
             loader_hparams = self._dataloader_hparams(loader)
             loader_hparams = {f"{stage}_{k}": v for k, v in loader_hparams.items()}
             hparams = {**hparams, **loader_hparams}

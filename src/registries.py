@@ -4,10 +4,10 @@ from typing import Generator, List, Optional, Tuple, Type
 
 import torch
 import torch_optimizer
-import transformers
-from transformers.optimization import TYPE_TO_SCHEDULER_FUNCTION
 
+import transformers
 from src.query_strategies import acquisition_functions
+from transformers.optimization import TYPE_TO_SCHEDULER_FUNCTION
 
 
 class _Registry(dict):

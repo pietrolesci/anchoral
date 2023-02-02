@@ -3,9 +3,10 @@ from typing import Dict, Optional, Union
 import torch
 from torchmetrics import Metric, MetricCollection
 from torchmetrics.classification import Accuracy, F1Score
+
+from src.enums import InputColumns, RunningStage
 from src.estimator import Estimator
 from src.query_strategies.base import ActiveEstimator
-from src.enums import InputColumns, RunningStage
 from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT, POOL_BATCH_OUTPUT
 
 
@@ -46,6 +47,7 @@ class SequenceClassificationMixin:
 
 class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator):
     pass
+
 
 class ActiveEstimatorForSequenceClassification(SequenceClassificationMixin, ActiveEstimator):
     def pool_step(
