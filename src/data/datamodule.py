@@ -12,16 +12,16 @@ from typing import Callable, Dict, List, Optional, Union
 
 import torch
 from datasets import Dataset, DatasetDict
-from lightning import LightningDataModule
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import PreTrainedTokenizerBase
+from lightning.pytorch.core.mixins.hparams_mixin import HyperparametersMixin
 
 from src.enums import InputColumns, RunningStage
 
 
-class DataModule(LightningDataModule):
+class DataModule(HyperparametersMixin):
     _hparams_ignore = ["train_dataset", "val_dataset", "test_dataset"]
     _default_columns: List[str] = InputColumns
 
@@ -37,7 +37,7 @@ class DataModule(LightningDataModule):
         drop_last: Optional[bool] = False,
         persistent_workers: Optional[bool] = False,
         shuffle: Optional[bool] = True,
-        seed_dataloader: Optional[int] = 42,
+        seed: Optional[int] = 42,
         replacement: bool = False,
     ) -> None:
         super().__init__()
@@ -51,27 +51,23 @@ class DataModule(LightningDataModule):
         self.drop_last = drop_last
         self.persistent_workers = persistent_workers
         self.shuffle = shuffle
-        self.seed_dataloader = seed_dataloader
+        self.seed = seed
         self.replacement = replacement
 
         self.save_hyperparameters(ignore=self._hparams_ignore)
-        self.prepare_data()
         self.setup()
-
-    def prepare_data(self) -> None:
-        pass
 
     def setup(self, stage: Optional[str] = None) -> None:
         pass
 
-    def train_dataloader(self) -> DataLoader:
+    def train_loader(self) -> DataLoader:
         return DataLoader(
             self.train_dataset,
             sampler=self.get_sampler(self.train_dataset, RunningStage.TRAIN),
             collate_fn=self.get_collate_fn(RunningStage.TRAIN),
         )
 
-    def val_dataloader(self) -> Optional[DataLoader]:
+    def validation_loader(self) -> Optional[DataLoader]:
         if self.validation_dataset:
             return DataLoader(
                 self.validation_dataset,
@@ -79,7 +75,7 @@ class DataModule(LightningDataModule):
                 collate_fn=self.get_collate_fn(RunningStage.VALIDATION),
             )
 
-    def test_dataloader(self) -> Optional[DataLoader]:
+    def test_loader(self) -> Optional[DataLoader]:
         if self.test_dataset:
             return DataLoader(
                 self.test_dataset,
@@ -100,7 +96,7 @@ class DataModule(LightningDataModule):
             batch_size=batch_size,
             shuffle=self.shuffle if stage == RunningStage.TRAIN else False,
             replacement=self.replacement,
-            seed_dataloader=self.seed_dataloader,
+            seed=self.seed,
             drop_last=self.drop_last,
         )
 
@@ -202,7 +198,7 @@ def _get_sampler(
     batch_size: int,
     shuffle: bool,
     replacement: bool,
-    seed_dataloader: int,
+    seed: int,
     drop_last: bool,
 ) -> BatchSampler:
     """Get a sampler optimizer to work with `datasets.Dataset`.
@@ -214,7 +210,7 @@ def _get_sampler(
         sampler = SequentialSampler(dataset)
     else:
         g = torch.Generator()
-        g.manual_seed(seed_dataloader)
+        g.manual_seed(seed)
         sampler = RandomSampler(dataset, generator=g, replacement=replacement)
 
     return BatchSampler(

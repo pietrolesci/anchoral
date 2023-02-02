@@ -3,13 +3,13 @@ from typing import Dict, Optional, Union
 import torch
 from torchmetrics import Metric, MetricCollection
 from torchmetrics.classification import Accuracy, F1Score
-
+from src.estimator import Estimator
+from src.query_strategies.base import ActiveEstimator
 from src.enums import InputColumns, RunningStage
-from src.estimators.estimator import Estimator
-from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT
+from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT, POOL_BATCH_OUTPUT
 
 
-class EstimatorForSequenceClassification(Estimator):
+class SequenceClassificationMixin:
     def step(self, model: torch.nn.Module, batch: Dict, batch_idx: int, metrics: MetricCollection) -> BATCH_OUTPUT:
         out = model(**batch)
         preds = out.logits.argmax(-1)
@@ -42,3 +42,13 @@ class EstimatorForSequenceClassification(Estimator):
     def log(self, output: BATCH_OUTPUT, batch_idx: int, stage: RunningStage) -> None:
         self.fabric.log("loss", output["loss"], step=batch_idx)
         self.fabric.log_dict(output["metrics"], step=batch_idx)
+
+
+class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator):
+    pass
+
+class ActiveEstimatorForSequenceClassification(SequenceClassificationMixin, ActiveEstimator):
+    def pool_step(
+        self, model: torch.nn.Module, batch: Dict, batch_idx: int, metrics: MetricCollection
+    ) -> POOL_BATCH_OUTPUT:
+        return self.step(model, batch, batch_idx, metrics)

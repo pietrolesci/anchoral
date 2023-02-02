@@ -21,7 +21,7 @@ from transformers import PreTrainedTokenizerBase
 
 from src.data.datamodule import DataModule, _pad
 from src.enums import InputColumns, RunningStage, SpecialColumns
-from datasets import DatasetDict
+
 
 class ActiveDataModule(DataModule):
     _df: pd.DataFrame = None
@@ -123,7 +123,7 @@ class ActiveDataModule(DataModule):
     DataLoaders
     """
 
-    def train_dataloader(self) -> DataLoader:
+    def train_loader(self) -> DataLoader:
         train_df = self._df.loc[
             (self._df[SpecialColumns.IS_LABELLED] == True) & (self._df[SpecialColumns.IS_VALIDATION] == False)
         ]
@@ -135,7 +135,7 @@ class ActiveDataModule(DataModule):
             collate_fn=self.get_collate_fn(RunningStage.TRAIN),
         )
 
-    def val_dataloader(self) -> Optional[DataLoader]:
+    def validation_loader(self) -> Optional[DataLoader]:
         if self.should_val_split:
             val_df = self._df.loc[
                 (self._df[SpecialColumns.IS_LABELLED] == True) & (self._df[SpecialColumns.IS_VALIDATION] == True)
@@ -151,7 +151,7 @@ class ActiveDataModule(DataModule):
                 collate_fn=self.get_collate_fn(RunningStage.VALIDATION),
             )
 
-    def pool_dataloader(self) -> DataLoader:
+    def pool_loader(self) -> DataLoader:
         pool_df = self._df.loc[
             (self._df[SpecialColumns.IS_LABELLED] == False), [i for i in self._df.columns if i != InputColumns.TARGET]
         ]

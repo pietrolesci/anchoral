@@ -18,17 +18,6 @@ def move_to_cpu(output: Any) -> Any:
     return apply_to_collection(output, *args)
 
 
-def get_hyperparams():
-    """Gets the inputs passed in the caller."""
-
-    # get the frame in which this function is called
-    frame = inspect.stack()[1].frame
-    args, _, _, values = inspect.getargvalues(frame)
-
-    # get the inputs of the function in which this function is called
-    return {arg: values[arg] for arg in args}
-
-
 def get_hparams():
     frame = inspect.currentframe().f_back
     args, _, _, values = inspect.getargvalues(frame)

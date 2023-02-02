@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from torchmetrics import Metric, MetricCollection
 from tqdm.auto import tqdm, trange
 
-from src.containers import EpochOutput, EvaluationOutput, FitOutput
+from src.containers import EpochOutput, EvaluationOutput, FitOutput, FitEpochOutput
 from src.enums import RunningStage
 from src.registries import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT
@@ -78,7 +78,7 @@ class Estimator:
         dry_run: Optional[bool] = None,
         limit_train_batches: Optional[int] = None,
         limit_validation_batches: Optional[int] = None,
-    ):
+    ) -> FitOutput:
         """Runs full training and validation."""
 
         # get passed hyper-parameters
@@ -112,10 +112,13 @@ class Estimator:
         outputs = FitOutput(hparams=hparams)
 
         # Training loop over epochs
-        for epoch_idx in trange(num_epochs, desc="Completed epochs"):
+        pbar = self._get_epoch_progress_bar(num_epochs)
+        for epoch_idx in pbar:
+
+            fit_output = FitEpochOutput(epoch=epoch_idx)
 
             # run train epoch
-            output = self.train_epoch_loop(
+            fit_output.train = self.train_epoch_loop(
                 model,
                 train_loader,
                 optimizer,
@@ -125,19 +128,18 @@ class Estimator:
                 dry_run=dry_run,
                 limit_batches=limit_train_batches,
             )
-            outputs.append(output, RunningStage.TRAIN)
 
             # and maybe validates at the end of each epoch
             if validation_loader is not None:
-                output = self.eval_epoch_loop(
+                fit_output.validation = self.eval_epoch_loop(
                     model,
                     validation_loader,
                     RunningStage.VALIDATION,
                     dry_run=dry_run,
                     limit_batches=limit_validation_batches,
-                    epoch_idx=epoch_idx,
                 )
-                outputs.append(output, RunningStage.VALIDATION)
+
+            outputs.append(fit_output)
 
         return outputs
 
@@ -164,9 +166,9 @@ class Estimator:
         if metrics is not None:
             metrics = metrics.to(self.fabric.device)
 
-        outputs = EpochOutput(epoch=epoch_idx)
+        outputs = EpochOutput()
 
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch_idx}".strip(), dynamic_ncols=True, leave=False)
+        pbar = self._get_batch_progress_bar(train_loader, RunningStage.TRAIN, epoch_idx=epoch_idx)
         for batch_idx, batch in enumerate(pbar):
 
             # put batch on correct device
@@ -247,9 +249,9 @@ class Estimator:
         if metrics is not None:
             metrics = metrics.to(self.fabric.device)
 
-        outputs = EpochOutput(epoch=kwargs.get("epoch_idx", None))
+        outputs = EpochOutput()
 
-        pbar = tqdm(eval_loader, desc=f"{stage.title()}", dynamic_ncols=True, leave=False)
+        pbar = self._get_batch_progress_bar(eval_loader, stage)
         with torch.inference_mode():
             for batch_idx, batch in enumerate(pbar):
                 batch = self.transfer_to_device(batch)
@@ -284,7 +286,7 @@ class Estimator:
     ) -> EVAL_BATCH_OUTPUT:
         # this might seems redundant but it's useful for active learning
         return getattr(self, f"{stage}_step")(model, batch, batch_idx, metrics)
-
+    
     def validate(
         self,
         validation_loader: DataLoader,
@@ -332,8 +334,6 @@ class Estimator:
         return batch
 
     def configure_optimizer(self, optimizer: str, learning_rate: float, **optimizer_kwargs) -> Optimizer:
-        """Handled optimizer and scheduler configuration."""
-
         # collect optimizer kwargs
         no_decay, weight_decay = optimizer_kwargs.get("no_decay", None), optimizer_kwargs.get("weight_decay", None)
 
@@ -414,7 +414,18 @@ class Estimator:
         if dry_run is not None and dry_run is True:
             return True
 
-        if limit_batches is not None and limit_batches <= batch_idx:
+        if limit_batches is not None and batch_idx + 1 >= limit_batches:
             return True
 
         return False
+
+    def _get_batch_progress_bar(self, loader: DataLoader, stage: RunningStage, **kwargs) -> tqdm:
+        if stage != RunningStage.TRAIN:
+            return tqdm(loader, desc=f"{stage.title()}", dynamic_ncols=True, leave=False)
+        
+        return tqdm(loader, desc=f"Epoch {kwargs.get('epoch_idx', '')}".strip(), dynamic_ncols=True, leave=False)
+
+    def _get_epoch_progress_bar(self, num_epochs: int) -> tqdm:
+        return trange(num_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
+
+
