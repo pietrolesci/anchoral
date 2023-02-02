@@ -10,6 +10,7 @@
 import os
 import random
 from functools import partial
+from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
 
 import pandas as pd
@@ -162,6 +163,15 @@ class ActiveDataModule(DataModule):
             sampler=self.get_sampler(pool_dataset, RunningStage.POOL),
             collate_fn=self.get_collate_fn(RunningStage.POOL),
         )
+
+    def save_labelled_dataset(self, save_dir: str) -> None:
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        # remove feature labels
+        to_remove = [i for i in InputColumns if i != InputColumns.TARGET]
+
+        self._df.drop(columns=to_remove).to_parquet(save_dir / "labelled_dataset.parquet", index=False)
 
 
 class ActiveClassificationDataModule(ActiveDataModule):

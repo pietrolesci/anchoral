@@ -191,14 +191,14 @@ class Estimator:
 
     def train_epoch_loop(
         self,
-        model: torch.nn.Module,
-        train_loader: DataLoader,
-        optimizer: Optimizer,
+        model: _FabricModule,
+        train_loader: _FabricDataLoader,
+        optimizer: _FabricOptimizer,
         scheduler: _LRScheduler,
         epoch_idx: int,
-        log_interval: int = 1,
-        dry_run: Optional[bool] = None,
-        limit_batches: Optional[int] = None,
+        log_interval: int,
+        dry_run: Optional[bool],
+        limit_batches: Optional[int],
     ) -> EpochOutput:
         """Runs over an entire dataloader."""
 
@@ -257,10 +257,10 @@ class Estimator:
 
     def train_batch_loop(
         self,
-        model: torch.nn.Module,
+        model: _FabricModule,
         batch: Any,
         batch_idx: int,
-        optimizer: Optimizer,
+        optimizer: _FabricOptimizer,
         scheduler: _LRScheduler,
         metrics: Any,
     ) -> BATCH_OUTPUT:
@@ -286,7 +286,7 @@ class Estimator:
         return output
 
     def eval_epoch_loop(
-        self, model: torch.nn.Module, eval_loader: DataLoader, stage: RunningStage, **kwargs
+        self, model: _FabricModule, eval_loader: _FabricDataLoader, stage: RunningStage, **kwargs
     ) -> EpochOutput:
         """Runs over an entire evaluation dataloader."""
 
@@ -314,7 +314,7 @@ class Estimator:
                 with Timer() as t:
                     output = self.eval_batch_loop(model, batch, batch_idx, metrics, stage)
 
-                # pass the output: EVALUATION_BATCH_OUTPUT to the logger as is, then wrap
+                # pass the output: EVAL_BATCH_OUTPUT to the logger as is, then wrap
                 self.log(output, batch_idx=batch_idx, stage=stage)
                 output = BatchOutput(batch=batch_idx, output=output, time=t.runtime)
 
@@ -338,7 +338,7 @@ class Estimator:
         return outputs
 
     def eval_batch_loop(
-        self, model: torch.nn.Module, batch: Any, batch_idx: int, metrics: Any, stage: RunningStage
+        self, model: _FabricModule, batch: Any, batch_idx: int, metrics: Any, stage: RunningStage
     ) -> EVAL_BATCH_OUTPUT:
         # this might seems redundant but it's useful for active learning
         return getattr(self, f"{stage}_step")(model, batch, batch_idx, metrics)
@@ -358,11 +358,12 @@ class Estimator:
         validation_loader = self.fabric.setup_dataloaders(validation_loader)
 
         # run validation
-        output = self.eval_epoch_loop(
-            model, validation_loader, stage=RunningStage.VALIDATION, dry_run=dry_run, limit_batches=limit_batches
-        )
+        with Timer() as t:
+            output = self.eval_epoch_loop(
+                model, validation_loader, stage=RunningStage.VALIDATION, dry_run=dry_run, limit_batches=limit_batches
+            )
 
-        return EvaluationOutput(hparams=hparams, output=output)
+        return EvaluationOutput(hparams=hparams, output=output, time=t.runtime)
 
     def test(
         self,
@@ -379,11 +380,12 @@ class Estimator:
         test_loader = self.fabric.setup_dataloaders(test_loader)
 
         # run testing
-        output = self.eval_epoch_loop(
-            model, test_loader, stage=RunningStage.TEST, dry_run=dry_run, limit_batches=limit_batches
-        )
+        with Timer() as t:
+            output = self.eval_epoch_loop(
+                model, test_loader, stage=RunningStage.TEST, dry_run=dry_run, limit_batches=limit_batches
+            )
 
-        return EvaluationOutput(hparams=hparams, output=output)
+        return EvaluationOutput(hparams=hparams, output=output, time=t.runtime)
 
     def transfer_to_device(self, batch: Any) -> Any:
         batch = self.fabric.to_device(batch)

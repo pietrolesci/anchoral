@@ -80,5 +80,5 @@ SCHEDULER_REGISTRY = _Registry()
 SCHEDULER_REGISTRY.register_classes(torch.optim.lr_scheduler, torch.optim.lr_scheduler._LRScheduler)
 SCHEDULER_REGISTRY.update({v.__name__[4:]: v for v in TYPE_TO_SCHEDULER_FUNCTION.values()})
 
-SCORE_FUNCTIONS = _Registry()
-SCORE_FUNCTIONS.register_functions(acquisition_functions)
+SCORING_FUNCTIONS = _Registry()
+SCORING_FUNCTIONS.register_functions(acquisition_functions)
