@@ -153,13 +153,4 @@ class ActiveFitOutput(RunningStageOutput):
         hparams = {k: v for k, v in self.hparams.items() if not any([x in k for x in ignore])}
 
         datamodule = self.hparams.get("active_datamodule")
-        for stage in RunningStage:
-            loader = datamodule.get(f"{stage}_loader", None)
-            if loader is None:
-                continue
-
-            loader_hparams = self._dataloader_hparams(loader)
-            loader_hparams = {f"{stage}_{k}": v for k, v in loader_hparams.items()}
-            hparams = {**hparams, **loader_hparams}
-
-        self.hparams = hparams
+        self.hparams = {**hparams, **datamodule.hparams}

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import srsly
 from datasets import load_from_disk
+
 from transformers import AutoTokenizer
 
 if __name__ == "__main__":

@@ -99,7 +99,7 @@ class ActiveDataModule(DataModule):
     Main methods
     """
 
-    def label(self, indices: List[int], round_id: int, val_perc: Optional[float] = None) -> None:
+    def label(self, indices: List[int], round_idx: int, val_perc: Optional[float] = None) -> None:
         """Moves instances at index `pool_idx` from the `pool_fold` to the `train_fold`.
 
         Args:
@@ -112,7 +112,7 @@ class ActiveDataModule(DataModule):
 
         mask = self._df[SpecialColumns.ID].isin(indices)
         self._df.loc[mask, SpecialColumns.IS_LABELLED] = True
-        self._df.loc[mask, SpecialColumns.LABELLING_ROUND] = round_id
+        self._df.loc[mask, SpecialColumns.LABELLING_ROUND] = round_idx
 
         if self.should_val_split and val_perc is not None:
             n_val = round(val_perc * len(indices)) or 1
