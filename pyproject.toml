@@ -42,7 +42,7 @@ pytest = "^7.2.1"
 
 [tool.black]
 line-length = 120
-skip-string-normalization = true
+skip-string-normalization = false
 target-version = ['py38']
 include = '\.pyi?$'
 exclude = '''
