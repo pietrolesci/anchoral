@@ -56,5 +56,5 @@ class UncertaintyBasedStrategyForSequenceClassification(SequenceClassificationMi
     def pool_step(
         self, model: torch.nn.Module, batch: Dict, batch_idx: int, metrics: MetricCollection
     ) -> POOL_BATCH_OUTPUT:
-        out = model(**batch)
-        return {"logits": out.logits}
+        logits = model(**batch).logits
+        return self.score_fn(logits)

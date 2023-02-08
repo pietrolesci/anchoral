@@ -20,7 +20,7 @@ from src.containers import BatchOutput, EpochOutput, EvaluationOutput, FitEpochO
 from src.enums import RunningStage
 from src.registries import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT
-from src.utilities import Timer, get_hparams
+from src.utilities import get_hparams
 
 # remove warning from torchmetrics
 warnings.filterwarnings("ignore", message="The ``compute`` method of")
@@ -54,16 +54,9 @@ class Estimator:
         self._init_deterministic(deterministic)
         self.model = model
 
-    def _init_deterministic(self, deterministic: bool) -> None:
-        # NOTE: taken from the lightning Trainer
-        torch.use_deterministic_algorithms(deterministic)
-        if deterministic:
-            # fixing non-deterministic part of horovod
-            # https://github.com/Lightning-AI/lightning/pull/1572/files#r420279383
-            os.environ["HOROVOD_FUSION_THRESHOLD"] = "0"
-
-            # https://docs.nvidia.com/cuda/cublas/index.html#cublasApi_reproducibility
-            os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    """
+    Fit loop
+    """
 
     def fit(
         self,
@@ -84,62 +77,41 @@ class Estimator:
 
         # get passed hyper-parameters
         hparams = get_hparams()
+        outputs = FitOutput(hparams=hparams)
 
-        # define optimizer and scheduler
-        assert optimizer is not None, ValueError("You must provide an optimizer.")
-        optimizer_kwargs = optimizer_kwargs or {}
+        # configure optimizer and scheduler
         optimizer = self.configure_optimizer(optimizer, learning_rate, **optimizer_kwargs)
-        if scheduler is not None:
-            num_training_steps = self._compute_num_training_steps(train_loader)
-            scheduler_kwargs = scheduler_kwargs or {}
-            scheduler = self.configure_scheduler(
-                scheduler, optimizer, num_training_steps=num_training_steps, **scheduler_kwargs
-            )
+        scheduler = self.configure_scheduler(scheduler, optimizer, train_loader, **scheduler_kwargs)
 
-        # setup dataloaders, model, and optimizer with fabric
-        train_loader = self.fabric.setup_dataloaders(
-            train_loader,
-            replace_sampler=False,
-            move_to_device=False,
-        )
-        if validation_loader is not None:
-            validation_loader = self.fabric.setup_dataloaders(
-                validation_loader,
-                replace_sampler=False,
-                move_to_device=False,
-            )
+        # configure dataloaders
+        train_loader = self.configure_dataloader(train_loader)
+        validation_loader = self.configure_dataloader(validation_loader)
+
+        # setup model and optimizer with fabric
         model, optimizer = self.fabric.setup(self.model, optimizer)
 
-        outputs = FitOutput(hparams=hparams)
+        # hook
+        self.fabric.call("on_fit_start", model=model, output=outputs)
 
         # training loop over epochs
         pbar = self._get_epoch_progress_bar(num_epochs)
+        for epoch_idx in pbar:
+            output = self.fit_epoch_loop(
+                epoch_idx=epoch_idx,
+                model=model,
+                train_loader=train_loader,
+                validation_loader=validation_loader,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                log_interval=log_interval,
+                dry_run=dry_run,
+                limit_train_batches=limit_train_batches,
+                limit_validation_batches=limit_validation_batches,
+            )
+            outputs.append(output)
 
-        # time the entire fit_loop
-        with Timer() as t:
-
-            for epoch_idx in pbar:
-
-                # time the individual epoch
-                with Timer() as epoch_timer:
-                    output = self.fit_epoch_loop(
-                        epoch_idx=epoch_idx,
-                        model=model,
-                        train_loader=train_loader,
-                        validation_loader=validation_loader,
-                        optimizer=optimizer,
-                        scheduler=scheduler,
-                        log_interval=log_interval,
-                        dry_run=dry_run,
-                        limit_train_batches=limit_train_batches,
-                        limit_validation_batches=limit_validation_batches,
-                    )
-
-                output.time = epoch_timer.runtime
-
-                outputs.append(output)
-
-        outputs.time = t.runtime
+        # hook
+        self.fabric.call("on_fit_end", model=model, output=outputs)
 
         return outputs
 
@@ -157,45 +129,36 @@ class Estimator:
         limit_validation_batches: Optional[int],
     ) -> FitEpochOutput:
 
-        output = FitEpochOutput(epoch=epoch_idx)
+        train_out = self.train_epoch_loop(
+            epoch_idx,
+            model,
+            train_loader,
+            optimizer,
+            scheduler,
+            log_interval=log_interval,
+            dry_run=dry_run,
+            limit_batches=limit_train_batches,
+        )
 
-        # time the training loop train epoch
-        with Timer() as t:
-            output.train = self.train_epoch_loop(
-                model,
-                train_loader,
-                optimizer,
-                scheduler,
-                epoch_idx=epoch_idx,
-                log_interval=log_interval,
-                dry_run=dry_run,
-                limit_batches=limit_train_batches,
-            )
-        output.train.time = t.runtime
-
-        # and maybe validates at the end of each epoch
+        # maybe run validation
         if validation_loader is not None:
+            validation_out = self.eval_epoch_loop(
+                model,
+                validation_loader,
+                RunningStage.VALIDATION,
+                dry_run=dry_run,
+                limit_batches=limit_validation_batches,
+            )
 
-            # time the validation loop train epoch
-            with Timer() as t:
-                output.validation = self.eval_epoch_loop(
-                    model,
-                    validation_loader,
-                    RunningStage.VALIDATION,
-                    dry_run=dry_run,
-                    limit_batches=limit_validation_batches,
-                )
-            output.validation.time = t.runtime
-
-        return output
+        return FitEpochOutput(epoch_idx=epoch_idx, train=train_out, validation=validation_out)
 
     def train_epoch_loop(
         self,
+        epoch_idx: int,
         model: _FabricModule,
         train_loader: _FabricDataLoader,
         optimizer: _FabricOptimizer,
         scheduler: _LRScheduler,
-        epoch_idx: int,
         log_interval: int,
         dry_run: Optional[bool],
         limit_batches: Optional[int],
@@ -204,15 +167,15 @@ class Estimator:
 
         model.train()
 
-        # call callback hook
-        self.fabric.call("on_train_epoch_start", model=model)
-
         # define metrics
         metrics = self.configure_metrics(RunningStage.TRAIN)
         if metrics is not None:
             metrics = metrics.to(self.fabric.device)
 
-        outputs = EpochOutput()
+        output = EpochOutput()
+
+        # hook
+        self.fabric.call("on_train_epoch_start", model=model, output=output)
 
         pbar = self._get_batch_progress_bar(train_loader, RunningStage.TRAIN, epoch_idx=epoch_idx)
         for batch_idx, batch in enumerate(pbar):
@@ -220,40 +183,39 @@ class Estimator:
             # put batch on correct device
             batch = self.transfer_to_device(batch)
 
-            # call callback hook
+            # hook
             self.fabric.call("on_train_batch_start", model=model, batch=batch, batch_idx=batch_idx)
 
             # run model on batch
-            with Timer() as t:
-                output = self.train_batch_loop(model, batch, batch_idx, optimizer, scheduler, metrics)
+            batch_out = self.train_batch_loop(model, batch, batch_idx, optimizer, scheduler, metrics)
 
             # update progress
             if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
-                pbar.set_postfix(loss=round(output["loss"].item(), ndigits=4))
+                pbar.set_postfix(loss=round(batch_out["loss"].item(), ndigits=4))
 
-            # pass the output: BATCH_OUTPUT to the logger as is, then wrap
-            self.log(output, batch_idx=batch_idx, stage=RunningStage.TRAIN)
+            # pass the batch_out: BATCH_OUTPUT to the logger as is, then wrap
+            self.log(batch_out, batch_idx=batch_idx, stage=RunningStage.TRAIN)
 
-            output = BatchOutput(batch=batch_idx, output=output, time=t.runtime)
+            batch_out = BatchOutput(batch_idx=batch_idx, output=batch_out)
 
-            # call callback hook
-            self.fabric.call("on_train_batch_end", model=model, output=output, batch=batch, batch_idx=batch_idx)
+            # hook
+            self.fabric.call("on_train_batch_end", model=model, output=batch_out, batch=batch, batch_idx=batch_idx)
 
             # record output
-            outputs.append(output)
+            output.append(batch_out)
 
             # check stopping conditions
             if self._is_done(batch_idx, dry_run, limit_batches):
                 break
 
-        # call callback hook
-        self.fabric.call("on_train_epoch_end", model=model)
-
         # aggregate metric over epoch
         if metrics is not None:
-            outputs.add_metrics(metrics.compute())
+            output.metrics = metrics.compute()
 
-        return outputs
+        # hook
+        self.fabric.call("on_train_epoch_end", model=model, output=output)
+
+        return output
 
     def train_batch_loop(
         self,
@@ -285,6 +247,39 @@ class Estimator:
 
         return output
 
+    """
+    Evaluation loops
+    """
+
+    def validate(
+        self,
+        validation_loader: DataLoader,
+        dry_run: Optional[bool] = None,
+        limit_batches: Optional[int] = None,
+    ) -> EvaluationOutput:
+        output = self._evaluate(
+            validation_loader, RunningStage.VALIDATION, dry_run=dry_run, limit_batches=limit_batches
+        )
+        output.hparams = get_hparams()
+        return output
+
+    def test(
+        self,
+        test_loader: DataLoader,
+        dry_run: Optional[bool] = None,
+        limit_batches: Optional[int] = None,
+    ) -> EvaluationOutput:
+        output = self._eval(test_loader, RunningStage.TEST, dry_run=dry_run, limit_batches=limit_batches)
+        output.hparams = get_hparams()
+        return output
+
+    def _evaluate(self, loader: DataLoader, stage: RunningStage, dry_run: bool, limit_batches: int) -> EvaluationOutput:
+        """This method is useful because validation can run in fit when model is already setup."""
+        model = self.fabric.setup(self.model)
+        loader = self.configure_dataloader(loader)
+        output = self.eval_epoch_loop(model, loader, stage=stage, dry_run=dry_run, limit_batches=limit_batches)
+        return EvaluationOutput(output=output)
+
     def eval_epoch_loop(
         self, model: _FabricModule, eval_loader: _FabricDataLoader, stage: RunningStage, **kwargs
     ) -> EpochOutput:
@@ -292,110 +287,75 @@ class Estimator:
 
         model.eval()
 
-        # call callback hook
-        self.fabric.call(f"on_{stage}_epoch_start", model=model)
-
         # define metrics
         metrics = self.configure_metrics(stage)
         if metrics is not None:
             metrics = metrics.to(self.fabric.device)
 
-        outputs = EpochOutput()
+        output = EpochOutput()
+
+        # hook
+        self.fabric.call(f"on_{stage}_epoch_start", model=model, output=output)
 
         pbar = self._get_batch_progress_bar(eval_loader, stage)
         with torch.inference_mode():
             for batch_idx, batch in enumerate(pbar):
                 batch = self.transfer_to_device(batch)
 
-                # call callback hook
+                # hook
                 self.fabric.call(f"on_{stage}_batch_start", model=model, batch=batch, batch_idx=batch_idx)
 
                 # run on batch
-                with Timer() as t:
-                    output = self.eval_batch_loop(model, batch, batch_idx, metrics, stage)
+                batch_out = self.eval_batch_loop(model, batch, batch_idx, metrics, stage)
 
-                # pass the output: EVAL_BATCH_OUTPUT to the logger as is, then wrap
-                self.log(output, batch_idx=batch_idx, stage=stage)
-                output = BatchOutput(batch=batch_idx, output=output, time=t.runtime)
+                # pass the batch_out: EVAL_BATCH_OUTPUT to the logger as is, then wrap
+                self.log(batch_out, batch_idx=batch_idx, stage=stage)
 
-                # call callback hook
-                self.fabric.call(f"on_{stage}_batch_end", model=model, output=output, batch=batch, batch_idx=batch_idx)
+                batch_out = BatchOutput(batch=batch_idx, output=batch_out)
+
+                # hook
+                self.fabric.call(
+                    f"on_{stage}_batch_end", model=model, output=batch_out, batch=batch, batch_idx=batch_idx
+                )
 
                 # record output
-                outputs.append(output)
+                output.append(batch_out)
 
                 # check stopping conditions
                 if self._is_done(batch_idx, kwargs.get("dry_run", None), kwargs.get("limit_batches", None)):
                     break
 
-        # call callback hook
-        self.fabric.call(f"on_{stage}_epoch_end", model=model)
-
         # aggregate metric over epoch
         if metrics is not None:
-            outputs.add_metrics(metrics.compute())
+            output.metrics = metrics.compute()
 
-        return outputs
+        # hook
+        self.fabric.call(f"on_{stage}_epoch_end", model=model, output=output)
+
+        return output
 
     def eval_batch_loop(
         self, model: _FabricModule, batch: Any, batch_idx: int, metrics: Any, stage: RunningStage
     ) -> EVAL_BATCH_OUTPUT:
-        # this might seems redundant but it's useful for active learning
+        # this might seems redundant but it's useful for active learning to hook in
         return getattr(self, f"{stage}_step")(model, batch, batch_idx, metrics)
 
-    def validate(
-        self,
-        validation_loader: DataLoader,
-        dry_run: Optional[bool] = None,
-        limit_batches: Optional[int] = None,
-    ) -> EpochOutput:
-
-        # get passed hyper-parameters
-        hparams = get_hparams()
-
-        # register dataloader and model with fabric
-        model = self.fabric.setup(self.model)
-        validation_loader = self.fabric.setup_dataloaders(validation_loader)
-
-        # run validation
-        with Timer() as t:
-            output = self.eval_epoch_loop(
-                model, validation_loader, stage=RunningStage.VALIDATION, dry_run=dry_run, limit_batches=limit_batches
-            )
-
-        return EvaluationOutput(hparams=hparams, output=output, time=t.runtime)
-
-    def test(
-        self,
-        test_loader: DataLoader,
-        dry_run: Optional[bool] = None,
-        limit_batches: Optional[int] = None,
-    ) -> EpochOutput:
-
-        # get passed hyper-parameters
-        hparams = get_hparams()
-
-        # register dataloader and model with fabric
-        model = self.fabric.setup(self.model)
-        test_loader = self.fabric.setup_dataloaders(test_loader)
-
-        # run testing
-        with Timer() as t:
-            output = self.eval_epoch_loop(
-                model, test_loader, stage=RunningStage.TEST, dry_run=dry_run, limit_batches=limit_batches
-            )
-
-        return EvaluationOutput(hparams=hparams, output=output, time=t.runtime)
+    """
+    Methods
+    """
 
     def transfer_to_device(self, batch: Any) -> Any:
-        batch = self.fabric.to_device(batch)
-        return batch
+        return self.fabric.to_device(batch)
 
     def configure_optimizer(self, optimizer: str, learning_rate: float, **optimizer_kwargs) -> Optimizer:
-        # collect optimizer kwargs
-        no_decay, weight_decay = optimizer_kwargs.get("no_decay", None), optimizer_kwargs.get("weight_decay", None)
 
-        # filter parameters to optimize
+        assert optimizer is not None, ValueError("You must provide an optimizer.")
+
+        optimizer_fn = OPTIMIZER_REGISTRY.get(optimizer)
+
+        # collect optimizer kwargs
+        optimizer_kwargs = optimizer_kwargs or {}
+        no_decay, weight_decay = optimizer_kwargs.get("no_decay", None), optimizer_kwargs.get("weight_decay", None)
         if no_decay is not None and (weight_decay is not None and weight_decay > 0.0):
             params = [
                 {
@@ -419,20 +379,26 @@ class Estimator:
             params = filter(lambda p: p.requires_grad, self.model.parameters())
 
         # instantiate optimizer
-        optimizer = OPTIMIZER_REGISTRY.get(optimizer)(params, lr=learning_rate, **optimizer_kwargs)
+        optimizer = optimizer_fn(params, lr=learning_rate, **optimizer_kwargs)
 
         return optimizer
 
     def configure_scheduler(
-        self, scheduler: str, optimizer: Optimizer, num_training_steps: int, **scheduler_kwargs
-    ) -> _LRScheduler:
+        self, scheduler: str, optimizer: Optimizer, train_loader: DataLoader, **scheduler_kwargs
+    ) -> Optional[_LRScheduler]:
+
+        if scheduler is None:
+            return
+
+        scheduler_fn = SCHEDULER_REGISTRY.get(scheduler)
+
+        # collect scheduler kwargs
+        params = list(inspect.signature(scheduler_fn).parameters.keys())
+        scheduler_kwargs = scheduler_kwargs or {}
+        num_training_steps = self._compute_num_training_steps(train_loader)
         num_warmup_steps = scheduler_kwargs.get("num_warmup_steps", None)
         if num_warmup_steps is not None and isinstance(num_warmup_steps, float):
             num_warmup_steps *= num_training_steps
-
-        scheduler_fn = SCHEDULER_REGISTRY.get(scheduler)
-        params = list(inspect.signature(scheduler_fn).parameters.keys())
-
         if "num_training_steps" in params:
             scheduler_kwargs["num_training_steps"] = num_training_steps
         if "num_warmup_steps" in params:
@@ -442,12 +408,23 @@ class Estimator:
 
         return scheduler
 
+    def configure_dataloader(self, loader: Optional[DataLoader]) -> Optional[_FabricDataLoader]:
+        """Does not move the dataloader to the device."""
+        if loader is None:
+            return
+
+        return self.fabric.setup_dataloaders(loader, replace_sampler=False, move_to_device=False)
+
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Union[MetricCollection, Metric, None]:
         pass
 
     def log(self, output: Union[BATCH_OUTPUT, EVAL_BATCH_OUTPUT], batch_idx: int, stage: RunningStage) -> None:
         """Runs after the `*_step` methods and is used to log anything."""
         pass
+
+    """
+    Steps
+    """
 
     def training_step(
         self, model: torch.nn.Module, batch: Any, batch_idx: int, metrics: Optional[Any] = None
@@ -464,18 +441,24 @@ class Estimator:
     ) -> EVAL_BATCH_OUTPUT:
         raise NotImplementedError
 
+    """
+    Utilities
+    """
+
+    def _init_deterministic(self, deterministic: bool) -> None:
+        # NOTE: taken from the lightning Trainer
+        torch.use_deterministic_algorithms(deterministic)
+        if deterministic:
+            # fixing non-deterministic part of horovod
+            # https://github.com/Lightning-AI/lightning/pull/1572/files#r420279383
+            os.environ["HOROVOD_FUSION_THRESHOLD"] = "0"
+
+            # https://docs.nvidia.com/cuda/cublas/index.html#cublasApi_reproducibility
+            os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
     def _compute_num_training_steps(self, train_loader: DataLoader) -> int:
         # FIXME: when accumulate batches is added
         return len(train_loader)
-
-    def _is_done(self, batch_idx: int, dry_run: Optional[bool], limit_batches: Optional[int]) -> bool:
-        if dry_run is not None and dry_run is True:
-            return True
-
-        if limit_batches is not None and batch_idx + 1 >= limit_batches:
-            return True
-
-        return False
 
     def _get_batch_progress_bar(self, loader: DataLoader, stage: RunningStage, **kwargs) -> tqdm:
         if stage != RunningStage.TRAIN:
@@ -485,3 +468,12 @@ class Estimator:
 
     def _get_epoch_progress_bar(self, num_epochs: int) -> tqdm:
         return trange(num_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
+
+    def _is_done(self, batch_idx: int, dry_run: Optional[bool], limit_batches: Optional[int]) -> bool:
+        if dry_run is not None and dry_run is True:
+            return True
+
+        if limit_batches is not None and batch_idx + 1 >= limit_batches:
+            return True
+
+        return False

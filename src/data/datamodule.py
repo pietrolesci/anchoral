@@ -8,6 +8,7 @@
 # and evaluation.
 import os
 from functools import partial
+from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
 
 import torch
@@ -30,6 +31,7 @@ class DataModule(HyperparametersMixin):
         train_dataset: Dataset,
         validation_dataset: Optional[Dataset] = None,
         test_dataset: Optional[Dataset] = None,
+        index_path: Optional[Union[str, Path]] = None,
         batch_size: Optional[int] = 32,
         eval_batch_size: Optional[int] = 32,
         num_workers: Optional[int] = 0,
@@ -44,6 +46,8 @@ class DataModule(HyperparametersMixin):
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset
         self.test_dataset = test_dataset
+        self.index_path = index_path
+
         self.batch_size = batch_size
         self.eval_batch_size = eval_batch_size
         self.num_workers = num_workers

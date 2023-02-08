@@ -1,8 +1,7 @@
-from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from dataclasses import dataclass, field, fields
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from numpy import ndarray
-from torch import Tensor
 from torch.utils.data import BatchSampler, DataLoader, SequentialSampler
 from torchmetrics import Metric, MetricCollection
 
@@ -12,19 +11,44 @@ from src.utilities import move_to_cpu
 
 
 @dataclass
-class Output:
-    time: float = None
+class Output(dict):
+    def __post_init__(self):
+        for field in fields(self):
+            self[field.name] = getattr(self, field.name)
 
-    def to_dict(self) -> Dict:
-        return asdict(self)
+    def __getitem__(self, k: Union[str, int]) -> Any:
+        inner_dict = {k: v for (k, v) in self.items()}  # avoid recursion
+        return inner_dict[k]
 
-    def __getitem__(self, key) -> Any:
-        return getattr(self, key)
+    def __setattr__(self, name: str, value: Any) -> None:
+        value = move_to_cpu(value)
+
+        if name in self.keys() and value is not None:
+            # Don't call self.__setitem__ to avoid recursion errors
+            super().__setitem__(name, value)
+        super().__setattr__(name, value)
+
+    def to_tuple(self) -> Tuple[Any]:
+        """
+        Convert self to a tuple containing all the attributes/keys that are not `None`.
+        """
+        return tuple(self[k] for k in self.keys())
+
+
+# @dataclass
+# class Output(ModelOutput):
+#     time: float = None
+
+# def to_dict(self) -> Dict:
+#     return asdict(self)
+
+# def __getitem__(self, key) -> Any:
+#     return getattr(self, key)
 
 
 @dataclass
 class BatchOutput(Output):
-    batch: int = None
+    batch_idx: int = None
     output: BATCH_OUTPUT = None
 
 
@@ -55,7 +79,7 @@ class EpochOutput(Output):
 
 @dataclass
 class FitEpochOutput(Output):
-    epoch: int = None
+    epoch_idx: int = None
     train: EpochOutput = None
     validation: EpochOutput = None
 
@@ -123,7 +147,7 @@ Active learning
 
 
 @dataclass
-class PoolEpochOutput(EpochOutput):
+class QueryOutput(EpochOutput):
     """Output of a run on an entire pool dataloader.
 
     metrics: Metrics aggregated over the entire pool dataloader.
@@ -138,10 +162,10 @@ class PoolEpochOutput(EpochOutput):
 
 @dataclass
 class RoundOutput(Output):
-    round: int = None
+    round_idx: int = None
     fit: FitOutput = None
     test: EpochOutput = None
-    pool: PoolEpochOutput = None
+    query: QueryOutput = None
 
 
 @dataclass

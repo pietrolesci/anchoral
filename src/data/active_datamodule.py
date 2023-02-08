@@ -48,6 +48,10 @@ class ActiveDataModule(DataModule):
         return len(self._df) - self.train_size
 
     @property
+    def pool_indices(self) -> List[int]:
+        return self._df.loc[(self._df[SpecialColumns.IS_LABELLED] == False), SpecialColumns.ID].tolist()
+
+    @property
     def has_labelled_data(self) -> bool:
         """Checks whether there are labelled data available."""
         return self.train_size > 0
@@ -88,7 +92,7 @@ class ActiveDataModule(DataModule):
             # and create index
             .assign(
                 **{
-                    SpecialColumns.ID: lambda df_: df_.index.tolist(),
+                    SpecialColumns.ID: lambda df_: list(range(len(df_))),
                     SpecialColumns.IS_LABELLED: False,
                     SpecialColumns.IS_VALIDATION: False,
                     SpecialColumns.LABELLING_ROUND: -1,
