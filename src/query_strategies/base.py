@@ -22,6 +22,7 @@ from src.utilities import Timer, get_hparams
 
 
 class ActiveEstimator(Estimator):
+
     def transfer_to_device(self, batch: Any) -> Any:
 
         # remove string columns that cannot be transfered on gpu
@@ -42,23 +43,27 @@ class ActiveEstimator(Estimator):
         num_rounds: int,
         query_size: int,
         val_perc: float,
+        reinit_model: bool = True,
         fit_kwargs: Optional[Dict] = None,
         test_kwargs: Optional[Dict] = None,
         pool_kwargs: Optional[Dict] = None,
         save_dir: Optional[bool] = None,
+        model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
     ) -> ActiveFitOutput:
 
         # get passed hyper-parameters
         hparams = get_hparams()
+        outputs = ActiveFitOutput(hparams=hparams)
 
         fit_kwargs = fit_kwargs or {}
         test_kwargs = test_kwargs or {}
         pool_kwargs = pool_kwargs or {}
 
-        outputs = ActiveFitOutput(hparams=hparams)
+        if reinit_model:
+            self.save_state_dict(model_cache_dir)
 
         pbar = self._get_round_progress_bar(num_rounds)
-
+        
         # time the entire active_learning_loop
         with Timer() as t:
             for round_idx in pbar:
@@ -85,6 +90,9 @@ class ActiveEstimator(Estimator):
                 if output.pool.indices is not None:
                     active_datamodule.label(indices=output.pool.indices, round_idx=round_idx, val_perc=val_perc)
 
+                if reinit_model:
+                    self.load_state_dict(model_cache_dir)
+
         outputs.time = t.runtime
 
         return outputs
@@ -95,6 +103,15 @@ class ActiveEstimator(Estimator):
 
         with (save_dir / f"round_{round}.pkl").open("wb") as fl:
             pickle.dump(output, fl)
+
+    def save_state_dict(self, cache_dir: Union[str, Path]) -> None:
+        cache_dir = Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        torch.save(self.model.state_dict(), cache_dir / "state_dict.pt")
+
+    def load_state_dict(self, cache_dir: Union[str, Path]) -> None:
+        cache_dir = Path(cache_dir)
+        self.model.load_state_dict(torch.load(cache_dir / "state_dict.pt"))
 
     def round_loop(
         self,
@@ -108,6 +125,7 @@ class ActiveEstimator(Estimator):
 
         output = RoundOutput(round=round_idx)
 
+        # fit model on the available data
         if active_datamodule.has_labelled_data:
             output.fit = self.fit(
                 train_loader=active_datamodule.train_loader(),
@@ -115,14 +133,17 @@ class ActiveEstimator(Estimator):
                 **fit_kwargs,
             )
 
+        # test model
         if active_datamodule.has_test_data:
             output.test = self.test(test_loader=active_datamodule.test_loader(), **test_kwargs)
 
+        # pool selection
         if active_datamodule.has_unlabelled_data:
 
             # query indices to annotate
             pool_output = self.query(
                 pool_loader=active_datamodule.pool_loader(),
+                pool_index=active_datamodule.pool_index,
                 query_size=query_size,
                 round=round_idx,
                 **pool_kwargs,
@@ -134,6 +155,7 @@ class ActiveEstimator(Estimator):
     def query(
         self,
         pool_loader: DataLoader,
+        pool_index,
         query_size: int,
         **kwargs,
     ) -> PoolEpochOutput:
@@ -144,14 +166,14 @@ class ActiveEstimator(Estimator):
 
         # run pool loop
         with Timer() as t:
-            output = self.pool_epoch_loop(model, pool_loader, query_size, **kwargs)
+            output = self.pool_epoch_loop(model=model, loader=pool_loader, index=pool_index, query_size=query_size, **kwargs)
 
         output.time = t.runtime
 
         return output
 
     def pool_epoch_loop(
-        self, model: _FabricModule, loader: _FabricDataLoader, query_size: int, **kwargs
+        self, model: _FabricModule, loader: _FabricDataLoader, index, query_size: int, **kwargs
     ) -> PoolEpochOutput:
         raise NotImplementedError
 
@@ -224,8 +246,8 @@ class UncertaintyBasedStrategy(ActiveEstimator):
         if "scores" not in output:
             if "logits" in output:
                 output["scores"] = self.score_fn(output["logits"])
-        else:
-            raise KeyError("In `pool_step` you must return a dictionary with either 'scores' or 'logits' key.")
+            else:
+                raise KeyError("In `pool_step` you must return a dictionary with either 'scores' or 'logits' key.")
 
         output[SpecialColumns.ID] = np.array(ids)
 
