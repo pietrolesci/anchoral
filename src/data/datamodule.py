@@ -20,18 +20,19 @@ from torch.utils.data import BatchSampler, DataLoader, RandomSampler, Sequential
 
 from src.enums import InputColumns, RunningStage
 from transformers import PreTrainedTokenizerBase
+import hnswlib as hb
 
 
 class DataModule(HyperparametersMixin):
     _hparams_ignore = ["train_dataset", "val_dataset", "test_dataset"]
-    _default_columns: List[str] = InputColumns
+    _default_columns: List[str] = [InputColumns.TARGET, InputColumns.INPUT_IDS, InputColumns.ATT_MASK]
+    _index: hb.Index
 
     def __init__(
         self,
         train_dataset: Dataset,
         validation_dataset: Optional[Dataset] = None,
         test_dataset: Optional[Dataset] = None,
-        index_path: Optional[Union[str, Path]] = None,
         batch_size: Optional[int] = 32,
         eval_batch_size: Optional[int] = 32,
         num_workers: Optional[int] = 0,
@@ -46,7 +47,6 @@ class DataModule(HyperparametersMixin):
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset
         self.test_dataset = test_dataset
-        self.index_path = index_path
 
         self.batch_size = batch_size
         self.eval_batch_size = eval_batch_size
@@ -60,6 +60,10 @@ class DataModule(HyperparametersMixin):
 
         self.save_hyperparameters(ignore=self._hparams_ignore)
         self.setup()
+
+    @property
+    def index(self) -> Optional[hb.Index]:
+        return self._index
 
     def setup(self, stage: Optional[str] = None) -> None:
         pass
@@ -118,6 +122,11 @@ class DataModule(HyperparametersMixin):
                 datasets[f"{stage}_dataset"] = dataset
 
         return cls(**datasets, **kwargs)
+
+    def load_index(self, path: Union[str, Path], embedding_dim: int) -> None:
+        p = hb.Index(space="cosine", dim=embedding_dim)
+        p.load_index(str(path))
+        self._index = p
 
 
 class ClassificationDataModule(DataModule):

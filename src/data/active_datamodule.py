@@ -26,6 +26,7 @@ from transformers import PreTrainedTokenizerBase
 
 class ActiveDataModule(DataModule):
     _df: pd.DataFrame = None
+    _default_columns: List[int] = [InputColumns.TARGET, InputColumns.INPUT_IDS, InputColumns.ATT_MASK, SpecialColumns.ID]
 
     """
     Properties
