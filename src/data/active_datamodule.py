@@ -26,7 +26,13 @@ from transformers import PreTrainedTokenizerBase
 
 class ActiveDataModule(DataModule):
     _df: pd.DataFrame = None
-    _default_columns: List[int] = [InputColumns.TARGET, InputColumns.INPUT_IDS, InputColumns.ATT_MASK, SpecialColumns.ID]
+    _default_columns: List[int] = [
+        InputColumns.TARGET,
+        InputColumns.INPUT_IDS,
+        InputColumns.ATT_MASK,
+        SpecialColumns.ID,
+    ]
+
 
     """
     Properties
@@ -50,7 +56,9 @@ class ActiveDataModule(DataModule):
 
     @property
     def pool_indices(self) -> List[int]:
-        return self._df.loc[(self._df[SpecialColumns.IS_LABELLED] == False), SpecialColumns.ID].tolist()
+        return self._df.loc[
+            (self._df[SpecialColumns.IS_LABELLED] == False), SpecialColumns.ID
+        ].tolist()
 
     @property
     def has_labelled_data(self) -> bool:
@@ -93,7 +101,6 @@ class ActiveDataModule(DataModule):
             # and create index
             .assign(
                 **{
-                    SpecialColumns.ID: lambda df_: list(range(len(df_))),
                     SpecialColumns.IS_LABELLED: False,
                     SpecialColumns.IS_VALIDATION: False,
                     SpecialColumns.LABELLING_ROUND: -1,
@@ -111,7 +118,9 @@ class ActiveDataModule(DataModule):
         Args:
             pool_idx (List[int]): The index (relative to the pool_fold, not the overall data) to label.
         """
-        assert isinstance(indices, list), ValueError(f"`indices` must be of type `List[int]`, not {type(indices)}.")
+        assert isinstance(indices, list), ValueError(
+            f"`indices` must be of type `List[int]`, not {type(indices)}."
+        )
         assert isinstance(val_perc, float) or val_perc is None, ValueError(
             f"`val_perc` must be of type `float`, not {type(val_perc)}"
         )
@@ -123,7 +132,14 @@ class ActiveDataModule(DataModule):
         if self.should_val_split and val_perc is not None:
             n_val = round(val_perc * len(indices)) or 1
             val_indices = random.sample(indices, n_val)
-            self._df.loc[self._df[SpecialColumns.ID].isin(val_indices), SpecialColumns.IS_VALIDATION] = True
+            self._df.loc[
+                self._df[SpecialColumns.ID].isin(val_indices), SpecialColumns.IS_VALIDATION
+            ] = True
+
+        # remove instance from the index
+        if self.index is not None:
+            for idx in indices:
+                self.index.mark_deleted(idx)
 
     """
     DataLoaders
@@ -131,7 +147,8 @@ class ActiveDataModule(DataModule):
 
     def train_loader(self) -> DataLoader:
         train_df = self._df.loc[
-            (self._df[SpecialColumns.IS_LABELLED] == True) & (self._df[SpecialColumns.IS_VALIDATION] == False)
+            (self._df[SpecialColumns.IS_LABELLED] == True)
+            & (self._df[SpecialColumns.IS_VALIDATION] == False)
         ]
         train_dataset = Dataset.from_pandas(train_df, preserve_index=False)
 
@@ -144,7 +161,8 @@ class ActiveDataModule(DataModule):
     def validation_loader(self) -> Optional[DataLoader]:
         if self.should_val_split:
             val_df = self._df.loc[
-                (self._df[SpecialColumns.IS_LABELLED] == True) & (self._df[SpecialColumns.IS_VALIDATION] == True)
+                (self._df[SpecialColumns.IS_LABELLED] == True)
+                & (self._df[SpecialColumns.IS_VALIDATION] == True)
             ]
             val_dataset = Dataset.from_pandas(val_df, preserve_index=False)
         else:
@@ -159,7 +177,8 @@ class ActiveDataModule(DataModule):
 
     def pool_loader(self) -> DataLoader:
         pool_df = self._df.loc[
-            (self._df[SpecialColumns.IS_LABELLED] == False), [i for i in self._df.columns if i != InputColumns.TARGET]
+            (self._df[SpecialColumns.IS_LABELLED] == False),
+            [i for i in self._df.columns if i != InputColumns.TARGET],
         ]
         pool_dataset = Dataset.from_pandas(pool_df, preserve_index=False)
 
@@ -176,12 +195,17 @@ class ActiveDataModule(DataModule):
         # remove feature labels
         to_remove = [i for i in InputColumns if i != InputColumns.TARGET]
 
-        self._df.drop(columns=to_remove).to_parquet(save_dir / "labelled_dataset.parquet", index=False)
+        self._df.drop(columns=to_remove).to_parquet(
+            save_dir / "labelled_dataset.parquet", index=False
+        )
 
 
 class ActiveClassificationDataModule(ActiveDataModule):
     def __init__(
-        self, tokenizer: Optional[PreTrainedTokenizerBase] = None, max_source_length: int = 128, **kwargs
+        self,
+        tokenizer: Optional[PreTrainedTokenizerBase] = None,
+        max_source_length: int = 128,
+        **kwargs,
     ) -> None:
         self._hparams_ignore.append("tokenizer")
         super().__init__(**kwargs)
@@ -190,7 +214,6 @@ class ActiveClassificationDataModule(ActiveDataModule):
         self.max_source_length = max_source_length
 
     def get_collate_fn(self, stage: Optional[str] = None) -> Optional[Callable]:
-
         return partial(
             collate_fn,
             max_source_length=self.max_source_length,

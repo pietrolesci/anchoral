@@ -9,8 +9,10 @@
 import os
 from functools import partial
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union, Tuple
+import numpy as np
 
+import hnswlib as hb
 import torch
 from datasets import Dataset, DatasetDict
 from lightning.pytorch.core.mixins.hparams_mixin import HyperparametersMixin
@@ -20,7 +22,6 @@ from torch.utils.data import BatchSampler, DataLoader, RandomSampler, Sequential
 
 from src.enums import InputColumns, RunningStage
 from transformers import PreTrainedTokenizerBase
-import hnswlib as hb
 
 
 class DataModule(HyperparametersMixin):
@@ -61,12 +62,30 @@ class DataModule(HyperparametersMixin):
         self.save_hyperparameters(ignore=self._hparams_ignore)
         self.setup()
 
+    def setup(self) -> None:
+        pass
+
     @property
     def index(self) -> Optional[hb.Index]:
         return self._index
 
-    def setup(self, stage: Optional[str] = None) -> None:
-        pass
+    def load_index(self, path: Union[str, Path], embedding_dim: int) -> None:
+        p = hb.Index(space="cosine", dim=embedding_dim)
+        p.load_index(str(path))
+        self._index = p
+
+    def search_index(self, query: np.ndarray, query_size: int, query_in_set: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+        # retrieve one additional element if the query is in the set we are looking in
+        # because the query itself is returned as the most similar element and we need to remove it
+        query_size = query_size + 1 if query_in_set else query_size
+        
+        indices, distances = self.index.knn_query(query, query_size)
+
+        if query_in_set:
+            # remove the first element retrieved if the query is in the set since it's the element itself
+            indices, distances = indices[:, 1:], distances[:, 1:]
+        
+        return indices, distances
 
     def train_loader(self) -> DataLoader:
         return DataLoader(
@@ -123,11 +142,6 @@ class DataModule(HyperparametersMixin):
 
         return cls(**datasets, **kwargs)
 
-    def load_index(self, path: Union[str, Path], embedding_dim: int) -> None:
-        p = hb.Index(space="cosine", dim=embedding_dim)
-        p.load_index(str(path))
-        self._index = p
-
 
 class ClassificationDataModule(DataModule):
     def __init__(
@@ -140,7 +154,6 @@ class ClassificationDataModule(DataModule):
         self.max_source_length = max_source_length
 
     def get_collate_fn(self, stage: Optional[str] = None) -> Optional[Callable]:
-
         return partial(
             collate_fn,
             max_source_length=self.max_source_length,
