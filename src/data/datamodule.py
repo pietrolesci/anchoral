@@ -9,10 +9,10 @@
 import os
 from functools import partial
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Union, Tuple
-import numpy as np
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import hnswlib as hb
+import numpy as np
 import torch
 from datasets import Dataset, DatasetDict
 from lightning.pytorch.core.mixins.hparams_mixin import HyperparametersMixin
@@ -74,17 +74,19 @@ class DataModule(HyperparametersMixin):
         p.load_index(str(path))
         self._index = p
 
-    def search_index(self, query: np.ndarray, query_size: int, query_in_set: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+    def search_index(
+        self, query: np.ndarray, query_size: int, query_in_set: bool = True
+    ) -> Tuple[np.ndarray, np.ndarray]:
         # retrieve one additional element if the query is in the set we are looking in
         # because the query itself is returned as the most similar element and we need to remove it
         query_size = query_size + 1 if query_in_set else query_size
-        
+
         indices, distances = self.index.knn_query(query, query_size)
 
         if query_in_set:
             # remove the first element retrieved if the query is in the set since it's the element itself
             indices, distances = indices[:, 1:], distances[:, 1:]
-        
+
         return indices, distances
 
     def train_loader(self) -> DataLoader:

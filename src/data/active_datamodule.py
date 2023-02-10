@@ -13,6 +13,7 @@ from functools import partial
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
 
+import numpy as np
 import pandas as pd
 import torch
 from datasets import Dataset
@@ -22,7 +23,6 @@ from torch.utils.data import DataLoader
 from src.data.datamodule import DataModule, _pad
 from src.enums import InputColumns, RunningStage, SpecialColumns
 from transformers import PreTrainedTokenizerBase
-import numpy as np
 
 
 class ActiveDataModule(DataModule):
@@ -33,7 +33,6 @@ class ActiveDataModule(DataModule):
         InputColumns.ATT_MASK,
         SpecialColumns.ID,
     ]
-
 
     """
     Properties
@@ -58,15 +57,13 @@ class ActiveDataModule(DataModule):
     @property
     def train_indices(self) -> np.ndarray:
         return self._df.loc[
-            (self._df[SpecialColumns.IS_LABELLED] == True) & ((self._df[SpecialColumns.IS_VALIDATION] == False)), 
-            SpecialColumns.ID
+            (self._df[SpecialColumns.IS_LABELLED] == True) & ((self._df[SpecialColumns.IS_VALIDATION] == False)),
+            SpecialColumns.ID,
         ].values
 
     @property
     def pool_indices(self) -> np.ndarray:
-        return self._df.loc[
-            (self._df[SpecialColumns.IS_LABELLED] == False), SpecialColumns.ID
-        ].values
+        return self._df.loc[(self._df[SpecialColumns.IS_LABELLED] == False), SpecialColumns.ID].values
 
     @property
     def has_labelled_data(self) -> bool:
@@ -102,16 +99,12 @@ class ActiveDataModule(DataModule):
     """
 
     def setup(self, stage: Optional[str] = None) -> None:
-        self._df = (
-            self.train_dataset
-            .to_pandas()
-            .assign(
-                **{
-                    SpecialColumns.IS_LABELLED: False,
-                    SpecialColumns.IS_VALIDATION: False,
-                    SpecialColumns.LABELLING_ROUND: -1,
-                }
-            )
+        self._df = self.train_dataset.to_pandas().assign(
+            **{
+                SpecialColumns.IS_LABELLED: False,
+                SpecialColumns.IS_VALIDATION: False,
+                SpecialColumns.LABELLING_ROUND: -1,
+            }
         )
 
     def mask_train_from_index(self) -> None:
@@ -127,7 +120,7 @@ class ActiveDataModule(DataModule):
         train_ids = self.train_indices
         for i in train_ids:
             self.index.unmark_deleted(i)
-    
+
     def get_train_embeddings(self) -> np.ndarray:
         self.unmask_train_from_index()
         embeddings = self.index.get_items(self.train_indices)
@@ -147,9 +140,7 @@ class ActiveDataModule(DataModule):
         Args:
             pool_idx (List[int]): The index (relative to the pool_fold, not the overall data) to label.
         """
-        assert isinstance(indices, list), ValueError(
-            f"`indices` must be of type `List[int]`, not {type(indices)}."
-        )
+        assert isinstance(indices, list), ValueError(f"`indices` must be of type `List[int]`, not {type(indices)}.")
         assert isinstance(val_perc, float) or val_perc is None, ValueError(
             f"`val_perc` must be of type `float`, not {type(val_perc)}"
         )
@@ -161,9 +152,7 @@ class ActiveDataModule(DataModule):
         if self.should_val_split and val_perc is not None:
             n_val = round(val_perc * len(indices)) or 1
             val_indices = random.sample(indices, n_val)
-            self._df.loc[
-                self._df[SpecialColumns.ID].isin(val_indices), SpecialColumns.IS_VALIDATION
-            ] = True
+            self._df.loc[self._df[SpecialColumns.ID].isin(val_indices), SpecialColumns.IS_VALIDATION] = True
 
         # remove instance from the index
         if self.index is not None:
@@ -176,8 +165,7 @@ class ActiveDataModule(DataModule):
 
     def train_loader(self) -> DataLoader:
         train_df = self._df.loc[
-            (self._df[SpecialColumns.IS_LABELLED] == True)
-            & (self._df[SpecialColumns.IS_VALIDATION] == False)
+            (self._df[SpecialColumns.IS_LABELLED] == True) & (self._df[SpecialColumns.IS_VALIDATION] == False)
         ]
         train_dataset = Dataset.from_pandas(train_df, preserve_index=False)
 
@@ -190,8 +178,7 @@ class ActiveDataModule(DataModule):
     def validation_loader(self) -> Optional[DataLoader]:
         if self.should_val_split:
             val_df = self._df.loc[
-                (self._df[SpecialColumns.IS_LABELLED] == True)
-                & (self._df[SpecialColumns.IS_VALIDATION] == True)
+                (self._df[SpecialColumns.IS_LABELLED] == True) & (self._df[SpecialColumns.IS_VALIDATION] == True)
             ]
             val_dataset = Dataset.from_pandas(val_df, preserve_index=False)
         else:
@@ -228,9 +215,7 @@ class ActiveDataModule(DataModule):
         # remove feature labels
         to_remove = [i for i in InputColumns if i != InputColumns.TARGET]
 
-        self._df.drop(columns=to_remove).to_parquet(
-            save_dir / "labelled_dataset.parquet", index=False
-        )
+        self._df.drop(columns=to_remove).to_parquet(save_dir / "labelled_dataset.parquet", index=False)
 
 
 class ActiveClassificationDataModule(ActiveDataModule):
@@ -269,7 +254,6 @@ class ActiveClassificationDataModule(ActiveDataModule):
     @property
     def label2id(self) -> Dict[str, int]:
         return {v: k for k, v in self.id2label.items()}
-        
 
 
 """
