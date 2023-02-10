@@ -22,7 +22,8 @@ poetry run python ./scripts/process_civil_comments.py \
     --output_dir='./data/processed/civil_comments' \
     --seed=1994 \
     --min_chars=10 \
-    --n_samples=100_000
+    --train_samples=100_000 \
+    --test_samples=50_000
 
 poetry run python ./scripts/embed_data.py \
     --data_path='./data/processed/civil_comments' \

@@ -5,10 +5,10 @@ import pandas as pd
 import srsly
 from datasets import Dataset, DatasetDict
 from datasets.features import ClassLabel, Features, Value
+from sklearn.utils import resample
+from tqdm.auto import tqdm
 
 from src.enums import InputColumns, RunningStage, SpecialColumns
-from sklearn.utils import resample
-
 
 ############################################################################################
 # Download data from Kaggle
@@ -16,14 +16,28 @@ from sklearn.utils import resample
 ############################################################################################
 
 
+def subsample(df: pd.DataFrame, n_samples: int, min_chars: int, seed: int) -> pd.DataFrame:
+    df["len"] = df[SpecialColumns.TEXT].str.replace("\W", "", regex=True).str.len()
+    df = df.loc[df["len"] >= min_chars].sort_values(["len"])
+    ids = resample(df.index, replace=False, stratify=df["labels"], n_samples=n_samples, random_state=seed)
+    df = df.loc[df.index.isin(ids)].drop(columns=["len"])
+    return df
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output_dir", type=str)
     parser.add_argument("--input_dir", type=str)
     parser.add_argument("--seed", type=int)
-    parser.add_argument("--n_samples", type=int, default=100_000)
+    parser.add_argument("--train_samples", type=int, default=100_000)
+    parser.add_argument("--test_samples", type=int, default=50_000)
     parser.add_argument("--min_chars", type=int, default=10)
     args = parser.parse_args()
+
+    pbar = tqdm(total=4)
+
+    # ============ STEP 1 ============
+    pbar.set_description("Loading and tidying")
 
     # load data
     df = pd.read_csv(Path(args.input_dir) / "all_data.csv")
@@ -37,6 +51,11 @@ if __name__ == "__main__":
 
     # drop null values
     df = df.dropna(subset=[SpecialColumns.TEXT, "toxicity"])
+
+    pbar.update(1)
+
+    # ============ STEP 2 ============
+    pbar.set_description("Removing duplicates and aggregating")
 
     # compute unique texts exact
     df["unique_id"] = df.groupby(SpecialColumns.TEXT).ngroup().astype(int)
@@ -62,15 +81,23 @@ if __name__ == "__main__":
     # rename id column in order to use it
     df = df.rename(columns={"id": SpecialColumns.ID})
 
+    pbar.update(1)
+
+    # ============ STEP 3 ============
+    pbar.set_description("Splitting and subsampling")
+
     # split in train and test
     train_df = df.loc[df["split"] == "train"].drop(columns=["split", "avg_toxicity"])
     test_df = df.loc[df["split"] == "test"].drop(columns=["split", "avg_toxicity"])
 
     # subsample training set
-    train_df["len"] = train_df[SpecialColumns.TEXT].str.replace("\W", "", regex=True).str.len()
-    train_df = train_df.loc[train_df["len"] >= args.min_chars].sort_values(["len"])
-    ids = resample(train_df.index, replace=False, stratify=train_df["labels"], n_samples=args.n_samples, random_state=args.seed)
-    train_df = train_df.loc[train_df.index.isin(ids)].drop(columns=["len"])
+    train_df = subsample(train_df, n_samples=args.train_samples, min_chars=args.min_chars, seed=args.seed)
+    test_df = subsample(test_df, n_samples=args.test_samples, min_chars=args.min_chars, seed=args.seed)
+
+    pbar.update(1)
+
+    # ============ STEP 4 ============
+    pbar.set_description("Saving")
 
     features = Features(
         {
@@ -92,5 +119,12 @@ if __name__ == "__main__":
     dataset_dict.save_to_disk(args.output_dir)
 
     # metadata
-    meta = {"train_val_seed": args.seed}
+    meta = {
+        "seed": args.seed,
+        "train_samples": args.train_samples,
+        "test_samples": args.test_samples,
+        "min_chars": args.min_chars,
+    }
     srsly.write_yaml(Path(args.output_dir) / "metadata.yaml", meta)
+
+    pbar.update(1)

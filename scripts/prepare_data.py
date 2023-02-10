@@ -15,6 +15,7 @@ if __name__ == "__main__":
 
     # load data
     dataset_dict = load_from_disk(args.input_dir)
+    meta = srsly.read_yaml(Path(args.input_dir) / "metadata.yaml")
 
     # define tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.name_or_path)
@@ -26,5 +27,5 @@ if __name__ == "__main__":
     dataset_dict.save_to_disk(args.output_dir)
 
     # metadata
-    meta = {"name_or_path": args.name_or_path}
+    meta["name_or_path"] = args.name_or_path
     srsly.write_yaml(Path(args.output_dir) / "metadata.yaml", meta)
