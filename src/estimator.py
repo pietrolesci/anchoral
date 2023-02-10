@@ -128,7 +128,6 @@ class Estimator:
         limit_train_batches: Optional[int],
         limit_validation_batches: Optional[int],
     ) -> FitEpochOutput:
-
         train_out = self.train_epoch_loop(
             epoch_idx,
             model,
@@ -179,7 +178,6 @@ class Estimator:
 
         pbar = self._get_batch_progress_bar(train_loader, RunningStage.TRAIN, epoch_idx=epoch_idx)
         for batch_idx, batch in enumerate(pbar):
-
             # put batch on correct device
             batch = self.transfer_to_device(batch)
 
@@ -348,7 +346,6 @@ class Estimator:
         return self.fabric.to_device(batch)
 
     def configure_optimizer(self, optimizer: str, learning_rate: float, **optimizer_kwargs) -> Optimizer:
-
         assert optimizer is not None, ValueError("You must provide an optimizer.")
 
         optimizer_fn = OPTIMIZER_REGISTRY.get(optimizer)
@@ -386,7 +383,6 @@ class Estimator:
     def configure_scheduler(
         self, scheduler: str, optimizer: Optimizer, train_loader: DataLoader, **scheduler_kwargs
     ) -> Optional[_LRScheduler]:
-
         if scheduler is None:
             return
 

@@ -22,6 +22,7 @@ from torch.utils.data import DataLoader
 from src.data.datamodule import DataModule, _pad
 from src.enums import InputColumns, RunningStage, SpecialColumns
 from transformers import PreTrainedTokenizerBase
+import numpy as np
 
 
 class ActiveDataModule(DataModule):
@@ -55,10 +56,17 @@ class ActiveDataModule(DataModule):
         return len(self._df) - self.train_size
 
     @property
-    def pool_indices(self) -> List[int]:
+    def train_indices(self) -> np.ndarray:
+        return self._df.loc[
+            (self._df[SpecialColumns.IS_LABELLED] == True) & ((self._df[SpecialColumns.IS_VALIDATION] == False)), 
+            SpecialColumns.ID
+        ].values
+
+    @property
+    def pool_indices(self) -> np.ndarray:
         return self._df.loc[
             (self._df[SpecialColumns.IS_LABELLED] == False), SpecialColumns.ID
-        ].tolist()
+        ].values
 
     @property
     def has_labelled_data(self) -> bool:
@@ -96,9 +104,7 @@ class ActiveDataModule(DataModule):
     def setup(self, stage: Optional[str] = None) -> None:
         self._df = (
             self.train_dataset
-            # cast to dataframe
             .to_pandas()
-            # and create index
             .assign(
                 **{
                     SpecialColumns.IS_LABELLED: False,
@@ -107,6 +113,29 @@ class ActiveDataModule(DataModule):
                 }
             )
         )
+
+    def mask_train_from_index(self) -> None:
+        if self.index is None:
+            return
+        train_ids = self.train_indices
+        for i in train_ids:
+            self.index.mark_deleted(i)
+
+    def unmask_train_from_index(self) -> None:
+        if self.index is None:
+            return
+        train_ids = self.train_indices
+        for i in train_ids:
+            self.index.unmark_deleted(i)
+    
+    def get_train_embeddings(self) -> np.ndarray:
+        self.unmask_train_from_index()
+        embeddings = self.index.get_items(self.train_indices)
+        self.mask_train_from_index()
+        return embeddings
+
+    def get_pool_embeddings(self) -> np.ndarray:
+        return self.index.get_items(self.pool_indices)
 
     """
     Main methods
@@ -175,11 +204,15 @@ class ActiveDataModule(DataModule):
                 collate_fn=self.get_collate_fn(RunningStage.VALIDATION),
             )
 
-    def pool_loader(self) -> DataLoader:
+    def pool_loader(self, subset_indices: Optional[List[int]] = None) -> DataLoader:
         pool_df = self._df.loc[
             (self._df[SpecialColumns.IS_LABELLED] == False),
             [i for i in self._df.columns if i != InputColumns.TARGET],
         ]
+
+        if subset_indices is not None:
+            pool_df = pool_df.loc[pool_df[SpecialColumns.ID].isin(subset_indices)]
+
         pool_dataset = Dataset.from_pandas(pool_df, preserve_index=False)
 
         return DataLoader(
@@ -236,6 +269,7 @@ class ActiveClassificationDataModule(ActiveDataModule):
     @property
     def label2id(self) -> Dict[str, int]:
         return {v: k for k, v in self.id2label.items()}
+        
 
 
 """

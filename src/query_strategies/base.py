@@ -9,7 +9,6 @@ from lightning.fabric.connector import _PLUGIN_INPUT, _PRECISION_INPUT
 from lightning.fabric.loggers import Logger
 from lightning.fabric.strategies import Strategy
 from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule
-from torch.utils.data import DataLoader
 from tqdm.auto import tqdm, trange
 
 from src.containers import ActiveFitOutput, BatchOutput, EpochOutput, QueryOutput, RoundOutput
@@ -18,7 +17,10 @@ from src.enums import RunningStage, SpecialColumns
 from src.estimator import Estimator
 from src.registries import SCORING_FUNCTIONS
 from src.types import POOL_BATCH_OUTPUT
-from src.utilities import Timer, get_hparams
+from src.utilities import get_hparams
+from torch.utils.data import DataLoader
+
+from sklearn.utils.validation import check_random_state  # https://scikit-learn.org/stable/developers/develop.html#random-numbers
 
 
 class ActiveEstimator(Estimator):
@@ -39,7 +41,6 @@ class ActiveEstimator(Estimator):
         pool_kwargs: Optional[Dict] = None,
         model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
     ) -> ActiveFitOutput:
-
         # get passed hyper-parameters
         hparams = get_hparams()
         outputs = ActiveFitOutput(hparams=hparams)
@@ -84,7 +85,6 @@ class ActiveEstimator(Estimator):
         test_kwargs: Optional[Dict],
         pool_kwargs: Optional[Dict],
     ) -> RoundOutput:
-
         output = RoundOutput()
 
         # hook
@@ -103,12 +103,8 @@ class ActiveEstimator(Estimator):
             output.test = self.test(test_loader=active_datamodule.test_loader(), **test_kwargs)
 
         # query indices to annotate
-        if active_datamodule.pool_size > query_size:
-            output.query = self.query(
-                active_datamodule=active_datamodule,
-                query_size=query_size,
-                **pool_kwargs,
-            )
+        if active_datamodule.pool_size > query_size:            
+            output.query = self.query(active_datamodule=active_datamodule, query_size=query_size, **pool_kwargs)
 
         # hook
         self.fabric.call("on_round_end", output=output)
@@ -119,15 +115,31 @@ class ActiveEstimator(Estimator):
     Query loop
     """
 
-    def query(self, actve_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
-        raise NotImplementedError
+    def query(self, active_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
+        pool_loader = self.get_pool_loader(active_datamodule=active_datamodule)
+        
+        model = self.fabric.setup(self.model)
+        pool_loader = self.configure_dataloader(pool_loader)
+        
+        return self.query_loop(model, pool_loader, query_size, **kwargs)
 
+    def query_loop(
+        self,
+        model: _FabricModule,
+        pool_dataloader: _FabricDataLoader,
+        query_size: int,
+        **kwargs,
+    ) -> QueryOutput:
+        raise NotImplementedError
+    
     """
     Methods
     """
 
-    def transfer_to_device(self, batch: Any) -> Any:
+    def get_pool_loader(self, active_datamodule: ActiveDataModule) -> DataLoader:
+        return active_datamodule.pool_loader()
 
+    def transfer_to_device(self, batch: Any) -> Any:
         # remove string columns that cannot be transfered on gpu
         columns_on_cpu = batch.pop("on_cpu", None)
 
@@ -161,32 +173,24 @@ class ActiveEstimator(Estimator):
 
 
 class RandomStrategy(ActiveEstimator):
-    def query(self, actve_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
-        pool_indices = actve_datamodule.pool_indices
-        indices = np.random.choice(pool_indices, size=query_size, replace=False)
+
+    def __init__(self, seed: int, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.seed = seed
+        self.rng = check_random_state(seed)  # reproducibility
+
+
+    def query(self, active_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
+        pool_indices = active_datamodule.pool_indices
+        indices = self.rng.choice(pool_indices, size=query_size, replace=False)
         return QueryOutput(indices=indices)
 
 
 class UncertaintyBasedStrategy(ActiveEstimator):
     _scoring_fn_registry = SCORING_FUNCTIONS
 
-    def __init__(
-        self,
-        model: torch.nn.Module,
-        score_fn: Union[str, Callable],
-        accelerator: Optional[Union[str, Accelerator]] = None,
-        strategy: Optional[Union[str, Strategy]] = None,
-        devices: Optional[Union[List[int], str, int]] = None,
-        num_nodes: int = 1,
-        precision: _PRECISION_INPUT = 32,
-        plugins: Optional[Union[_PLUGIN_INPUT, List[_PLUGIN_INPUT]]] = None,
-        callbacks: Optional[Union[List[Any], Any]] = None,
-        loggers: Optional[Union[Logger, List[Logger]]] = None,
-        deterministic: bool = True,
-    ) -> None:
-        super().__init__(
-            model, accelerator, strategy, devices, num_nodes, precision, plugins, callbacks, loggers, deterministic
-        )
+    def __init__(self, score_fn: Union[str, Callable], *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         if isinstance(score_fn, Callable):
             self.score_fn = score_fn
         else:
@@ -196,17 +200,9 @@ class UncertaintyBasedStrategy(ActiveEstimator):
     Query loop
     """
 
-    def query(self, actve_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
-        # register dataloader and model with fabric
-        model = self.fabric.setup(self.model)
-        pool_loader = self.configure_dataloader(actve_datamodule.pool_loader())
-
-        return self.pool_epoch_loop(model, pool_loader, query_size, **kwargs)
-
-    def pool_epoch_loop(
+    def query_loop(
         self, model: _FabricModule, loader: _FabricDataLoader, query_size: int, **kwargs
     ) -> QueryOutput:
-
         # NOTE: hooks are called within eval_epoch_loop as well as the `pool_step`
         output: EpochOutput = self.eval_epoch_loop(
             model,
@@ -270,3 +266,56 @@ class UncertaintyBasedStrategy(ActiveEstimator):
         indices = all_ids[topk_ids].tolist()
 
         return topk_scores, indices
+
+
+"""
+Pool subsampling mixins
+"""
+class RandomPoolSubsamplingMixin:
+    subsampling_size: Union[int, float] = None
+    subsampling_rng: int = None
+    
+    def get_pool_loader(self, active_datamodule: ActiveDataModule) -> DataLoader:
+        pool_indices = active_datamodule.pool_indices
+        if isinstance(self.subsampling_size, int):
+            pool_size = min(self.subsampling_size, len(pool_indices))
+        else:
+            pool_size = int(self.subsampling_size * len(pool_indices))
+        
+        subset_indices = self.subsampling_rng.choice(pool_indices, size=pool_size)        
+        return active_datamodule.pool_loader(subset_indices)
+    
+
+class SEALSMixin:
+    num_neighbours: int
+    
+    def get_pool_loader(self, active_datamodule: ActiveDataModule) -> DataLoader:
+        # get the embeddings of the instances not labelled
+        train_embeddings = active_datamodule.get_train_embeddings()
+        
+        # get neighbours of training instances from the pool
+        subset_indices, _ = active_datamodule.index.search_index( query=train_embeddings, query_size=self.num_neighbours, query_in_set=False)
+        subset_indices = np.unique(subset_indices.flatten()).tolist()
+
+        return active_datamodule.pool_loader(subset_indices)
+
+
+"""
+Combined strategies
+"""
+
+class RandomSubsamplingRandomStrategy(RandomPoolSubsamplingMixin, RandomStrategy):
+    def __init__(self, subsampling_size: Union[int, float], subsampling_seed: int, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.subsampling_size = subsampling_size
+        if isinstance(subsampling_size, float):
+            assert 0 < subsampling_size <= 1
+
+        self.subsampling_seed = subsampling_seed
+        self.subsampling_rng = check_random_state(subsampling_seed)  # reproducibility
+
+
+class SEALSRandomStrategy(SEALSMixin, RandomStrategy):
+    def __init__(self, num_neighbours: int, *args, **kwargs) -> None:
+        super().__init__(self, *args, **kwargs)
+        self.num_neighbours = num_neighbours
