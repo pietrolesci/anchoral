@@ -7,7 +7,7 @@
 # That is, the DataModule is only used to feed data to the model during training
 # and evaluation.
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple, Union, Any
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import hnswlib as hb
 import numpy as np
@@ -19,7 +19,6 @@ from torch.utils.data import BatchSampler, DataLoader, RandomSampler, Sequential
 
 from src.enums import RunningStage
 from src.types import DATASET
-
 
 
 class DataModule(HyperparametersMixin):
@@ -133,10 +132,11 @@ class DataModule(HyperparametersMixin):
         return next(iter(loader))
 
 
-
 """
 Define as globals otherwise pickle complains when running in multi-gpu
 """
+
+
 def _pad(inputs: List[int], padding_value: float, max_length: int) -> Tensor:
     # truncate -> convert to tensor -> pad
     return pad_sequence(

@@ -6,7 +6,7 @@ import srsly
 from datasets import Dataset, DatasetDict, load_dataset
 from sklearn.model_selection import train_test_split
 
-from src.enums import InputColumns, RunningStage
+from src.enums import InputKeys, RunningStage
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -21,9 +21,9 @@ if __name__ == "__main__":
     # cast to dataframe
     df = pd.concat([dataset_dict[split].to_pandas().assign(split=split) for split in dataset_dict])
 
-    # rename "label" to InputColumns.TARGET
-    df = df.rename(columns={"label": InputColumns.TARGET})
-    features[InputColumns.TARGET] = features.pop("label")
+    # rename "label" to InputKeys.TARGET
+    df = df.rename(columns={"label": InputKeys.TARGET})
+    features[InputKeys.TARGET] = features.pop("label")
 
     # train-val split
     train_df = df.loc[df["split"] == "train"].drop(columns=["split"])

@@ -4,19 +4,26 @@ import torch
 from torchmetrics import MetricCollection
 from torchmetrics.classification import Accuracy, F1Score
 
-from src.enums import InputKeys, RunningStage, OutputKeys
+from src.containers import EpochOutput
+from src.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.estimator import Estimator
 from src.query_strategies.base import UncertaintyBasedStrategy
 from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT, POOL_BATCH_OUTPUT
-from src.containers import EpochOutput
 
 
 class SequenceClassificationMixin:
     def step(self, model: torch.nn.Module, batch: Dict, batch_idx: int, metrics: MetricCollection) -> BATCH_OUTPUT:
+        unique_ids = batch.pop(InputKeys.ON_CPU)[SpecialKeys.ID]
+
         out = model(**batch)
         preds = out.logits.argmax(-1)
         out_metrics = metrics(preds, batch[InputKeys.TARGET])
-        return {OutputKeys.LOSS: out.loss, OutputKeys.LOGITS: out.logits, OutputKeys.METRICS: out_metrics}
+        return {
+            OutputKeys.LOSS: out.loss,
+            OutputKeys.LOGITS: out.logits,
+            OutputKeys.METRICS: out_metrics,
+            SpecialKeys.ID: unique_ids,
+        }
 
     def training_step(
         self, model: torch.nn.Module, batch: Dict, batch_idx: int, metrics: MetricCollection

@@ -8,7 +8,7 @@ from datasets import load_from_disk
 from sentence_transformers import SentenceTransformer
 from tqdm.auto import tqdm
 
-from src.enums import SpecialColumns
+from src.enums import SpecialKeys
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     pbar.set_description(f"Embedding")
 
     # compute embeddings
-    texts = train_df[SpecialColumns.TEXT].tolist()
+    texts = train_df[SpecialKeys.TEXT].tolist()
     embeddings = sentence_encoder.encode(texts, show_progress_bar=True, batch_size=512, device="cuda")
 
     # save data
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     p = hb.Index(space="cosine", dim=embeddings.shape[1])
     p.set_ef(200)
     p.init_index(max_elements=embeddings.shape[0], M=64, ef_construction=200, random_seed=meta.get("seed", 1994))
-    unique_ids = train_df[SpecialColumns.ID].values
+    unique_ids = train_df[SpecialKeys.ID].values
     p.add_items(embeddings, unique_ids)
 
     # save index

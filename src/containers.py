@@ -9,7 +9,6 @@ from src.enums import RunningStage
 from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT
 from src.utilities import move_to_cpu
 
-
 # @dataclass
 # class Output(dict):
 #     def __post_init__(self):
@@ -93,10 +92,11 @@ class EpochOutput(list):
 @dataclass
 class FitEpochOutput:
     """Simple container for train and validation outputs for each epoch of fitting.
-    
+
     This deserves a separate container bacause during fit we obtain EpochOutput's
     from both train and, possibly, validation.
     """
+
     train: EpochOutput = None
     validation: EpochOutput = None
 
@@ -104,6 +104,7 @@ class FitEpochOutput:
 @dataclass
 class MetadataParserMixin:
     """Simple wrapper for outputs that allows to add metadata."""
+
     hparams: Optional[Dict] = None
 
     def __post_init__(self) -> None:
@@ -137,6 +138,7 @@ class MetadataParserMixin:
             return f"{s}None)"
         return f"{s} ..{len(self.output)} epochs.. )"
 
+
 @dataclass
 class FitOutput(MetadataParserMixin):
     output: List[FitEpochOutput] = field(default_factory=list)
@@ -144,6 +146,7 @@ class FitOutput(MetadataParserMixin):
     def append(self, _x: FitEpochOutput):
         assert isinstance(_x, FitEpochOutput), f"You can only append `FitEpochOutput`s, not {type(_x)}"
         self.output.append(_x)
+
 
 @dataclass
 class EvaluationOutput(MetadataParserMixin):

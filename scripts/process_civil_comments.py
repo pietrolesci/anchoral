@@ -8,7 +8,7 @@ from datasets.features import ClassLabel, Features, Value
 from sklearn.utils import resample
 from tqdm.auto import tqdm
 
-from src.enums import InputColumns, RunningStage, SpecialColumns
+from src.enums import InputKeys, RunningStage, SpecialKeys
 
 ############################################################################################
 # Download data from Kaggle
@@ -17,7 +17,7 @@ from src.enums import InputColumns, RunningStage, SpecialColumns
 
 
 def subsample(df: pd.DataFrame, n_samples: int, min_chars: int, seed: int) -> pd.DataFrame:
-    df["len"] = df[SpecialColumns.TEXT].str.replace("\W", "", regex=True).str.len()
+    df["len"] = df[SpecialKeys.TEXT].str.replace("\W", "", regex=True).str.len()
     df = df.loc[df["len"] >= min_chars].sort_values(["len"])
     ids = resample(df.index, replace=False, stratify=df["labels"], n_samples=n_samples, random_state=seed)
     df = df.loc[df.index.isin(ids)].drop(columns=["len"])
@@ -43,14 +43,14 @@ if __name__ == "__main__":
     df = pd.read_csv(Path(args.input_dir) / "all_data.csv")
 
     # rename columns
-    df = df.rename(columns={"comment_text": SpecialColumns.TEXT})
+    df = df.rename(columns={"comment_text": SpecialKeys.TEXT})
 
     # select columns
-    cols = ["split", "id", "toxicity", SpecialColumns.TEXT]
+    cols = ["split", "id", "toxicity", SpecialKeys.TEXT]
     df = df[cols].copy()
 
     # drop null values
-    df = df.dropna(subset=[SpecialColumns.TEXT, "toxicity"])
+    df = df.dropna(subset=[SpecialKeys.TEXT, "toxicity"])
 
     pbar.update(1)
 
@@ -58,13 +58,13 @@ if __name__ == "__main__":
     pbar.set_description("Removing duplicates and aggregating")
 
     # compute unique texts exact
-    df["unique_id"] = df.groupby(SpecialColumns.TEXT).ngroup().astype(int)
+    df["unique_id"] = df.groupby(SpecialKeys.TEXT).ngroup().astype(int)
 
     # compute average toxicity across equal texts
     df["avg_toxicity"] = df.groupby("unique_id")["toxicity"].transform("mean")
 
     # remove duplicates within split
-    df = df.drop_duplicates(subset=["split", SpecialColumns.TEXT])
+    df = df.drop_duplicates(subset=["split", SpecialKeys.TEXT])
 
     # remove duplicates across splits
     ddf = df.sort_values(["unique_id", "split"]).drop_duplicates(subset=["unique_id"])
@@ -76,10 +76,10 @@ if __name__ == "__main__":
     df = ddf.drop(columns=["toxicity", "unique_id"])
 
     # binarize labels
-    df[InputColumns.TARGET] = (df["avg_toxicity"] >= 0.5).astype(int)
+    df[InputKeys.TARGET] = (df["avg_toxicity"] >= 0.5).astype(int)
 
     # rename id column in order to use it
-    df = df.rename(columns={"id": SpecialColumns.ID})
+    df = df.rename(columns={"id": SpecialKeys.ID})
 
     pbar.update(1)
 
@@ -101,9 +101,9 @@ if __name__ == "__main__":
 
     features = Features(
         {
-            SpecialColumns.ID: Value(dtype="int32", id=None),
-            InputColumns.TARGET: ClassLabel(num_classes=2, names=["not_toxic", "toxic"], names_file=None, id=None),
-            SpecialColumns.TEXT: Value(dtype="string", id=None),
+            SpecialKeys.ID: Value(dtype="int32", id=None),
+            InputKeys.TARGET: ClassLabel(num_classes=2, names=["not_toxic", "toxic"], names_file=None, id=None),
+            SpecialKeys.TEXT: Value(dtype="string", id=None),
         }
     )
 

@@ -10,7 +10,6 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer, logg
 logging.set_verbosity_error()
 
 if __name__ == "__main__":
-
     data_path = Path("data/prepared/ag_news")
     dataset_dict = load_from_disk(data_path)
     metadata = srsly.read_yaml(data_path / "metadata.yaml")

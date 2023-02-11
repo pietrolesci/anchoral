@@ -10,8 +10,8 @@ nun_queries = 10
 data = embeddings
 
 # Declaring index
-hnsw_index = hnswlib.Index(space='l2', dim=dim)  # possible options are l2, cosine or ip
-bf_index = hnswlib.BFIndex(space='l2', dim=dim)
+hnsw_index = hnswlib.Index(space="l2", dim=dim)  # possible options are l2, cosine or ip
+bf_index = hnswlib.BFIndex(space="l2", dim=dim)
 
 # Initing both hnsw and brute force indices
 # max_elements - the maximum number of elements (capacity). Will throw an exception if exceeded
@@ -57,4 +57,4 @@ for i in range(nun_queries):
                 correct += 1
                 break
 
-print("recall is :", float(correct)/(k*nun_queries))
+print("recall is :", float(correct) / (k * nun_queries))

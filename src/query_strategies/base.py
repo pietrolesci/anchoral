@@ -15,9 +15,9 @@ from sklearn.utils.validation import (
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm, trange
 
-from src.containers import ActiveFitOutput, BatchOutput, EpochOutput, QueryOutput, RoundOutput
+from src.containers import ActiveFitOutput, EpochOutput, QueryOutput, RoundOutput
 from src.data.active_datamodule import ActiveDataModule
-from src.enums import RunningStage, SpecialColumns
+from src.enums import RunningStage, SpecialKeys
 from src.estimator import Estimator
 from src.registries import SCORING_FUNCTIONS
 from src.types import POOL_BATCH_OUTPUT
@@ -225,14 +225,14 @@ class UncertaintyBasedStrategy(ActiveEstimator):
         if stage != RunningStage.POOL:
             return super().eval_batch_loop(model, batch, batch_idx, metrics, stage)
 
-        ids = batch.pop("on_cpu")[SpecialColumns.ID]
+        ids = batch.pop("on_cpu")[SpecialKeys.ID]
 
         # calls the `pool_step`
         output = super().eval_batch_loop(model, batch, batch_idx, metrics, stage)
         if isinstance(output, torch.Tensor):
             output = {"scores": output}
 
-        output[SpecialColumns.ID] = np.array(ids)
+        output[SpecialKeys.ID] = np.array(ids)
 
         return output
 
@@ -250,9 +250,9 @@ class UncertaintyBasedStrategy(ActiveEstimator):
     Utilities
     """
 
-    def _topk(self, output: List[BatchOutput], query_size: int) -> Tuple[np.ndarray, List[int]]:
+    def _topk(self, output: List[POOL_BATCH_OUTPUT], query_size: int) -> Tuple[np.ndarray, List[int]]:
         # get all scores
-        all_scores, all_ids = zip(*((i.output["scores"], i.output[SpecialColumns.ID]) for i in output))
+        all_scores, all_ids = zip(*((i.output["scores"], i.output[SpecialKeys.ID]) for i in output))
         all_scores = np.concatenate(all_scores)
         all_ids = np.concatenate(all_ids)
 

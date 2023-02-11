@@ -8,9 +8,9 @@ from hydra.utils import get_original_cwd
 from lightning.fabric import seed_everything
 from omegaconf import DictConfig, OmegaConf
 
-from src.data.datamodule import ClassificationDataModule
-from src.transformers import EstimatorForSequenceClassification
+from src.data.transformers import ClassificationDataModule
 from src.logging import set_ignore_warnings
+from src.transformers import EstimatorForSequenceClassification
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 set_ignore_warnings()
@@ -21,14 +21,13 @@ sep_line = f"{'=' * 70}"
 
 @hydra.main(version_base=None, config_path="../conf", config_name="conf")
 def main(cfg: DictConfig):
-
     # set paths, load metadata, and tidy config
     data_path = Path(get_original_cwd()) / "data" / "prepared" / cfg.dataset_name
-    
+
     metadata = OmegaConf.load(data_path / "metadata.yaml")
     if cfg.model.name_or_path is None:
         cfg.model.name_or_path = metadata.name_or_path
-    
+
     log.info(f"\n{OmegaConf.to_yaml(cfg, resolve=True)}\n{sep_line}")
     if cfg.dry_run:
         log.critical("\n\n\t !!! DEBUGGING !!! \n\n")
@@ -36,7 +35,7 @@ def main(cfg: DictConfig):
     # seed everything
     seed_everything(cfg.seed)
 
-    # load data    
+    # load data
     dataset_dict = load_from_disk(data_path, keep_in_memory=True)
 
     # load tokenizer

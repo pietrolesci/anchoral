@@ -21,7 +21,6 @@ sep_line = f"{'=' * 70}"
 
 @hydra.main(version_base=None, config_path="../conf", config_name="conf")
 def main(cfg: DictConfig):
-
     log.info(f"\n{OmegaConf.to_yaml(cfg, resolve=True)}\n{sep_line}")
     if cfg.dry_run:
         log.critical("\n\n\t !!! DEBUGGING !!! \n\n")

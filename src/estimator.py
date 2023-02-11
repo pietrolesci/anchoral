@@ -16,11 +16,10 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm, trange
 
 from src.containers import EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
-from src.enums import RunningStage, OutputKeys
+from src.enums import OutputKeys, RunningStage
 from src.registries import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT, METRIC
 from src.utilities import get_hparams
-
 
 # remove warning from torchmetrics
 warnings.filterwarnings("ignore", message="The ``compute`` method of")
@@ -339,7 +338,9 @@ class Estimator:
     def transfer_to_device(self, batch: Any) -> Any:
         return self.fabric.to_device(batch)
 
-    def configure_optimizer(self, optimizer: str, learning_rate: float, optimizer_kwargs: Optional[Dict] = None) -> Optimizer:
+    def configure_optimizer(
+        self, optimizer: str, learning_rate: float, optimizer_kwargs: Optional[Dict] = None
+    ) -> Optimizer:
         assert optimizer is not None, ValueError("You must provide an optimizer.")
 
         optimizer_fn = OPTIMIZER_REGISTRY.get(optimizer)
@@ -375,7 +376,11 @@ class Estimator:
         return optimizer
 
     def configure_scheduler(
-        self, scheduler: str, optimizer: Optimizer, train_loader: DataLoader, scheduler_kwargs: Optional[Dict] = None,
+        self,
+        scheduler: str,
+        optimizer: Optimizer,
+        train_loader: DataLoader,
+        scheduler_kwargs: Optional[Dict] = None,
     ) -> Optional[_LRScheduler]:
         if scheduler is None:
             return
@@ -430,7 +435,7 @@ class Estimator:
         self, model: torch.nn.Module, batch: Any, batch_idx: int, metrics: Optional[METRIC] = None
     ) -> EVAL_BATCH_OUTPUT:
         raise NotImplementedError
-    
+
     def train_epoch_end(self, output: EpochOutput, metrics: Optional[METRIC]) -> None:
         pass
 
@@ -460,14 +465,12 @@ class Estimator:
         return len(train_loader)
 
     def _get_batch_progress_bar(self, loader: DataLoader, stage: RunningStage, **kwargs) -> tqdm:
-        
         if stage == RunningStage.TRAIN:
             return tqdm(loader, desc=f"Epoch {kwargs.get('epoch_idx', '')}".strip(), dynamic_ncols=True, leave=False)
 
         dry_run = kwargs.get("dry_run", False)
         leave = stage == RunningStage.TEST if not dry_run else False
         return tqdm(loader, desc=f"{stage.title()}", dynamic_ncols=True, leave=leave)
-
 
     def _get_epoch_progress_bar(self, num_epochs: int) -> tqdm:
         return trange(num_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)

@@ -21,17 +21,17 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 
 from src.data.datamodule import DataModule, _pad
-from src.enums import InputColumns, RunningStage, SpecialColumns
+from src.enums import InputKeys, RunningStage, SpecialKeys
 from transformers import PreTrainedTokenizerBase
 
 
 class ActiveDataModule(DataModule):
     _df: pd.DataFrame = None
     _default_columns: List[int] = [
-        InputColumns.TARGET,
-        InputColumns.INPUT_IDS,
-        InputColumns.ATT_MASK,
-        SpecialColumns.ID,
+        InputKeys.TARGET,
+        InputKeys.INPUT_IDS,
+        InputKeys.ATT_MASK,
+        SpecialKeys.ID,
     ]
 
     """
@@ -48,7 +48,7 @@ class ActiveDataModule(DataModule):
 
     @property
     def train_size(self) -> int:
-        return self._df[SpecialColumns.IS_LABELLED].sum()
+        return self._df[SpecialKeys.IS_LABELLED].sum()
 
     @property
     def pool_size(self) -> int:
@@ -57,13 +57,13 @@ class ActiveDataModule(DataModule):
     @property
     def train_indices(self) -> np.ndarray:
         return self._df.loc[
-            (self._df[SpecialColumns.IS_LABELLED] == True) & ((self._df[SpecialColumns.IS_VALIDATION] == False)),
-            SpecialColumns.ID,
+            (self._df[SpecialKeys.IS_LABELLED] == True) & ((self._df[SpecialKeys.IS_VALIDATION] == False)),
+            SpecialKeys.ID,
         ].values
 
     @property
     def pool_indices(self) -> np.ndarray:
-        return self._df.loc[(self._df[SpecialColumns.IS_LABELLED] == False), SpecialColumns.ID].values
+        return self._df.loc[(self._df[SpecialKeys.IS_LABELLED] == False), SpecialKeys.ID].values
 
     @property
     def has_labelled_data(self) -> bool:
@@ -82,7 +82,7 @@ class ActiveDataModule(DataModule):
     @property
     def last_labelling_round(self) -> int:
         """Returns the number of the last active learning step."""
-        return int(self._id[SpecialColumns.LABELLING_ROUND].max())
+        return int(self._id[SpecialKeys.LABELLING_ROUND].max())
 
     @property
     def data_statistics(self) -> Dict[str, int]:
@@ -101,9 +101,9 @@ class ActiveDataModule(DataModule):
     def setup(self, stage: Optional[str] = None) -> None:
         self._df = self.train_dataset.to_pandas().assign(
             **{
-                SpecialColumns.IS_LABELLED: False,
-                SpecialColumns.IS_VALIDATION: False,
-                SpecialColumns.LABELLING_ROUND: -1,
+                SpecialKeys.IS_LABELLED: False,
+                SpecialKeys.IS_VALIDATION: False,
+                SpecialKeys.LABELLING_ROUND: -1,
             }
         )
 
@@ -145,14 +145,14 @@ class ActiveDataModule(DataModule):
             f"`val_perc` must be of type `float`, not {type(val_perc)}"
         )
 
-        mask = self._df[SpecialColumns.ID].isin(indices)
-        self._df.loc[mask, SpecialColumns.IS_LABELLED] = True
-        self._df.loc[mask, SpecialColumns.LABELLING_ROUND] = round_idx
+        mask = self._df[SpecialKeys.ID].isin(indices)
+        self._df.loc[mask, SpecialKeys.IS_LABELLED] = True
+        self._df.loc[mask, SpecialKeys.LABELLING_ROUND] = round_idx
 
         if self.should_val_split and val_perc is not None:
             n_val = round(val_perc * len(indices)) or 1
             val_indices = random.sample(indices, n_val)
-            self._df.loc[self._df[SpecialColumns.ID].isin(val_indices), SpecialColumns.IS_VALIDATION] = True
+            self._df.loc[self._df[SpecialKeys.ID].isin(val_indices), SpecialKeys.IS_VALIDATION] = True
 
         # remove instance from the index
         if self.index is not None:
@@ -165,7 +165,7 @@ class ActiveDataModule(DataModule):
 
     def train_loader(self) -> DataLoader:
         train_df = self._df.loc[
-            (self._df[SpecialColumns.IS_LABELLED] == True) & (self._df[SpecialColumns.IS_VALIDATION] == False)
+            (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == False)
         ]
         train_dataset = Dataset.from_pandas(train_df, preserve_index=False)
 
@@ -178,7 +178,7 @@ class ActiveDataModule(DataModule):
     def validation_loader(self) -> Optional[DataLoader]:
         if self.should_val_split:
             val_df = self._df.loc[
-                (self._df[SpecialColumns.IS_LABELLED] == True) & (self._df[SpecialColumns.IS_VALIDATION] == True)
+                (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == True)
             ]
             val_dataset = Dataset.from_pandas(val_df, preserve_index=False)
         else:
@@ -193,12 +193,12 @@ class ActiveDataModule(DataModule):
 
     def pool_loader(self, subset_indices: Optional[List[int]] = None) -> DataLoader:
         pool_df = self._df.loc[
-            (self._df[SpecialColumns.IS_LABELLED] == False),
-            [i for i in self._df.columns if i != InputColumns.TARGET],
+            (self._df[SpecialKeys.IS_LABELLED] == False),
+            [i for i in self._df.columns if i != InputKeys.TARGET],
         ]
 
         if subset_indices is not None:
-            pool_df = pool_df.loc[pool_df[SpecialColumns.ID].isin(subset_indices)]
+            pool_df = pool_df.loc[pool_df[SpecialKeys.ID].isin(subset_indices)]
 
         pool_dataset = Dataset.from_pandas(pool_df, preserve_index=False)
 
@@ -213,7 +213,7 @@ class ActiveDataModule(DataModule):
         save_dir.mkdir(parents=True, exist_ok=True)
 
         # remove feature labels
-        to_remove = [i for i in InputColumns if i != InputColumns.TARGET]
+        to_remove = [i for i in InputKeys if i != InputKeys.TARGET]
 
         self._df.drop(columns=to_remove).to_parquet(save_dir / "labelled_dataset.parquet", index=False)
 
@@ -235,17 +235,17 @@ class ActiveClassificationDataModule(ActiveDataModule):
         return partial(
             collate_fn,
             max_source_length=self.max_source_length,
-            columns_on_cpu=[SpecialColumns.ID] if stage == RunningStage.POOL else [],
+            columns_on_cpu=[SpecialKeys.ID] if stage == RunningStage.POOL else [],
             pad_token_id=self.tokenizer.pad_token_id,
             pad_fn=_pad,
         )
 
     @property
     def labels(self) -> List[str]:
-        assert InputColumns.TARGET in self.train_dataset.features, KeyError(
+        assert InputKeys.TARGET in self.train_dataset.features, KeyError(
             "A prepared dataset needs to have a `labels` column."
         )
-        return self.train_dataset.features[InputColumns.TARGET].names
+        return self.train_dataset.features[InputKeys.TARGET].names
 
     @property
     def id2label(self) -> Dict[int, str]:
@@ -276,7 +276,7 @@ def collate_fn(
     # remove string columns that cannot be transfered on gpu
     columns_on_cpu = {col: batch.pop(col) for col in columns_on_cpu if col in batch}
 
-    labels = batch.pop("labels", None)
+    labels = batch.pop(InputKeys.TARGET, None)
 
     # input_ids and attention_mask to tensor
     # truncate -> convert to tensor -> pad
@@ -286,11 +286,11 @@ def collate_fn(
             padding_value=pad_token_id,
             max_length=max_source_length,
         )
-        for k in ("input_ids", "attention_mask")
+        for k in (InputKeys.INPUT_IDS, InputKeys.ATT_MASK)
     }
 
     if labels is not None:
-        batch["labels"] = torch.tensor(labels, dtype=torch.long)
+        batch[InputKeys.TARGET] = torch.tensor(labels, dtype=torch.long)
 
     # add things that need to remain on cpu
     if len(columns_on_cpu) > 0:
