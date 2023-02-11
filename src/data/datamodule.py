@@ -1,4 +1,4 @@
-# Here we define DataModule that work with HuggingFace Datasets.
+# Here we define DataModule that work with HuggingFace DATASETs.
 # We assume that each dataset is already processed and ready for training.
 # Think of the DataModule is the last step of the data preparation pipeline.
 #
@@ -6,34 +6,33 @@
 #
 # That is, the DataModule is only used to feed data to the model during training
 # and evaluation.
-import os
-from functools import partial
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union, Any
 
 import hnswlib as hb
 import numpy as np
 import torch
-from datasets import Dataset, DatasetDict
 from lightning.pytorch.core.mixins.hparams_mixin import HyperparametersMixin
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 
-from src.enums import InputColumns, RunningStage
-from transformers import PreTrainedTokenizerBase
+from src.enums import RunningStage
+from src.types import DATASET
+
 
 
 class DataModule(HyperparametersMixin):
+    """DataModule that defines dataloading and indexing logic."""
+
     _hparams_ignore = ["train_dataset", "val_dataset", "test_dataset"]
-    _default_columns: List[str] = [InputColumns.TARGET, InputColumns.INPUT_IDS, InputColumns.ATT_MASK]
     _index: hb.Index
 
     def __init__(
         self,
-        train_dataset: Dataset,
-        validation_dataset: Optional[Dataset] = None,
-        test_dataset: Optional[Dataset] = None,
+        train_dataset: DATASET,
+        validation_dataset: Optional[DATASET] = None,
+        test_dataset: Optional[DATASET] = None,
         batch_size: Optional[int] = 32,
         eval_batch_size: Optional[int] = 32,
         num_workers: Optional[int] = 0,
@@ -115,7 +114,7 @@ class DataModule(HyperparametersMixin):
     def get_collate_fn(self, stage: Optional[str] = None) -> Optional[Callable]:
         return None
 
-    def get_sampler(self, dataset: Dataset, stage: str) -> BatchSampler:
+    def get_sampler(self, dataset: DATASET, stage: str) -> BatchSampler:
         batch_size = self.batch_size if stage == RunningStage.TRAIN else self.eval_batch_size
         # NOTE: when the batch_size is bigger than the number of available instances in the dataset
         # we get an `IndexError` for Arrow. Here we avoid this
@@ -129,61 +128,15 @@ class DataModule(HyperparametersMixin):
             drop_last=self.drop_last,
         )
 
-    @classmethod
-    def from_dataset_dict(
-        cls, dataset_dict: DatasetDict, columns_to_keep: Optional[List[str]] = None, **kwargs
-    ) -> None:
-        columns_to_keep = columns_to_keep or []
-        columns_to_keep += cls._default_columns
+    def show_batch(self, stage: RunningStage = RunningStage.TRAIN) -> Any:
+        loader = getattr(self, f"{stage}_loader")()
+        return next(iter(loader))
 
-        datasets = {}
-        for stage in RunningStage:
-            if stage in dataset_dict:
-                dataset = dataset_dict[stage].with_format(columns=columns_to_keep)
-                datasets[f"{stage}_dataset"] = dataset
-
-        return cls(**datasets, **kwargs)
-
-
-class ClassificationDataModule(DataModule):
-    def __init__(
-        self, tokenizer: Optional[PreTrainedTokenizerBase] = None, max_source_length: int = 128, **kwargs
-    ) -> None:
-        self._hparams_ignore.append("tokenizer")
-        super().__init__(**kwargs)
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        self.tokenizer = tokenizer
-        self.max_source_length = max_source_length
-
-    def get_collate_fn(self, stage: Optional[str] = None) -> Optional[Callable]:
-        return partial(
-            collate_fn,
-            max_source_length=self.max_source_length,
-            pad_token_id=self.tokenizer.pad_token_id,
-            pad_fn=_pad,
-        )
-
-    @property
-    def labels(self) -> List[str]:
-        assert InputColumns.TARGET in self.train_dataset.features, KeyError(
-            "A prepared dataset needs to have a `labels` column."
-        )
-        return self.train_dataset.features[InputColumns.TARGET].names
-
-    @property
-    def id2label(self) -> Dict[int, str]:
-        return dict(enumerate(self.labels))
-
-    @property
-    def label2id(self) -> Dict[str, int]:
-        return {v: k for k, v in self.id2label.items()}
 
 
 """
 Define as globals otherwise pickle complains when running in multi-gpu
 """
-
-
 def _pad(inputs: List[int], padding_value: float, max_length: int) -> Tensor:
     # truncate -> convert to tensor -> pad
     return pad_sequence(
@@ -193,36 +146,8 @@ def _pad(inputs: List[int], padding_value: float, max_length: int) -> Tensor:
     )
 
 
-def collate_fn(
-    batch: List[Dict[str, Union[List[str], Tensor]]],
-    max_source_length: int,
-    pad_token_id: int,
-    pad_fn: Callable,
-) -> Dict[str, Union[List[str], Tensor]]:
-    # NOTE: beacuse of the batch_sampler we already obtain dict of lists
-    # however the dataloader will try to create a list, so we have to unpack it
-    assert len(batch) == 1, "Look at the data collator"
-    batch = batch[0]
-
-    labels = batch.pop("labels")
-
-    # input_ids and attention_mask to tensor
-    # truncate -> convert to tensor -> pad
-    batch = {
-        k: pad_fn(
-            inputs=batch[k],
-            padding_value=pad_token_id,
-            max_length=max_source_length,
-        )
-        for k in ("input_ids", "attention_mask")
-    }
-    batch["labels"] = torch.tensor(labels, dtype=torch.long)
-
-    return batch
-
-
 def _get_sampler(
-    dataset: Dataset,
+    dataset: DATASET,
     batch_size: int,
     shuffle: bool,
     replacement: bool,
