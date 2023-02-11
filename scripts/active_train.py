@@ -7,11 +7,11 @@ from datasets import load_from_disk
 from hydra.utils import get_original_cwd
 from lightning.fabric import seed_everything
 from omegaconf import DictConfig, OmegaConf
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from src.data.active_datamodule import ActiveClassificationDataModule
 from src.logging import set_ignore_warnings
 from src.query_strategies.classification import UncertantyBasedStrategy
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 set_ignore_warnings()
 # log = get_logger("hydra")

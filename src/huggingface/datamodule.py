@@ -5,10 +5,10 @@ from typing import Callable, Dict, List, Optional, Union
 import torch
 from datasets import DatasetDict
 from torch import Tensor
+from transformers import PreTrainedTokenizerBase
 
 from src.data.datamodule import DataModule, _pad
 from src.enums import InputKeys, RunningStage, SpecialKeys
-from transformers import PreTrainedTokenizerBase
 
 """
 A very tailored datamodule for HuggingFace datasets

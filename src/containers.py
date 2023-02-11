@@ -99,7 +99,6 @@ class FitEpochOutput:
     validation: EpochOutput = None
 
 
-
 @dataclass
 class MetadataParserMixin:
     """Simple wrapper for outputs that allows to add metadata."""
@@ -151,6 +150,7 @@ class FitOutput(MetadataParserMixin):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(output= ..{len(self.output)} epochs.. , hparams={self.hparams})"
+
 
 @dataclass
 class EvaluationOutput(MetadataParserMixin):

@@ -18,7 +18,7 @@ from tqdm.auto import tqdm, trange
 from src.containers import EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
 from src.enums import OutputKeys, RunningStage
 from src.registries import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
-from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT, METRIC, EPOCH_OUTPUT
+from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, METRIC
 from src.utilities import get_hparams
 
 # remove warning from torchmetrics
@@ -206,10 +206,10 @@ class Estimator:
             # check stopping conditions
             if self._is_done(batch_idx, dry_run, limit_batches):
                 break
-        
+
         # hook
         self.fabric.call("on_train_epoch_end", model=model, output=output, metrics=metrics, epoch_idx=epoch_idx)
-        
+
         # method to possibly aggregate
         output = self.train_epoch_end(output, metrics)
 

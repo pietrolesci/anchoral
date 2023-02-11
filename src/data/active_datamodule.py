@@ -19,10 +19,10 @@ import torch
 from datasets import Dataset
 from torch import Tensor
 from torch.utils.data import DataLoader
+from transformers import PreTrainedTokenizerBase
 
 from src.data.datamodule import DataModule, _pad
 from src.enums import InputKeys, RunningStage, SpecialKeys
-from transformers import PreTrainedTokenizerBase
 
 
 class ActiveDataModule(DataModule):

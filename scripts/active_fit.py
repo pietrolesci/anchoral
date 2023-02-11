@@ -2,10 +2,10 @@ from pathlib import Path
 
 import srsly
 from datasets import load_from_disk
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, logging
 
 from src.data.active_datamodule import ActiveClassificationDataModule
-from src.transformers import UncertaintyBasedStrategyForSequenceClassification
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, logging
+from src.huggingface.estimators import UncertaintyBasedStrategyForSequenceClassification
 
 logging.set_verbosity_error()
 

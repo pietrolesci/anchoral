@@ -7,7 +7,7 @@ from torchmetrics.classification import Accuracy, F1Score
 from src.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.estimator import Estimator
 from src.query_strategies.base import UncertaintyBasedStrategy
-from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT, POOL_BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
+from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, METRIC, POOL_BATCH_OUTPUT
 
 
 class SequenceClassificationMixin:
@@ -58,7 +58,7 @@ class SequenceClassificationMixin:
     def epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
         # delete data to save space
         return
-            
+
     def train_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
         return self.epoch_end(output, metrics)
 
