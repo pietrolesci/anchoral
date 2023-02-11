@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "fila"
+name = "allset"
 version = "0.1.0"
 description = "active learning via influence functions"
 authors = ["Pietro Lesci <pietrolesci@outlook.com>"]
