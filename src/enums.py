@@ -8,7 +8,7 @@ class RunningStage(LightningEnum):
     POOL: str = "pool"
 
 
-class SpecialColumns(LightningEnum):
+class SpecialKeys(LightningEnum):
     TEXT: str = "text"
     ID: str = "unique_id"
     IS_LABELLED: str = "is_labelled"
@@ -16,11 +16,12 @@ class SpecialColumns(LightningEnum):
     LABELLING_ROUND: str = "labelling_round"
 
 
-class InputColumns(LightningEnum):
+class InputKeys(LightningEnum):
     TARGET: str = "labels"
     INPUT_IDS: str = "input_ids"
     ATT_MASK: str = "attention_mask"
-    # TOKEN_TYPE_IDS: str = "token_type_ids"
+    TOKEN_TYPE_IDS: str = "token_type_ids"
+    ON_CPU: str = "on_cpu"
 
 
 class OutputKeys(LightningEnum):
@@ -30,3 +31,4 @@ class OutputKeys(LightningEnum):
     LOGS: str = "logs"
     LOGITS: str = "logits"
     BATCH_SIZE: str = "batch_size"
+    METRICS: str = "metrics"

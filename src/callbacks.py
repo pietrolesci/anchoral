@@ -5,7 +5,8 @@ from typing import Any, Union
 
 from lightning.fabric.wrappers import _FabricModule
 
-from src.containers import ActiveFitOutput, BatchOutput, EpochOutput, FitOutput, RoundOutput
+from src.containers import ActiveFitOutput, EpochOutput, FitOutput, RoundOutput
+from src.types import BATCH_OUTPUT
 
 
 class Callback:
@@ -48,7 +49,7 @@ class Callback:
     def on_train_batch_start(self, model: _FabricModule, batch: Any, batch_idx: int) -> None:
         """Called when the train batch begins."""
 
-    def on_train_batch_end(self, model: _FabricModule, output: BatchOutput, batch: Any, batch_idx: int) -> None:
+    def on_train_batch_end(self, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> None:
         """Called when the train batch ends.
 
         Note:
@@ -59,13 +60,13 @@ class Callback:
     def on_validation_batch_start(self, model: _FabricModule, batch: Any, batch_idx: int) -> None:
         """Called when the validation batch begins."""
 
-    def on_validation_batch_end(self, model: _FabricModule, output: BatchOutput, batch: Any, batch_idx: int) -> None:
+    def on_validation_batch_end(self, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> None:
         """Called when the validation batch ends."""
 
     def on_test_batch_start(self, model: _FabricModule, batch: Any, batch_idx: int) -> None:
         """Called when the test batch begins."""
 
-    def on_test_batch_end(self, model: _FabricModule, output: BatchOutput, batch: Any, batch_idx: int) -> None:
+    def on_test_batch_end(self, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> None:
         """Called when the test batch ends."""
 
 
@@ -129,21 +130,21 @@ class Timer(Callback, ActiveLearningCallbackMixin, UncertaintyStrategyMixin):
     def on_train_batch_start(self, model: _FabricModule, batch: Any, batch_idx: int) -> None:
         self.train_batch_start = time.perf_counter()
 
-    def on_train_batch_end(self, model: _FabricModule, output: BatchOutput, batch: Any, batch_idx: int) -> None:
+    def on_train_batch_end(self, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> None:
         self.train_batch_end = time.perf_counter()
         output.time = self.train_batch_end - self.train_batch_start
 
     def on_validation_batch_start(self, model: _FabricModule, batch: Any, batch_idx: int) -> None:
         self.validation_batch_start = time.perf_counter()
 
-    def on_validation_batch_end(self, model: _FabricModule, output: BatchOutput, batch: Any, batch_idx: int) -> None:
+    def on_validation_batch_end(self, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> None:
         self.validation_batch_end = time.perf_counter()
         output.time = self.validation_batch_end - self.validation_batch_start
 
     def on_test_batch_start(self, model: _FabricModule, batch: Any, batch_idx: int) -> None:
         self.test_batch_start = time.perf_counter()
 
-    def on_test_batch_end(self, model: _FabricModule, output: BatchOutput, batch: Any, batch_idx: int) -> None:
+    def on_test_batch_end(self, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> None:
         self.test_batch_end = time.perf_counter()
         output.time = self.test_batch_end - self.test_batch_start
 

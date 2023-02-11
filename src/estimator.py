@@ -13,14 +13,14 @@ from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule, _FabricO
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
-from torchmetrics import Metric, MetricCollection
 from tqdm.auto import tqdm, trange
 
-from src.containers import BatchOutput, EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
-from src.enums import RunningStage
+from src.containers import EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
+from src.enums import RunningStage, OutputKeys
 from src.registries import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
-from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT
+from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT, METRIC
 from src.utilities import get_hparams
+
 
 # remove warning from torchmetrics
 warnings.filterwarnings("ignore", message="The ``compute`` method of")
@@ -53,6 +53,10 @@ class Estimator:
         )
         self._init_deterministic(deterministic)
         self.model = model
+
+    @property
+    def device(self) -> torch.device:
+        return self.fabric.device
 
     """
     Fit loop
@@ -150,7 +154,7 @@ class Estimator:
                 limit_batches=limit_validation_batches,
             )
 
-        return FitEpochOutput(epoch_idx=epoch_idx, train=train_out, validation=validation_out)
+        return FitEpochOutput(train=train_out, validation=validation_out)
 
     def train_epoch_loop(
         self,
@@ -169,8 +173,6 @@ class Estimator:
 
         # define metrics
         metrics = self.configure_metrics(RunningStage.TRAIN)
-        if metrics is not None:
-            metrics = metrics.to(self.fabric.device)
 
         output = EpochOutput()
 
@@ -195,8 +197,6 @@ class Estimator:
             # pass the batch_out: BATCH_OUTPUT to the logger as is, then wrap
             self.log(batch_out, batch_idx=batch_idx, stage=RunningStage.TRAIN)
 
-            batch_out = BatchOutput(batch_idx=batch_idx, output=batch_out)
-
             # hook
             self.fabric.call("on_train_batch_end", model=model, output=batch_out, batch=batch, batch_idx=batch_idx)
 
@@ -207,9 +207,8 @@ class Estimator:
             if self._is_done(batch_idx, dry_run, limit_batches):
                 break
 
-        # aggregate metric over epoch
-        if metrics is not None:
-            output.metrics = metrics.compute()
+        # method to possibly aggregate
+        self.train_epoch_end(output, metrics)
 
         # hook
         self.fabric.call("on_train_epoch_end", model=model, output=output)
@@ -223,7 +222,7 @@ class Estimator:
         batch_idx: int,
         optimizer: _FabricOptimizer,
         scheduler: _LRScheduler,
-        metrics: Any,
+        metrics: Optional[METRIC],
     ) -> BATCH_OUTPUT:
         """Runs over a single batch of data."""
 
@@ -232,7 +231,7 @@ class Estimator:
 
         # compute loss
         output = self.training_step(model, batch, batch_idx, metrics)
-        loss = output if isinstance(output, torch.Tensor) else output["loss"]
+        loss = output if isinstance(output, torch.Tensor) else output[OutputKeys.LOSS]
 
         # compute gradients
         self.fabric.backward(loss)  # instead of loss.backward()
@@ -288,8 +287,6 @@ class Estimator:
 
         # define metrics
         metrics = self.configure_metrics(stage)
-        if metrics is not None:
-            metrics = metrics.to(self.fabric.device)
 
         output = EpochOutput()
 
@@ -310,8 +307,6 @@ class Estimator:
                 # pass the batch_out: EVAL_BATCH_OUTPUT to the logger as is, then wrap
                 self.log(batch_out, batch_idx=batch_idx, stage=stage)
 
-                batch_out = BatchOutput(batch_idx=batch_idx, output=batch_out)
-
                 # hook
                 self.fabric.call(
                     f"on_{stage}_batch_end", model=model, output=batch_out, batch=batch, batch_idx=batch_idx
@@ -324,9 +319,7 @@ class Estimator:
                 if self._is_done(batch_idx, kwargs.get("dry_run", None), kwargs.get("limit_batches", None)):
                     break
 
-        # aggregate metric over epoch
-        if metrics is not None:
-            output.metrics = metrics.compute()
+        getattr(self, f"{stage}_epoch_end")(output, metrics)
 
         # hook
         self.fabric.call(f"on_{stage}_epoch_end", model=model, output=output)
@@ -334,7 +327,7 @@ class Estimator:
         return output
 
     def eval_batch_loop(
-        self, model: _FabricModule, batch: Any, batch_idx: int, metrics: Any, stage: RunningStage
+        self, model: _FabricModule, batch: Any, batch_idx: int, metrics: Optional[METRIC], stage: RunningStage
     ) -> EVAL_BATCH_OUTPUT:
         # this might seems redundant but it's useful for active learning to hook in
         return getattr(self, f"{stage}_step")(model, batch, batch_idx, metrics)
@@ -412,7 +405,7 @@ class Estimator:
 
         return self.fabric.setup_dataloaders(loader, replace_sampler=False, move_to_device=False)
 
-    def configure_metrics(self, stage: Optional[RunningStage] = None) -> Union[MetricCollection, Metric, None]:
+    def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[METRIC]:
         pass
 
     def log(self, output: Union[BATCH_OUTPUT, EVAL_BATCH_OUTPUT], batch_idx: int, stage: RunningStage) -> None:
@@ -424,19 +417,28 @@ class Estimator:
     """
 
     def training_step(
-        self, model: torch.nn.Module, batch: Any, batch_idx: int, metrics: Optional[Any] = None
+        self, model: torch.nn.Module, batch: Any, batch_idx: int, metrics: Optional[METRIC] = None
     ) -> BATCH_OUTPUT:
         raise NotImplementedError
 
     def validation_step(
-        self, model: torch.nn.Module, batch: Any, batch_idx: int, metrics: Optional[Any] = None
+        self, model: torch.nn.Module, batch: Any, batch_idx: int, metrics: Optional[METRIC] = None
     ) -> EVAL_BATCH_OUTPUT:
         raise NotImplementedError
 
     def test_step(
-        self, model: torch.nn.Module, batch: Any, batch_idx: int, metrics: Optional[Any] = None
+        self, model: torch.nn.Module, batch: Any, batch_idx: int, metrics: Optional[METRIC] = None
     ) -> EVAL_BATCH_OUTPUT:
         raise NotImplementedError
+    
+    def train_epoch_end(self, output: EpochOutput, metrics: Optional[METRIC]) -> None:
+        pass
+
+    def validation_epoch_end(self, output: EpochOutput, metrics: Optional[METRIC]) -> None:
+        pass
+
+    def test_epoch_end(self, output: EpochOutput, metrics: Optional[METRIC]) -> None:
+        pass
 
     """
     Utilities
