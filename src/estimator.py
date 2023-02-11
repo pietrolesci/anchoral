@@ -18,7 +18,7 @@ from tqdm.auto import tqdm, trange
 from src.containers import EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
 from src.enums import OutputKeys, RunningStage
 from src.registries import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
-from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT, METRIC
+from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT, METRIC, EPOCH_OUTPUT
 from src.utilities import get_hparams
 
 # remove warning from torchmetrics
@@ -151,6 +151,7 @@ class Estimator:
                 RunningStage.VALIDATION,
                 dry_run=dry_run,
                 limit_batches=limit_validation_batches,
+                epoch_idx=epoch_idx,
             )
 
         return FitEpochOutput(train=train_out, validation=validation_out)
@@ -165,7 +166,7 @@ class Estimator:
         log_interval: int,
         dry_run: Optional[bool],
         limit_batches: Optional[int],
-    ) -> EpochOutput:
+    ) -> EPOCH_OUTPUT:
         """Runs over an entire dataloader."""
 
         model.train()
@@ -205,12 +206,12 @@ class Estimator:
             # check stopping conditions
             if self._is_done(batch_idx, dry_run, limit_batches):
                 break
-
-        # method to possibly aggregate
-        self.train_epoch_end(output, metrics)
-
+        
         # hook
-        self.fabric.call("on_train_epoch_end", model=model, output=output)
+        self.fabric.call("on_train_epoch_end", model=model, output=output, metrics=metrics, epoch_idx=epoch_idx)
+        
+        # method to possibly aggregate
+        output = self.train_epoch_end(output, metrics)
 
         return output
 
@@ -274,12 +275,11 @@ class Estimator:
         """This method is useful because validation can run in fit when model is already setup."""
         model = self.fabric.setup(self.model)
         loader = self.configure_dataloader(loader)
-        output = self.eval_epoch_loop(model, loader, stage=stage, dry_run=dry_run, limit_batches=limit_batches)
-        return EpochOutput(output=output)
+        return self.eval_epoch_loop(model, loader, stage=stage, dry_run=dry_run, limit_batches=limit_batches)
 
     def eval_epoch_loop(
         self, model: _FabricModule, eval_loader: _FabricDataLoader, stage: RunningStage, **kwargs
-    ) -> EpochOutput:
+    ) -> EPOCH_OUTPUT:
         """Runs over an entire evaluation dataloader."""
 
         model.eval()
@@ -318,10 +318,11 @@ class Estimator:
                 if self._is_done(batch_idx, kwargs.get("dry_run", None), kwargs.get("limit_batches", None)):
                     break
 
-        getattr(self, f"{stage}_epoch_end")(output, metrics)
-
         # hook
-        self.fabric.call(f"on_{stage}_epoch_end", model=model, output=output)
+        self.fabric.call(f"on_{stage}_epoch_end", model=model, output=output, metrics=metrics, **kwargs)
+
+        # method to possibly aggregate
+        output = getattr(self, f"{stage}_epoch_end")(output, metrics)
 
         return output
 
@@ -436,14 +437,14 @@ class Estimator:
     ) -> EVAL_BATCH_OUTPUT:
         raise NotImplementedError
 
-    def train_epoch_end(self, output: EpochOutput, metrics: Optional[METRIC]) -> None:
-        pass
+    def train_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
+        return output
 
-    def validation_epoch_end(self, output: EpochOutput, metrics: Optional[METRIC]) -> None:
-        pass
+    def validation_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
+        return output
 
-    def test_epoch_end(self, output: EpochOutput, metrics: Optional[METRIC]) -> None:
-        pass
+    def test_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
+        return output
 
     """
     Utilities

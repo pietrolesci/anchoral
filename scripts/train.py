@@ -4,13 +4,13 @@ from pathlib import Path
 
 import hydra
 from datasets import load_from_disk
-from hydra.utils import get_original_cwd
+from hydra.utils import get_original_cwd, instantiate
 from lightning.fabric import seed_everything
 from omegaconf import DictConfig, OmegaConf
 
-from src.data.transformers import ClassificationDataModule
+from src.huggingface.datamodule import ClassificationDataModule
 from src.logging import set_ignore_warnings
-from src.transformers import EstimatorForSequenceClassification
+from src.huggingface.estimators import EstimatorForSequenceClassification
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 set_ignore_warnings()
@@ -52,8 +52,12 @@ def main(cfg: DictConfig):
         num_labels=len(datamodule.labels),
     )
 
+    # define loggers and callbacks
+    loggers = instantiate(cfg.loggers) or {}
+    callbacks = instantiate(cfg.callbacks) or {}
+
     # define estimator
-    estimator = EstimatorForSequenceClassification(model=model, **cfg.trainer)
+    estimator = EstimatorForSequenceClassification(model=model, **cfg.trainer, loggers=list(loggers.values()), callbacks=list(callbacks.values()))
 
     # sanity check
 
@@ -67,12 +71,12 @@ def main(cfg: DictConfig):
     # test
     test_outputs = estimator.test(datamodule.test_loader(), **cfg.test)
 
-    # save experiment output
-    with open("./train_outputs", "wb") as fl:
-        pickle.dump(train_outputs, fl)
+    # # save experiment output
+    # with open("./train_outputs", "wb") as fl:
+    #     pickle.dump(train_outputs, fl)
 
-    with open("./test_outputs", "wb") as fl:
-        pickle.dump(test_outputs, fl)
+    # with open("./test_outputs", "wb") as fl:
+    #     pickle.dump(test_outputs, fl)
 
 
 if __name__ == "__main__":

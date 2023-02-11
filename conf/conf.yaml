@@ -1,7 +1,9 @@
 defaults:
+  - _self_
+  - callbacks:
+    - save_outputs
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
-  - _self_
 
 hydra:
   job:
@@ -26,9 +28,10 @@ trainer:
   num_nodes: 1
   precision: 32
   plugins: null
-  callbacks: null
-  loggers: null
   deterministic: true
+
+callbacks: null
+loggers: null
 
 model:
   name_or_path: null

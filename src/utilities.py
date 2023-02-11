@@ -12,7 +12,7 @@ def tensor_to_python(t: Tensor, *_) -> Union[ndarray, float, int]:
     """Converts `torch.Tensor` to a `numpy.ndarray` or python scalar type."""
     if t.numel() > 1:
         return t.detach().cpu().numpy()
-    return round(t.item(), 6)
+    return round(t.detach().cpu().item(), 6)
 
 
 def move_to_cpu(output: Any) -> Any:

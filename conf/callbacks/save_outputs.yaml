@@ -1,0 +1,3 @@
+save_outputs:
+  _target_: src.huggingface.callbacks.SaveOutputs
+  dirpath: ./outputs/

@@ -1,12 +1,10 @@
-from dataclasses import dataclass, field, fields
-from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 from numpy import ndarray
 from torch.utils.data import BatchSampler, DataLoader, SequentialSampler
-from torchmetrics import Metric, MetricCollection
 
 from src.enums import RunningStage
-from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT
 from src.utilities import move_to_cpu
 
 # @dataclass
@@ -101,6 +99,7 @@ class FitEpochOutput:
     validation: EpochOutput = None
 
 
+
 @dataclass
 class MetadataParserMixin:
     """Simple wrapper for outputs that allows to add metadata."""
@@ -147,6 +146,11 @@ class FitOutput(MetadataParserMixin):
         assert isinstance(_x, FitEpochOutput), f"You can only append `FitEpochOutput`s, not {type(_x)}"
         self.output.append(_x)
 
+    def __getitem__(self, idx: int) -> FitEpochOutput:
+        return self.output[idx]
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(output= ..{len(self.output)} epochs.. , hparams={self.hparams})"
 
 @dataclass
 class EvaluationOutput(MetadataParserMixin):

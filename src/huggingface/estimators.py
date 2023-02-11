@@ -1,14 +1,13 @@
-from typing import Dict, Optional, Union
+from typing import Dict, Optional
 
 import torch
 from torchmetrics import MetricCollection
 from torchmetrics.classification import Accuracy, F1Score
 
-from src.containers import EpochOutput
 from src.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.estimator import Estimator
 from src.query_strategies.base import UncertaintyBasedStrategy
-from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT, POOL_BATCH_OUTPUT
+from src.types import BATCH_OUTPUT, EVAL_BATCH_OUTPUT, POOL_BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
 
 
 class SequenceClassificationMixin:
@@ -56,8 +55,18 @@ class SequenceClassificationMixin:
         if "metrics" in output:
             self.fabric.log_dict(output[OutputKeys.METRICS], step=batch_idx)
 
-    def train_epoch_end(self, output: EpochOutput, metrics: MetricCollection) -> None:
-        """Aggregate interesting outputs across all batches."""
+    def epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
+        # delete data to save space
+        return
+            
+    def train_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
+        return self.epoch_end(output, metrics)
+
+    def validation_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
+        return self.epoch_end(output, metrics)
+
+    def test_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
+        return self.epoch_end(output, metrics)
 
 
 class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator):

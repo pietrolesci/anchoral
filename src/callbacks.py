@@ -5,8 +5,8 @@ from typing import Any, Union
 
 from lightning.fabric.wrappers import _FabricModule
 
-from src.containers import ActiveFitOutput, EpochOutput, FitOutput, RoundOutput
-from src.types import BATCH_OUTPUT
+from src.containers import ActiveFitOutput, FitOutput, RoundOutput
+from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
 
 
 class Callback:
@@ -22,10 +22,10 @@ class Callback:
     def on_fit_end(self, model: _FabricModule, output: FitOutput) -> None:
         """Called when fit ends."""
 
-    def on_train_epoch_start(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_train_epoch_start(self, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
         """Called when the train epoch begins."""
 
-    def on_train_epoch_end(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_train_epoch_end(self, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs) -> None:
         """Called when the train epoch ends.
 
         To access all batch outputs at the end of the epoch, either:
@@ -34,16 +34,16 @@ class Callback:
         2. Cache data across train batch hooks inside the callback implementation to post-process in this hook.
         """
 
-    def on_validation_epoch_start(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_validation_epoch_start(self, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
         """Called when the val epoch begins."""
 
-    def on_validation_epoch_end(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_validation_epoch_end(self, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs) -> None:
         """Called when the val epoch ends."""
 
-    def on_test_epoch_start(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_test_epoch_start(self, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
         """Called when the test epoch begins."""
 
-    def on_test_epoch_end(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_test_epoch_end(self, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs) -> None:
         """Called when the test epoch ends."""
 
     def on_train_batch_start(self, model: _FabricModule, batch: Any, batch_idx: int) -> None:
@@ -85,10 +85,10 @@ class ActiveLearningCallbackMixin:
 
 
 class UncertaintyStrategyMixin:
-    def on_pool_epoch_start(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_pool_epoch_start(self, model: _FabricModule, output: EPOCH_OUTPUT) -> None:
         """Called when the pool epoch begins."""
 
-    def on_pool_epoch_end(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_pool_epoch_end(self, model: _FabricModule, output: EPOCH_OUTPUT) -> None:
         """Called when the train epoch ends.
 
         To access all batch outputs at the end of the epoch, either:
@@ -106,24 +106,24 @@ class Timer(Callback, ActiveLearningCallbackMixin, UncertaintyStrategyMixin):
         self.fit_end = time.perf_counter()
         output.time = self.fit_end - self.fit_start
 
-    def on_train_epoch_start(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_train_epoch_start(self, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
         self.train_epoch_start = time.perf_counter()
 
-    def on_train_epoch_end(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_train_epoch_end(self, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs) -> None:
         self.train_epoch_end = time.perf_counter()
         output.time = self.train_epoch_end - self.train_epoch_start
 
-    def on_validation_epoch_start(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_validation_epoch_start(self, model: _FabricModule, output: EPOCH_OUTPUT) -> None:
         self.validation_epoch_start = time.perf_counter()
 
-    def on_validation_epoch_end(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_validation_epoch_end(self, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC) -> None:
         self.validation_epoch_end = time.perf_counter()
         output.time = self.validation_epoch_end - self.validation_epoch_start
 
-    def on_test_epoch_start(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_test_epoch_start(self, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
         self.test_epoch_start = time.perf_counter()
 
-    def on_test_epoch_end(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_test_epoch_end(self, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs) -> None:
         self.test_epoch_end = time.perf_counter()
         output.time = self.test_epoch_end - self.test_epoch_start
 
@@ -162,10 +162,10 @@ class Timer(Callback, ActiveLearningCallbackMixin, UncertaintyStrategyMixin):
         self.round_end = time.perf_counter()
         output.time = self.round_end - self.round_start
 
-    def on_train_epoch_start(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_train_epoch_start(self, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
         self.pool_epoch_start = time.perf_counter()
 
-    def on_pool_epoch_end(self, model: _FabricModule, output: EpochOutput) -> None:
+    def on_pool_epoch_end(self, model: _FabricModule, output: EPOCH_OUTPUT) -> None:
         self.pool_epoch_end = time.perf_counter()
         output.time = self.pool_epoch_end - self.pool_epoch_start
 
