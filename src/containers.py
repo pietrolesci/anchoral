@@ -73,7 +73,7 @@ class EpochOutput(Output):
 
     def __repr__(self) -> str:
         self.__class__.__name__
-        s = f"{self.__class__.__name__}(time={self.time}, metrics={self.metrics}, output="
+        s = f"{self.__class__.__name__}(metrics={self.metrics}, output="
         return f"{s} ..{len(self.output)} batches.. )"
 
 

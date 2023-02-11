@@ -11,7 +11,7 @@ from torch import Tensor
 def tensor_to_python(t: Tensor, *_) -> Union[ndarray, float, int]:
     """Converts `torch.Tensor` to a `numpy.ndarray` or python scalar type."""
     if t.numel() > 1:
-        return t.detach().numpy()
+        return t.detach().cpu().numpy()
     return round(t.item(), 6)
 
 

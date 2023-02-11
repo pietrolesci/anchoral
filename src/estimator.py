@@ -80,8 +80,8 @@ class Estimator:
         outputs = FitOutput(hparams=hparams)
 
         # configure optimizer and scheduler
-        optimizer = self.configure_optimizer(optimizer, learning_rate, **optimizer_kwargs)
-        scheduler = self.configure_scheduler(scheduler, optimizer, train_loader, **scheduler_kwargs)
+        optimizer = self.configure_optimizer(optimizer, learning_rate, optimizer_kwargs)
+        scheduler = self.configure_scheduler(scheduler, optimizer, train_loader, scheduler_kwargs)
 
         # configure dataloaders
         train_loader = self.configure_dataloader(train_loader)
@@ -140,6 +140,7 @@ class Estimator:
         )
 
         # maybe run validation
+        validation_out = None
         if validation_loader is not None:
             validation_out = self.eval_epoch_loop(
                 model,
@@ -176,7 +177,7 @@ class Estimator:
         # hook
         self.fabric.call("on_train_epoch_start", model=model, output=output)
 
-        pbar = self._get_batch_progress_bar(train_loader, RunningStage.TRAIN, epoch_idx=epoch_idx)
+        pbar = self._get_batch_progress_bar(train_loader, RunningStage.TRAIN, epoch_idx=epoch_idx, dry_run=dry_run)
         for batch_idx, batch in enumerate(pbar):
             # put batch on correct device
             batch = self.transfer_to_device(batch)
@@ -255,11 +256,11 @@ class Estimator:
         dry_run: Optional[bool] = None,
         limit_batches: Optional[int] = None,
     ) -> EvaluationOutput:
+        hparams = get_hparams()
         output = self._evaluate(
             validation_loader, RunningStage.VALIDATION, dry_run=dry_run, limit_batches=limit_batches
         )
-        output.hparams = get_hparams()
-        return output
+        return EvaluationOutput(hparams=hparams, output=output)
 
     def test(
         self,
@@ -267,16 +268,16 @@ class Estimator:
         dry_run: Optional[bool] = None,
         limit_batches: Optional[int] = None,
     ) -> EvaluationOutput:
-        output = self._eval(test_loader, RunningStage.TEST, dry_run=dry_run, limit_batches=limit_batches)
-        output.hparams = get_hparams()
-        return output
+        hparams = get_hparams()
+        output = self._evaluate(test_loader, RunningStage.TEST, dry_run=dry_run, limit_batches=limit_batches)
+        return EvaluationOutput(hparams=hparams, output=output)
 
     def _evaluate(self, loader: DataLoader, stage: RunningStage, dry_run: bool, limit_batches: int) -> EvaluationOutput:
         """This method is useful because validation can run in fit when model is already setup."""
         model = self.fabric.setup(self.model)
         loader = self.configure_dataloader(loader)
         output = self.eval_epoch_loop(model, loader, stage=stage, dry_run=dry_run, limit_batches=limit_batches)
-        return EvaluationOutput(output=output)
+        return EpochOutput(output=output)
 
     def eval_epoch_loop(
         self, model: _FabricModule, eval_loader: _FabricDataLoader, stage: RunningStage, **kwargs
@@ -295,7 +296,7 @@ class Estimator:
         # hook
         self.fabric.call(f"on_{stage}_epoch_start", model=model, output=output)
 
-        pbar = self._get_batch_progress_bar(eval_loader, stage)
+        pbar = self._get_batch_progress_bar(eval_loader, stage, dry_run=kwargs.get("dry_run", None))
         with torch.inference_mode():
             for batch_idx, batch in enumerate(pbar):
                 batch = self.transfer_to_device(batch)
@@ -309,7 +310,7 @@ class Estimator:
                 # pass the batch_out: EVAL_BATCH_OUTPUT to the logger as is, then wrap
                 self.log(batch_out, batch_idx=batch_idx, stage=stage)
 
-                batch_out = BatchOutput(batch=batch_idx, output=batch_out)
+                batch_out = BatchOutput(batch_idx=batch_idx, output=batch_out)
 
                 # hook
                 self.fabric.call(
@@ -345,7 +346,7 @@ class Estimator:
     def transfer_to_device(self, batch: Any) -> Any:
         return self.fabric.to_device(batch)
 
-    def configure_optimizer(self, optimizer: str, learning_rate: float, **optimizer_kwargs) -> Optimizer:
+    def configure_optimizer(self, optimizer: str, learning_rate: float, optimizer_kwargs: Optional[Dict] = None) -> Optimizer:
         assert optimizer is not None, ValueError("You must provide an optimizer.")
 
         optimizer_fn = OPTIMIZER_REGISTRY.get(optimizer)
@@ -381,7 +382,7 @@ class Estimator:
         return optimizer
 
     def configure_scheduler(
-        self, scheduler: str, optimizer: Optimizer, train_loader: DataLoader, **scheduler_kwargs
+        self, scheduler: str, optimizer: Optimizer, train_loader: DataLoader, scheduler_kwargs: Optional[Dict] = None,
     ) -> Optional[_LRScheduler]:
         if scheduler is None:
             return
@@ -457,10 +458,14 @@ class Estimator:
         return len(train_loader)
 
     def _get_batch_progress_bar(self, loader: DataLoader, stage: RunningStage, **kwargs) -> tqdm:
-        if stage != RunningStage.TRAIN:
-            return tqdm(loader, desc=f"{stage.title()}", dynamic_ncols=True, leave=False)
+        
+        if stage == RunningStage.TRAIN:
+            return tqdm(loader, desc=f"Epoch {kwargs.get('epoch_idx', '')}".strip(), dynamic_ncols=True, leave=False)
 
-        return tqdm(loader, desc=f"Epoch {kwargs.get('epoch_idx', '')}".strip(), dynamic_ncols=True, leave=False)
+        dry_run = kwargs.get("dry_run", False)
+        leave = stage == RunningStage.TEST if not dry_run else False
+        return tqdm(loader, desc=f"{stage.title()}", dynamic_ncols=True, leave=leave)
+
 
     def _get_epoch_progress_bar(self, num_epochs: int) -> tqdm:
         return trange(num_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
