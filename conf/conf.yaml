@@ -7,7 +7,7 @@ hydra:
   job:
     chdir: true
   run:
-    dir: ./outputs/${dataset_name}_${now:%Y-%m-%d}T${now:%H-%M-%S}
+    dir: ./outputs/${experiment_group}/${dataset_name}_${now:%Y-%m-%d}T${now:%H-%M-%S}
   job_logging:
     formatters:
       colorlog:
@@ -20,7 +20,7 @@ hydra:
           CRITICAL: bold_red
 
 trainer:
-  accelerator: null
+  accelerator: gpu
   strategy: null
   devices: null
   num_nodes: 1
@@ -70,3 +70,4 @@ dataset_name: '???'
 seed: 42
 limit_batches: null
 dry_run: false
+experiment_group: test
