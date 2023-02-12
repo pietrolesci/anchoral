@@ -1,4 +1,5 @@
 import os
+from collections import Counter
 from functools import partial
 from typing import Callable, Dict, List, Optional, Union
 
@@ -17,6 +18,7 @@ A very tailored datamodule for HuggingFace datasets
 
 class ClassificationDataModule(DataModule):
     _default_columns: List[str] = [InputKeys.TARGET, InputKeys.INPUT_IDS, InputKeys.ATT_MASK]
+    _class_weights: Optional[List[float]] = None
 
     def __init__(self, tokenizer: Optional[PreTrainedTokenizerBase], max_source_length: int = 128, **kwargs) -> None:
         self._hparams_ignore.append("tokenizer")
@@ -24,6 +26,16 @@ class ClassificationDataModule(DataModule):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
         self._tokenizer = tokenizer
         self.max_source_length = max_source_length
+
+    @property
+    def class_weights(self) -> Optional[List[float]]:
+        if self._class_weights is not None:
+            return self._class_weights
+
+        counter = Counter(self.train_dataset[InputKeys.TARGET])
+        total = sum(counter.values())
+        self._class_weights = [counter[k] / total for k in sorted(counter)]
+        return self._class_weights
 
     @property
     def tokenizer(self) -> PreTrainedTokenizerBase:
