@@ -69,3 +69,13 @@ and unzip it into `./data/raw/civil_comments`. Then,
 ./bin/process_data.sh
 ./bin/prepare_data.sh
 ```
+
+## Logging (HuggingFace classifier experiments)
+
+Logs are split in 3 granularity groups: instance-level, batch-level, epoch-level.
+
+- Instance-level: these are the raw logits
+
+- Batch-level: these are the loss, and the various metrics passes
+
+- Epoch-level: these are the same as batch-level but aggregated across batches
