@@ -1,0 +1,4 @@
+tensorboard:
+  _target_: lightning.fabric.loggers.TensorBoardLogger
+  root_dir: ./
+  name: tensorboard_logs

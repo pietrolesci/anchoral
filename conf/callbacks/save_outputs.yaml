@@ -1,3 +1,7 @@
 save_outputs:
   _target_: src.huggingface.callbacks.SaveOutputs
-  dirpath: ./outputs/
+  dirpath: ./logs/
+  instance_level: true
+  batch_level: false
+  epoch_level: true
+

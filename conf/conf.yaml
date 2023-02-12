@@ -2,6 +2,8 @@ defaults:
   - _self_
   - callbacks:
     - save_outputs
+  - loggers:
+    - tensorboard
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
 
@@ -51,6 +53,8 @@ data:
 fit:
   num_epochs: 3
   learning_rate: 0.001
+  loss_fn: null
+  loss_fn_kwargs: null
   optimizer: adamw
   optimizer_kwargs: null
   scheduler: constant_schedule
@@ -73,4 +77,4 @@ dataset_name: '???'
 seed: 42
 limit_batches: null
 dry_run: false
-experiment_group: test
+experiment_group: dry_run
