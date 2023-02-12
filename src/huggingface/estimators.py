@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional, Union
 
 import torch
 from torchmetrics import MetricCollection
@@ -7,37 +7,66 @@ from torchmetrics.classification import Accuracy, F1Score
 from src.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.estimator import Estimator
 from src.query_strategies.base import UncertaintyBasedStrategy
-from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, METRIC, POOL_BATCH_OUTPUT
+from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, POOL_BATCH_OUTPUT
 
 
 class SequenceClassificationMixin:
-    def step(self, model: torch.nn.Module, batch: Dict, batch_idx: int, metrics: MetricCollection) -> BATCH_OUTPUT:
+    def step(
+        self,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
+        model: torch.nn.Module,
+        batch: Dict,
+        batch_idx: int,
+        metrics: MetricCollection,
+    ) -> BATCH_OUTPUT:
         unique_ids = batch.pop(InputKeys.ON_CPU)[SpecialKeys.ID]
 
+        # forward pass
         out = model(**batch)
+
+        # compute loss
+        loss = loss_fn(out.logits, batch[InputKeys.TARGET])
+
+        # compute metrics
         preds = out.logits.argmax(-1)
         out_metrics = metrics(preds, batch[InputKeys.TARGET])
+
         return {
-            OutputKeys.LOSS: out.loss,
+            OutputKeys.LOSS: loss,
             OutputKeys.LOGITS: out.logits,
             OutputKeys.METRICS: out_metrics,
             SpecialKeys.ID: unique_ids,
         }
 
-    def training_step(
-        self, model: torch.nn.Module, batch: Dict, batch_idx: int, metrics: MetricCollection
+    def train_step(
+        self,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
+        model: torch.nn.Module,
+        batch: Dict,
+        batch_idx: int,
+        metrics: MetricCollection,
     ) -> BATCH_OUTPUT:
-        return self.step(model, batch, batch_idx, metrics)
+        return self.step(loss_fn, model, batch, batch_idx, metrics)
 
     def validation_step(
-        self, model: torch.nn.Module, batch: Dict, batch_idx: int, metrics: MetricCollection
+        self,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
+        model: torch.nn.Module,
+        batch: Dict,
+        batch_idx: int,
+        metrics: MetricCollection,
     ) -> EVAL_BATCH_OUTPUT:
-        return self.step(model, batch, batch_idx, metrics)
+        return self.step(loss_fn, model, batch, batch_idx, metrics)
 
     def test_step(
-        self, model: torch.nn.Module, batch: Dict, batch_idx: int, metrics: MetricCollection
+        self,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
+        model: torch.nn.Module,
+        batch: Dict,
+        batch_idx: int,
+        metrics: MetricCollection,
     ) -> EVAL_BATCH_OUTPUT:
-        return self.step(model, batch, batch_idx, metrics)
+        return self.step(loss_fn, model, batch, batch_idx, metrics)
 
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[MetricCollection]:
         # you are in charge of moving it to the correct device
@@ -50,10 +79,8 @@ class SequenceClassificationMixin:
             ).to(self.device)
 
     def log(self, output: BATCH_OUTPUT, batch_idx: int, stage: RunningStage) -> None:
-        if "loss" in output:
-            self.fabric.log(OutputKeys.LOSS, output[OutputKeys.LOSS], step=batch_idx)
-        if "metrics" in output:
-            self.fabric.log_dict(output[OutputKeys.METRICS], step=batch_idx)
+        self.fabric.log(OutputKeys.LOSS, output[OutputKeys.LOSS], step=batch_idx)
+        self.fabric.log_dict(output[OutputKeys.METRICS], step=batch_idx)
 
     def epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
         # delete data to save space

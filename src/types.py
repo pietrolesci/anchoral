@@ -11,3 +11,4 @@ POOL_BATCH_OUTPUT = Dict
 METRIC = Union[Metric, Any]
 DATASET = Iterable[Mapping]
 EPOCH_OUTPUT = Union[EpochOutput, Any]
+FORWARD_OUTPUT = Any

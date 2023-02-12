@@ -14,13 +14,16 @@ from src.huggingface.estimators import EstimatorForSequenceClassification
 from src.logging import set_ignore_warnings
 
 set_ignore_warnings()
-# log = get_logger("hydra")
-log = logging.getLogger("train")
+log = logging.getLogger("hydra")
 sep_line = f"{'=' * 70}"
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="conf")
 def main(cfg: DictConfig):
+    # ============ STEP 1: config and initialization ============
+    # resolve interpolation
+    OmegaConf.resolve(cfg)
+
     # set paths, load metadata, and tidy config
     data_path = Path(get_original_cwd()) / "data" / "prepared" / cfg.dataset_name
 
@@ -28,13 +31,22 @@ def main(cfg: DictConfig):
     if cfg.model.name_or_path is None:
         cfg.model.name_or_path = metadata.name_or_path
 
-    log.info(f"\n{OmegaConf.to_yaml(cfg, resolve=True)}\n{sep_line}")
+    log.info(f"\n{OmegaConf.to_yaml(cfg)}\n{sep_line}")
     if cfg.dry_run:
         log.critical("\n\n\t !!! DEBUGGING !!! \n\n")
+
+    # toggle balanced loss
+    should_load_class_weights = (
+        cfg.fit.loss_fn is not None
+        and cfg.fit.loss_fn_kwargs is not None
+        and "weight" in cfg.fit.loss_fn_kwargs
+        and not isinstance(cfg.fit.loss_fn_kwargs.get("weight"), list)
+    )
 
     # seed everything
     seed_everything(cfg.seed)
 
+    # ============ STEP 2: data loading ============
     # load data
     dataset_dict = load_from_disk(data_path, keep_in_memory=True)
 
@@ -43,7 +55,10 @@ def main(cfg: DictConfig):
 
     # define datamodule
     datamodule = ClassificationDataModule.from_dataset_dict(dataset_dict, tokenizer=tokenizer)
+    if should_load_class_weights:
+        cfg.fit.loss_fn_kwargs = {"weight": datamodule.class_weights}
 
+    # ============ STEP 3: model loading ============
     # load model using data properties
     model = AutoModelForSequenceClassification.from_pretrained(
         cfg.model.name_or_path,
@@ -58,20 +73,21 @@ def main(cfg: DictConfig):
 
     # define estimator
     estimator = EstimatorForSequenceClassification(
-        model=model, **cfg.trainer, loggers=list(loggers.values()), callbacks=list(callbacks.values())
+        model=model,
+        **OmegaConf.to_container(cfg.trainer),
+        loggers=list(loggers.values()),
+        callbacks=list(callbacks.values()),
     )
 
-    # sanity check
-
     # fit
-    train_outputs = estimator.fit(
+    fit_out = estimator.fit(
         train_loader=datamodule.train_loader(),
         validation_loader=datamodule.validation_loader(),
-        **cfg.fit,
+        **OmegaConf.to_container(cfg.fit),
     )
 
     # test
-    test_outputs = estimator.test(datamodule.test_loader(), **cfg.test)
+    test_out = estimator.test(datamodule.test_loader(), **OmegaConf.to_container(cfg.test))
 
     # # save experiment output
     # with open("./train_outputs", "wb") as fl:

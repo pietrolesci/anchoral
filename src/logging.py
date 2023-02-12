@@ -5,6 +5,7 @@ import warnings
 import colorlog
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import get_original_cwd
+from lightning.fabric.loggers.tensorboard import log
 from transformers import logging as hf_logging
 
 LOGGING_LEVELS_MAPPING = {
@@ -72,3 +73,5 @@ def set_ignore_warnings():
     # set os environ variable for multiprocesses
     os.environ["PYTHONWARNINGS"] = "ignore"
     hf_logging.set_verbosity_error()
+    # fucking finally remove this warning from fabric
+    log.setLevel(logging.ERROR)
