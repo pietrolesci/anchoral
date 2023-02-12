@@ -54,7 +54,7 @@ class Callback:
 
         Note:
             The value ``outputs["loss"]`` here will be the normalized value w.r.t ``accumulate_grad_batches`` of the
-            loss returned from ``training_step``.
+            loss returned from ``train_step``.
         """
 
     def on_validation_batch_start(self, model: _FabricModule, batch: Any, batch_idx: int) -> None:
