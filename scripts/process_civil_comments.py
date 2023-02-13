@@ -17,7 +17,7 @@ from src.enums import InputKeys, RunningStage, SpecialKeys
 
 
 def subsample(df: pd.DataFrame, n_samples: int, min_chars: int, seed: int) -> pd.DataFrame:
-    df["len"] = df[SpecialKeys.TEXT].str.replace("\W", "", regex=True).str.len()
+    df["len"] = df[InputKeys.TEXT].str.replace("\W", "", regex=True).str.len()
     df = df.loc[df["len"] >= min_chars].sort_values(["len"])
     ids = resample(df.index, replace=False, stratify=df["labels"], n_samples=n_samples, random_state=seed)
     df = df.loc[df.index.isin(ids)].drop(columns=["len"])
@@ -43,14 +43,14 @@ if __name__ == "__main__":
     df = pd.read_csv(Path(args.input_dir) / "all_data.csv")
 
     # rename columns
-    df = df.rename(columns={"comment_text": SpecialKeys.TEXT})
+    df = df.rename(columns={"comment_text": InputKeys.TEXT})
 
     # select columns
-    cols = ["split", "id", "toxicity", SpecialKeys.TEXT]
+    cols = ["split", "id", "toxicity", InputKeys.TEXT]
     df = df[cols].copy()
 
     # drop null values
-    df = df.dropna(subset=[SpecialKeys.TEXT, "toxicity"])
+    df = df.dropna(subset=[InputKeys.TEXT, "toxicity"])
 
     pbar.update(1)
 
@@ -58,22 +58,22 @@ if __name__ == "__main__":
     pbar.set_description("Removing duplicates and aggregating")
 
     # compute unique texts exact
-    df["unique_id"] = df.groupby(SpecialKeys.TEXT).ngroup().astype(int)
+    df[SpecialKeys.ID] = df.groupby(InputKeys.TEXT).ngroup().astype(int)
 
     # compute average toxicity across equal texts
-    df["avg_toxicity"] = df.groupby("unique_id")["toxicity"].transform("mean")
+    df["avg_toxicity"] = df.groupby(SpecialKeys.ID)["toxicity"].transform("mean")
 
     # remove duplicates within split
-    df = df.drop_duplicates(subset=["split", SpecialKeys.TEXT])
+    df = df.drop_duplicates(subset=["split", InputKeys.TEXT])
 
     # remove duplicates across splits
-    ddf = df.sort_values(["unique_id", "split"]).drop_duplicates(subset=["unique_id"])
+    ddf = df.sort_values([SpecialKeys.ID, "split"]).drop_duplicates(subset=[SpecialKeys.ID])
 
     # check that duplicates are removed from training rather than testing
     assert df["split"].value_counts()["test"] == ddf["split"].value_counts()["test"]
 
     # select columns
-    df = ddf.drop(columns=["toxicity", "unique_id"])
+    df = ddf.drop(columns=["toxicity", SpecialKeys.ID])
 
     # binarize labels
     df[InputKeys.TARGET] = (df["avg_toxicity"] >= 0.5).astype(int)
@@ -103,7 +103,7 @@ if __name__ == "__main__":
         {
             SpecialKeys.ID: Value(dtype="int32", id=None),
             InputKeys.TARGET: ClassLabel(num_classes=2, names=["not_toxic", "toxic"], names_file=None, id=None),
-            SpecialKeys.TEXT: Value(dtype="string", id=None),
+            InputKeys.TEXT: Value(dtype="string", id=None),
         }
     )
 
