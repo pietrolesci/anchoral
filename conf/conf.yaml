@@ -24,7 +24,7 @@ hydra:
           ERROR: red
           CRITICAL: bold_red
   sweep:
-    dir: ./outputs_multirun/${experiment_group}/${dataset_name}_${now:%Y-%m-%d}T${now:%H-%M-%S}
+    dir: ./outputs/multirun/${experiment_group}/${dataset_name}_${now:%Y-%m-%d}T${now:%H-%M-%S}
     subdir: ${hydra.job.override_dirname}
 
 trainer:
@@ -50,7 +50,7 @@ data:
   drop_last: false
   persistent_workers: true
   shuffle: true
-  seed_dataloader: ${seed}
+  seed: ${seed}
   replacement: false
   max_source_length: 512
 

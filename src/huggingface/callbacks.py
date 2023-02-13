@@ -8,6 +8,7 @@ from lightning.fabric.wrappers import _FabricModule
 
 from src.callbacks import Callback
 from src.enums import OutputKeys, RunningStage, SpecialKeys
+from src.estimator import Estimator
 from src.types import EPOCH_OUTPUT, METRIC
 from src.utilities import move_to_cpu
 
@@ -22,6 +23,7 @@ class SaveOutputs(Callback):
 
     def on_epoch_end(
         self,
+        estimator: Estimator,
         model: _FabricModule,
         output: EPOCH_OUTPUT,
         metrics: METRIC,
@@ -29,8 +31,7 @@ class SaveOutputs(Callback):
         **kwargs,
     ) -> None:
         # output directory setup
-        epoch_idx = kwargs.get("epoch_idx", None)
-        suffix = f"_epoch_{epoch_idx}" if epoch_idx is not None else ""
+        suffix = f"_epoch_{estimator.counter.num_epochs}" if stage != RunningStage.TEST else ""
         path = self.dirpath / f"{stage}"
         path.mkdir(exist_ok=True, parents=True)
 
@@ -62,11 +63,17 @@ class SaveOutputs(Callback):
             }
             srsly.write_json(path / f"epoch_level{suffix}.json", epoch_level_output)
 
-    def on_train_epoch_end(self, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs) -> None:
-        return self.on_epoch_end(model, output, metrics, RunningStage.TRAIN, **kwargs)
+    def on_train_epoch_end(
+        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
+    ) -> None:
+        return self.on_epoch_end(estimator, model, output, metrics, RunningStage.TRAIN, **kwargs)
 
-    def on_validation_epoch_end(self, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs) -> None:
-        return self.on_epoch_end(model, output, metrics, RunningStage.VALIDATION, **kwargs)
+    def on_validation_epoch_end(
+        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
+    ) -> None:
+        return self.on_epoch_end(estimator, model, output, metrics, RunningStage.VALIDATION, **kwargs)
 
-    def on_test_epoch_end(self, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs) -> None:
-        return self.on_epoch_end(model, output, metrics, RunningStage.TEST, **kwargs)
+    def on_test_epoch_end(
+        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
+    ) -> None:
+        return self.on_epoch_end(estimator, model, output, metrics, RunningStage.TEST, **kwargs)

@@ -112,7 +112,7 @@ class Timer(Callback):
 
     def on_fit_end(self, estimator: Estimator, *args, **kwargs) -> None:
         self.fit_end = time.perf_counter()
-        estimator.fabric.log("fit/fit_time", self.fit_end - self.fit_start, step=0)
+        estimator.fabric.log("timer/fit_time", self.fit_end - self.fit_start, step=0)
 
     """
     Epoch start

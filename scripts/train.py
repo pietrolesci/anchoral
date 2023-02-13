@@ -2,9 +2,11 @@ import logging
 from pathlib import Path
 
 import hydra
+import srsly
 from datasets import load_from_disk
 from hydra.utils import get_original_cwd, instantiate
 from lightning.fabric import seed_everything
+from lightning.fabric.loggers import TensorBoardLogger
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
@@ -95,6 +97,18 @@ def main(cfg: DictConfig) -> None:
 
     # ============ STEP 4: save outputs ============
     OmegaConf.save(cfg, "./hparams.yaml")
+
+    # log hparams to tensorboard
+    if isinstance(estimator.fabric.logger, TensorBoardLogger):
+        hparams = OmegaConf.to_container(cfg)
+        metrics = srsly.read_json(f"{cfg.callbacks.save_outputs.dirpath}/test/epoch_level.json")
+        hparam_dict = {**hparams["trainer"], **hparams["model"], **hparams["data"], **hparams["fit"]}
+        metric_dict = {f"test_{k}": v for k, v in metrics["metrics"].items()}
+        metric_dict["test_loss"] = metrics["loss"]
+        estimator.fabric.logger.experiment.add_hparams(
+            hparam_dict=hparam_dict,
+            metric_dict=metric_dict,
+        )
 
     # # save experiment output
     # with open("./train_outputs", "wb") as fl:
