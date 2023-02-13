@@ -8,7 +8,7 @@ from datasets import load_from_disk
 from sentence_transformers import SentenceTransformer
 from tqdm.auto import tqdm
 
-from src.enums import SpecialKeys
+from src.enums import SpecialKeys, InputKeys
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     pbar.set_description(f"Embedding")
 
     # compute embeddings
-    texts = train_df[SpecialKeys.TEXT].tolist()
+    texts = train_df[InputKeys.TEXT].tolist()
     embeddings = sentence_encoder.encode(texts, show_progress_bar=True, batch_size=512, device="cuda")
 
     # save data
