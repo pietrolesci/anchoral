@@ -15,7 +15,7 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm, trange
 
-from src.containers import EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
+from src.containers import Counter, EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
 from src.enums import OutputKeys, RunningStage
 from src.registries import LOSS_FUNCTIONS_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, FORWARD_OUTPUT, METRIC
@@ -24,6 +24,7 @@ from src.utilities import get_hparams
 
 class Estimator:
     _loss_fn: Optional[Union[torch.nn.Module, Callable]] = None
+    _counter: Counter = None
 
     def __init__(
         self,
@@ -56,6 +57,12 @@ class Estimator:
     def device(self) -> torch.device:
         return self.fabric.device
 
+    @property
+    def counter(self) -> Counter:
+        if self._counter is None:
+            self._counter = Counter()
+        return self._counter
+
     """
     Fit loop
     """
@@ -64,7 +71,7 @@ class Estimator:
         self,
         train_loader: DataLoader,
         validation_loader: Optional[DataLoader] = None,
-        num_epochs: int = 3,
+        num_epochs: Optional[int] = 3,
         loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
         learning_rate: float = 0.001,
@@ -98,13 +105,15 @@ class Estimator:
         model, optimizer = self.fabric.setup(self.model, optimizer)
 
         # hook
-        self.fabric.call("on_fit_start", model=model, output=outputs)
+        self.fabric.call("on_fit_start", estimator=self, model=model, output=outputs)
+
+        # reset counter
+        self.counter.reset()
 
         # training loop over epochs
         pbar = self._get_epoch_progress_bar(num_epochs)
-        for epoch_idx in pbar:
+        for _ in pbar:  # NOTE: this can become a while loop
             output = self.fit_epoch_loop(
-                epoch_idx=epoch_idx,
                 model=model,
                 train_loader=train_loader,
                 validation_loader=validation_loader,
@@ -118,14 +127,16 @@ class Estimator:
             )
             outputs.append(output)
 
+            # update counter
+            self.counter.increment_epochs()
+
         # hook
-        self.fabric.call("on_fit_end", model=model, output=outputs)
+        self.fabric.call("on_fit_end", estimator=self, model=model, output=outputs)
 
         return outputs
 
     def fit_epoch_loop(
         self,
-        epoch_idx: int,
         model: _FabricModule,
         train_loader: _FabricDataLoader,
         validation_loader: Optional[_FabricDataLoader],
@@ -138,7 +149,6 @@ class Estimator:
         limit_validation_batches: Optional[int],
     ) -> FitEpochOutput:
         train_out = self.train_epoch_loop(
-            epoch_idx,
             loss_fn,
             model,
             train_loader,
@@ -159,14 +169,12 @@ class Estimator:
                 RunningStage.VALIDATION,
                 dry_run=dry_run,
                 limit_batches=limit_validation_batches,
-                epoch_idx=epoch_idx,
             )
 
         return FitEpochOutput(train=train_out, validation=validation_out)
 
     def train_epoch_loop(
         self,
-        epoch_idx: int,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         train_loader: _FabricDataLoader,
@@ -186,17 +194,17 @@ class Estimator:
         output = EpochOutput()
 
         # hook
-        self.fabric.call("on_train_epoch_start", model=model, output=output)
+        self.fabric.call("on_train_epoch_start", estimator=self, model=model, output=output)
 
         pbar = self._get_batch_progress_bar(
-            train_loader, RunningStage.TRAIN, epoch_idx=epoch_idx, dry_run=dry_run, limit_batches=limit_batches
+            train_loader, RunningStage.TRAIN, dry_run=dry_run, limit_batches=limit_batches
         )
         for batch_idx, batch in enumerate(pbar):
             # put batch on correct device
             batch = self.transfer_to_device(batch)
 
             # hook
-            self.fabric.call("on_train_batch_start", model=model, batch=batch, batch_idx=batch_idx)
+            self.fabric.call("on_train_batch_start", estimator=self, model=model, batch=batch, batch_idx=batch_idx)
 
             # run model on batch
             batch_out = self.train_batch_loop(loss_fn, model, batch, batch_idx, optimizer, scheduler, metrics)
@@ -205,11 +213,13 @@ class Estimator:
             if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
                 pbar.set_postfix(loss=round(batch_out[OutputKeys.LOSS].item(), ndigits=4))
 
-            # pass the batch_out: BATCH_OUTPUT to the logger as is, then wrap
-            self.log(batch_out, batch_idx=batch_idx, stage=RunningStage.TRAIN)
+                # pass the batch_out: BATCH_OUTPUT to the logger as is, then wrap
+                self.log(batch_out, batch_idx=batch_idx, stage=RunningStage.TRAIN)
 
             # hook
-            self.fabric.call("on_train_batch_end", model=model, output=batch_out, batch=batch, batch_idx=batch_idx)
+            self.fabric.call(
+                "on_train_batch_end", estimator=self, model=model, output=batch_out, batch=batch, batch_idx=batch_idx
+            )
 
             # record output
             output.append(batch_out)
@@ -219,7 +229,9 @@ class Estimator:
                 break
 
         # hook
-        self.fabric.call("on_train_epoch_end", model=model, output=output, metrics=metrics, epoch_idx=epoch_idx)
+        self.fabric.call(
+            "on_train_epoch_end", estimator=self, model=model, output=output, metrics=metrics, counter=self.counter
+        )
 
         # method to possibly aggregate
         output = self.train_epoch_end(output, metrics)
@@ -255,6 +267,9 @@ class Estimator:
         if scheduler is not None:
             scheduler.step()
 
+        # update counter
+        self.counter.increment_steps()
+
         return output
 
     """
@@ -266,12 +281,13 @@ class Estimator:
         validation_loader: DataLoader,
         loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
+        log_interval: int = 1,
         dry_run: Optional[bool] = None,
         limit_batches: Optional[int] = None,
     ) -> EvaluationOutput:
         hparams = get_hparams()
         output = self._evaluate(
-            validation_loader, loss_fn, loss_fn_kwargs, RunningStage.VALIDATION, dry_run, limit_batches
+            validation_loader, loss_fn, loss_fn_kwargs, RunningStage.VALIDATION, log_interval, dry_run, limit_batches
         )
         return EvaluationOutput(hparams=hparams, output=output)
 
@@ -280,11 +296,14 @@ class Estimator:
         test_loader: DataLoader,
         loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
+        log_interval: int = 1,
         dry_run: Optional[bool] = None,
         limit_batches: Optional[int] = None,
     ) -> EvaluationOutput:
         hparams = get_hparams()
-        output = self._evaluate(test_loader, loss_fn, loss_fn_kwargs, RunningStage.TEST, dry_run, limit_batches)
+        output = self._evaluate(
+            test_loader, loss_fn, loss_fn_kwargs, RunningStage.TEST, log_interval, dry_run, limit_batches
+        )
         return EvaluationOutput(hparams=hparams, output=output)
 
     def _evaluate(
@@ -293,6 +312,7 @@ class Estimator:
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
         loss_fn_kwargs: Optional[Dict],
         stage: RunningStage,
+        log_interval: int,
         dry_run: bool,
         limit_batches: int,
     ) -> EvaluationOutput:
@@ -300,7 +320,9 @@ class Estimator:
         model = self.fabric.setup(self.model)
         loader = self.configure_dataloader(loader)
         loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.VALIDATION)
-        return self.eval_epoch_loop(loss_fn, model, loader, stage=stage, dry_run=dry_run, limit_batches=limit_batches)
+        return self.eval_epoch_loop(
+            loss_fn, model, loader, stage=stage, log_interval=log_interval, dry_run=dry_run, limit_batches=limit_batches
+        )
 
     def eval_epoch_loop(
         self,
@@ -308,7 +330,9 @@ class Estimator:
         model: _FabricModule,
         eval_loader: _FabricDataLoader,
         stage: RunningStage,
-        **kwargs,
+        log_interval: int,
+        dry_run: Optional[bool],
+        limit_batches: Optional[int],
     ) -> EPOCH_OUTPUT:
         """Runs over an entire evaluation dataloader."""
 
@@ -320,38 +344,45 @@ class Estimator:
         output = EpochOutput()
 
         # hook
-        self.fabric.call(f"on_{stage}_epoch_start", model=model, output=output)
+        self.fabric.call(f"on_{stage}_epoch_start", estimator=self, model=model, output=output)
 
-        pbar = self._get_batch_progress_bar(
-            eval_loader, stage, dry_run=kwargs.get("dry_run", None), limit_batches=kwargs.get("limit_batches", None)
-        )
+        pbar = self._get_batch_progress_bar(eval_loader, stage, dry_run=dry_run, limit_batches=limit_batches)
         with torch.inference_mode():
             for batch_idx, batch in enumerate(pbar):
                 batch = self.transfer_to_device(batch)
 
                 # hook
-                self.fabric.call(f"on_{stage}_batch_start", model=model, batch=batch, batch_idx=batch_idx)
+                self.fabric.call(
+                    f"on_{stage}_batch_start", estimator=self, model=model, batch=batch, batch_idx=batch_idx
+                )
 
                 # run on batch
                 batch_out = self.eval_batch_loop(loss_fn, model, batch, batch_idx, metrics, stage)
 
-                # pass the batch_out: EVAL_BATCH_OUTPUT to the logger as is, then wrap
-                self.log(batch_out, batch_idx=batch_idx, stage=stage)
+                # update progress
+                if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
+                    # pass the batch_out: EVAL_BATCH_OUTPUT to the logger as is, then wrap
+                    self.log(batch_out, batch_idx=batch_idx, stage=stage)
 
                 # hook
                 self.fabric.call(
-                    f"on_{stage}_batch_end", model=model, output=batch_out, batch=batch, batch_idx=batch_idx
+                    f"on_{stage}_batch_end",
+                    estimator=self,
+                    model=model,
+                    output=batch_out,
+                    batch=batch,
+                    batch_idx=batch_idx,
                 )
 
                 # record output
                 output.append(batch_out)
 
                 # check stopping conditions
-                if self._is_done(batch_idx, kwargs.get("dry_run", None), kwargs.get("limit_batches", None)):
+                if self._is_done(batch_idx, dry_run, limit_batches):
                     break
 
         # hook
-        self.fabric.call(f"on_{stage}_epoch_end", model=model, output=output, metrics=metrics, **kwargs)
+        self.fabric.call(f"on_{stage}_epoch_end", estimator=self, model=model, output=output, metrics=metrics)
 
         # method to possibly aggregate
         output = getattr(self, f"{stage}_epoch_end")(output, metrics)
@@ -453,8 +484,6 @@ class Estimator:
             return self._loss_fn
 
         loss_fn_kwargs = loss_fn_kwargs or {}
-        if "weight" in loss_fn_kwargs:
-            loss_fn_kwargs["weight"] = torch.tensor(loss_fn_kwargs["weight"], dtype=torch.float32, device=self.device)
 
         # get class or function from registry
         if isinstance(loss_fn, str):
@@ -567,7 +596,7 @@ class Estimator:
         if stage == RunningStage.TRAIN:
             return tqdm(
                 loader,
-                desc=f"Epoch {kwargs.get('epoch_idx', '')}".strip(),
+                desc=f"Epoch {self.counter.num_epochs}".strip(),
                 dynamic_ncols=True,
                 leave=leave,
                 total=limit_batches,

@@ -18,7 +18,7 @@ A very tailored datamodule for HuggingFace datasets
 
 class ClassificationDataModule(DataModule):
     _default_columns: List[str] = [InputKeys.TARGET, InputKeys.INPUT_IDS, InputKeys.ATT_MASK]
-    _class_weights: Optional[List[float]] = None
+    _class_proportions: Optional[List[float]] = None
 
     def __init__(self, tokenizer: Optional[PreTrainedTokenizerBase], max_source_length: int = 128, **kwargs) -> None:
         self._hparams_ignore.append("tokenizer")
@@ -29,13 +29,18 @@ class ClassificationDataModule(DataModule):
 
     @property
     def class_weights(self) -> Optional[List[float]]:
-        if self._class_weights is not None:
-            return self._class_weights
+        max_prop = max(self.class_proportions)
+        return [round(max_prop / prop, 6) for prop in self.class_proportions]
+
+    @property
+    def class_proportions(self) -> Optional[List[float]]:
+        if self._class_proportions is not None:
+            return self._class_proportions
 
         counter = Counter(self.train_dataset[InputKeys.TARGET])
         total = sum(counter.values())
-        self._class_weights = [counter[k] / total for k in sorted(counter)]
-        return self._class_weights
+        self._class_proportions = [counter[k] / total for k in sorted(counter)]
+        return self._class_proportions
 
     @property
     def tokenizer(self) -> PreTrainedTokenizerBase:

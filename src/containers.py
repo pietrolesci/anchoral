@@ -7,6 +7,31 @@ from torch.utils.data import BatchSampler, DataLoader, SequentialSampler
 from src.enums import RunningStage
 from src.utilities import move_to_cpu
 
+
+@dataclass
+class Counter:
+    # TODO: once accumulate batching is implemented, num_steps will be different
+    # from batch_idx
+    num_epochs: int = 0
+    num_steps: int = 0
+
+    def reset(self) -> None:
+        self.reset_epochs()
+        self.reset_steps()
+
+    def reset_epochs(self) -> None:
+        self.num_epochs = 0
+
+    def reset_steps(self) -> None:
+        self.num_steps = 0
+
+    def increment_epochs(self) -> None:
+        self.num_epochs += 1
+
+    def increment_steps(self) -> None:
+        self.num_steps += 1
+
+
 # @dataclass
 # class Output(dict):
 #     def __post_init__(self):

@@ -1,5 +1,4 @@
 import logging
-import pickle
 from pathlib import Path
 
 import hydra
@@ -19,7 +18,7 @@ sep_line = f"{'=' * 70}"
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="conf")
-def main(cfg: DictConfig):
+def main(cfg: DictConfig) -> None:
     # ============ STEP 1: config and initialization ============
     # resolve interpolation
     OmegaConf.resolve(cfg)
@@ -54,9 +53,12 @@ def main(cfg: DictConfig):
     tokenizer = AutoTokenizer.from_pretrained(cfg.model.name_or_path)
 
     # define datamodule
-    datamodule = ClassificationDataModule.from_dataset_dict(dataset_dict, tokenizer=tokenizer)
+    datamodule = ClassificationDataModule.from_dataset_dict(
+        dataset_dict, tokenizer=tokenizer, **OmegaConf.to_container(cfg.data)
+    )
     if should_load_class_weights:
         cfg.fit.loss_fn_kwargs = {"weight": datamodule.class_weights}
+        log.info(f"Class weights set to: {cfg.fit.loss_fn_kwargs['weight']}")
 
     # ============ STEP 3: model loading ============
     # load model using data properties
@@ -70,6 +72,8 @@ def main(cfg: DictConfig):
     # define loggers and callbacks
     loggers = instantiate(cfg.loggers) or {}
     callbacks = instantiate(cfg.callbacks) or {}
+    log.info(f"Loggers: {loggers}")
+    log.info(f"Callbacks: {callbacks}")
 
     # define estimator
     estimator = EstimatorForSequenceClassification(
@@ -88,6 +92,9 @@ def main(cfg: DictConfig):
 
     # test
     test_out = estimator.test(datamodule.test_loader(), **OmegaConf.to_container(cfg.test))
+
+    # ============ STEP 4: save outputs ============
+    OmegaConf.save(cfg, "./hparams.yaml")
 
     # # save experiment output
     # with open("./train_outputs", "wb") as fl:

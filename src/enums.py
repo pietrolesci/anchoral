@@ -9,7 +9,6 @@ class RunningStage(LightningEnum):
 
 
 class SpecialKeys(LightningEnum):
-    TEXT: str = "text"
     ID: str = "unique_id"
     IS_LABELLED: str = "is_labelled"
     IS_VALIDATION: str = "is_validation"
@@ -22,6 +21,7 @@ class InputKeys(LightningEnum):
     ATT_MASK: str = "attention_mask"
     TOKEN_TYPE_IDS: str = "token_type_ids"
     ON_CPU: str = "on_cpu"
+    TEXT: str = "text"
 
 
 class OutputKeys(LightningEnum):

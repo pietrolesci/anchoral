@@ -2,6 +2,7 @@ defaults:
   - _self_
   - callbacks:
     - save_outputs
+    - timer
   - loggers:
     - tensorboard
   - override hydra/job_logging: colorlog
@@ -22,6 +23,9 @@ hydra:
           WARNING: yellow
           ERROR: red
           CRITICAL: bold_red
+  sweep:
+    dir: ./outputs_multirun/${experiment_group}/${dataset_name}_${now:%Y-%m-%d}T${now:%H-%M-%S}
+    subdir: ${hydra.job.override_dirname}
 
 trainer:
   accelerator: gpu
@@ -39,9 +43,9 @@ model:
   name_or_path: null
 
 data:
-  batch_size: 32
-  eval_batch_size: 32
-  num_workers: 12
+  batch_size: 128
+  eval_batch_size: 128
+  num_workers: 32
   pin_memory: true
   drop_last: false
   persistent_workers: true
@@ -52,9 +56,9 @@ data:
 
 fit:
   num_epochs: 3
-  learning_rate: 0.001
   loss_fn: null
   loss_fn_kwargs: null
+  learning_rate: 0.001
   optimizer: adamw
   optimizer_kwargs: null
   scheduler: constant_schedule
@@ -65,10 +69,12 @@ fit:
   limit_validation_batches: ${limit_batches}
 
 validation:
+  log_interval: ${fit.log_interval}
   dry_run: ${dry_run}
   limit_batches: ${limit_batches}
 
 test:
+  log_interval: ${fit.log_interval}
   dry_run: ${dry_run}
   limit_batches: ${limit_batches}
 
