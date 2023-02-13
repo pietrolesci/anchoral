@@ -4,9 +4,11 @@ from pathlib import Path
 import pandas as pd
 import srsly
 from datasets import Dataset, DatasetDict, load_dataset
+from datasets.features import Features, Value
 from sklearn.model_selection import train_test_split
+from tqdm.auto import tqdm
 
-from src.enums import InputKeys, RunningStage
+from src.enums import InputKeys, RunningStage, SpecialKeys
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -14,16 +16,36 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int)
     args = parser.parse_args()
 
+    pbar = tqdm(total=3)
+
+    # ============ STEP 1 ============
+    pbar.set_description("Loading and tidying")
+
     # download data
     dataset_dict = load_dataset("ag_news")
-    features = dataset_dict["train"].features
+    class_labels_feature = dataset_dict["train"].features["label"]  # take if from the original
 
     # cast to dataframe
     df = pd.concat([dataset_dict[split].to_pandas().assign(split=split) for split in dataset_dict])
 
-    # rename "label" to InputKeys.TARGET
-    df = df.rename(columns={"label": InputKeys.TARGET})
-    features[InputKeys.TARGET] = features.pop("label")
+    # rename columns
+    df = df.rename(columns={"label": InputKeys.TARGET, "text": InputKeys.TEXT})
+
+    # drop Nans
+    pre_len = len(df)
+    df = df.dropna(subset=[InputKeys.TEXT, InputKeys.TARGET])
+
+    assert pre_len == len(df)
+    assert df[InputKeys.TEXT].duplicated().sum() == 0
+    assert (df[InputKeys.TARGET] < 0).sum() == 0
+
+    # add unique_id column
+    df[SpecialKeys.ID] = list(range(len(df)))
+
+    pbar.update(1)
+
+    # ============ STEP 2 ============
+    pbar.set_description("Splitting")
 
     # train-val split
     train_df = df.loc[df["split"] == "train"].drop(columns=["split"])
@@ -45,6 +67,18 @@ if __name__ == "__main__":
     #     train_df.loc[train_df.index.isin(train_ids)].assign(split=RunningStage.TRAIN).drop(columns=["q", "split"])
     # )
     test_df = df.loc[df["split"] == "test"].drop(columns=["split"])
+    pbar.update(1)
+
+    # ============ STEP 3 ============
+    pbar.set_description("Saving")
+
+    features = Features(
+        {
+            SpecialKeys.ID: Value(dtype="int32", id=None),
+            InputKeys.TARGET: class_labels_feature,
+            InputKeys.TEXT: Value(dtype="string", id=None),
+        }
+    )
 
     # put everything together
     dataset_dict = DatasetDict(
@@ -61,3 +95,5 @@ if __name__ == "__main__":
     # metadata
     meta = {"train_val_seed": args.seed}
     srsly.write_yaml(Path(args.output_dir) / "metadata.yaml", meta)
+
+    pbar.update(1)
