@@ -1,0 +1,9 @@
+pytorch_profiler:
+  _target_: src.callbacks.PytorchTensorboardProfiler
+  dirpath: tensorboard_logs
+  wait: 1
+  warmup: 1
+  active: 1
+  repeat: 2
+  record_shapes: true
+  with_stack: true

@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 from typing import Any, Union
 
+import torch
 from lightning.fabric.wrappers import _FabricModule
 
 from src.containers import ActiveFitOutput, FitOutput, RoundOutput
@@ -165,6 +166,34 @@ class Timer(Callback):
 
     def on_test_batch_end(self, estimator: Estimator, batch_idx: int, *args, **kwargs) -> None:
         self.batch_end(estimator, RunningStage.TEST, batch_idx)
+
+
+class PytorchTensorboardProfiler(Callback):
+    def __init__(
+        self,
+        dirpath: Union[str, Path],
+        wait: int = 1,
+        warmup: int = 1,
+        active: int = 1,
+        repeat: int = 2,
+        record_shapes: bool = True,
+        with_stack: bool = True,
+    ) -> None:
+        self.prof = torch.profiler.profile(
+            schedule=torch.profiler.schedule(wait=wait, warmup=warmup, active=active, repeat=repeat),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(str(dirpath)),
+            record_shapes=record_shapes,
+            with_stack=with_stack,
+        )
+
+    def on_train_epoch_start(self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
+        self.prof.start()
+
+    def on_train_batch_end(self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> None:
+        self.prof.step()
+    
+    def on_train_epoch_end(self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs) -> None:
+        self.prof.stop()
 
 
 # class ActiveLearningCallbackMixin:

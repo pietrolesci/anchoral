@@ -193,12 +193,11 @@ class Estimator:
 
         output = EpochOutput()
 
+        pbar = self._get_batch_progress_bar(train_loader, RunningStage.TRAIN, dry_run=dry_run, limit_batches=limit_batches)
+
         # hook
         self.fabric.call("on_train_epoch_start", estimator=self, model=model, output=output)
 
-        pbar = self._get_batch_progress_bar(
-            train_loader, RunningStage.TRAIN, dry_run=dry_run, limit_batches=limit_batches
-        )
         for batch_idx, batch in enumerate(pbar):
             # put batch on correct device
             batch = self.transfer_to_device(batch)
@@ -209,17 +208,15 @@ class Estimator:
             # run model on batch
             batch_out = self.train_batch_loop(loss_fn, model, batch, batch_idx, optimizer, scheduler, metrics)
 
+            # hook
+            self.fabric.call("on_train_batch_end", estimator=self, model=model, output=batch_out, batch=batch, batch_idx=batch_idx)
+
             # update progress
             if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
                 pbar.set_postfix(loss=round(batch_out[OutputKeys.LOSS].item(), ndigits=4))
 
                 # pass the batch_out: BATCH_OUTPUT to the logger as is, then wrap
                 self.log(batch_out, batch_idx=batch_idx, stage=RunningStage.TRAIN)
-
-            # hook
-            self.fabric.call(
-                "on_train_batch_end", estimator=self, model=model, output=batch_out, batch=batch, batch_idx=batch_idx
-            )
 
             # record output
             output.append(batch_out)
@@ -343,10 +340,11 @@ class Estimator:
 
         output = EpochOutput()
 
+        pbar = self._get_batch_progress_bar(eval_loader, stage, dry_run=dry_run, limit_batches=limit_batches)
+        
         # hook
         self.fabric.call(f"on_{stage}_epoch_start", estimator=self, model=model, output=output)
 
-        pbar = self._get_batch_progress_bar(eval_loader, stage, dry_run=dry_run, limit_batches=limit_batches)
         with torch.inference_mode():
             for batch_idx, batch in enumerate(pbar):
                 batch = self.transfer_to_device(batch)
@@ -359,11 +357,6 @@ class Estimator:
                 # run on batch
                 batch_out = self.eval_batch_loop(loss_fn, model, batch, batch_idx, metrics, stage)
 
-                # update progress
-                if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
-                    # pass the batch_out: EVAL_BATCH_OUTPUT to the logger as is, then wrap
-                    self.log(batch_out, batch_idx=batch_idx, stage=stage)
-
                 # hook
                 self.fabric.call(
                     f"on_{stage}_batch_end",
@@ -373,6 +366,11 @@ class Estimator:
                     batch=batch,
                     batch_idx=batch_idx,
                 )
+
+                # update progress
+                if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
+                    # pass the batch_out: EVAL_BATCH_OUTPUT to the logger as is, then wrap
+                    self.log(batch_out, batch_idx=batch_idx, stage=stage)
 
                 # record output
                 output.append(batch_out)
