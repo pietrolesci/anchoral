@@ -2,14 +2,15 @@ from typing import Callable, Dict, MutableMapping, Optional, Union
 
 import numpy as np
 import torch
+from lightning.fabric.wrappers import _FabricModule
 from lightning.pytorch.utilities.parsing import AttributeDict
 from torchmetrics import MetricCollection
 from torchmetrics.classification import Accuracy, F1Score
 from transformers import AutoModelForSequenceClassification
 
+from src.active_learning.estimators import RandomStrategy, UncertaintyBasedStrategy
 from src.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.estimator import Estimator
-from src.query_strategies.base import UncertaintyBasedStrategy
 from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, POOL_BATCH_OUTPUT
 from src.utilities import move_to_cpu
 
@@ -52,7 +53,7 @@ class SequenceClassificationMixin:
     def train_step(
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
-        model: torch.nn.Module,
+        model: _FabricModule,
         batch: Dict,
         batch_idx: int,
         metrics: MetricCollection,
@@ -62,7 +63,7 @@ class SequenceClassificationMixin:
     def validation_step(
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
-        model: torch.nn.Module,
+        model: _FabricModule,
         batch: Dict,
         batch_idx: int,
         metrics: MetricCollection,
@@ -72,7 +73,7 @@ class SequenceClassificationMixin:
     def test_step(
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
-        model: torch.nn.Module,
+        model: _FabricModule,
         batch: Dict,
         batch_idx: int,
         metrics: MetricCollection,
@@ -80,22 +81,25 @@ class SequenceClassificationMixin:
         return self.step(loss_fn, model, batch, batch_idx, metrics)
 
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[MetricCollection]:
+        if stage == RunningStage.POOL:
+            return
         # you are in charge of moving it to the correct device
-        if stage != RunningStage.POOL:
-            return MetricCollection(
-                {
-                    "accuracy": Accuracy("multiclass", num_classes=self.model.num_labels),
-                    "f1_macro": F1Score("multiclass", num_classes=self.model.num_labels, average="macro"),
-                }
-            ).to(self.device)
+        return MetricCollection(
+            {
+                "accuracy": Accuracy("multiclass", num_classes=self.model.num_labels),
+                "f1_macro": F1Score("multiclass", num_classes=self.model.num_labels, average="macro"),
+            }
+        ).to(self.device)
 
     def log(self, output: BATCH_OUTPUT, batch_idx: int, stage: RunningStage) -> None:
+        if stage == RunningStage.POOL:
+            return
         logs = {OutputKeys.LOSS: output[OutputKeys.LOSS], **output[OutputKeys.METRICS]}
         logs = {f"{stage}/{k}": v for k, v in logs.items()}
         self.fabric.log_dict(logs, step=self.counter.num_steps if stage == RunningStage.TRAIN else batch_idx)
 
     def epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection, stage: RunningStage) -> EPOCH_OUTPUT:
-        if stage == RunningStage.TRAIN:
+        if stage in (RunningStage.TRAIN, RunningStage.POOL):
             return
 
         logs = {
@@ -130,12 +134,25 @@ class SequenceClassificationMixin:
 
 
 class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator):
+    ...
+
+
+class UncertaintyBasedStrategyForSequenceClassification(SequenceClassificationMixin, UncertaintyBasedStrategy):
+    def pool_step(
+        self,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
+        model: _FabricModule,
+        batch: Dict,
+        batch_idx: int,
+        metrics: Optional[MetricCollection] = None,
+    ) -> POOL_BATCH_OUTPUT:
+        _ = batch.pop(InputKeys.ON_CPU)  # this is already handled in the `eval_batch_loop`
+
+        logits = model(**batch).logits
+        scores = self.score_fn(logits)
+
+        return {OutputKeys.SCORES: scores, OutputKeys.LOGITS: logits}
+
+
+class RandomStrategyForSequenceClassification(SequenceClassificationMixin, RandomStrategy):
     pass
-
-
-# class UncertaintyBasedStrategyForSequenceClassification(SequenceClassificationMixin, UncertaintyBasedStrategy):
-#     def pool_step(
-#         self, model: torch.nn.Module, batch: Dict, batch_idx: int, metrics: MetricCollection
-#     ) -> POOL_BATCH_OUTPUT:
-#         logits = model(**batch).logits
-#         return self.score_fn(logits)

@@ -9,6 +9,7 @@ from lightning.pytorch.utilities.parsing import AttributeDict
 from torch import Tensor
 from transformers import PreTrainedTokenizerBase
 
+from src.active_learning.data import ActiveClassificationDataModule
 from src.data.datamodule import DataModule, _pad
 from src.enums import InputKeys, RunningStage, SpecialKeys
 
@@ -148,3 +149,7 @@ def collate_fn(
         batch[InputKeys.ON_CPU] = columns_on_cpu
 
     return batch
+
+
+class ClassificationActiveDataModule:
+    pass

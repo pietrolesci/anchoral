@@ -32,6 +32,21 @@ class Counter:
         self.num_steps += 1
 
 
+@dataclass
+class ActiveCounter(Counter):
+    num_rounds: int = 0
+
+    def reset(self) -> None:
+        self.reset_rounds()
+        return super().reset()
+
+    def reset_rounds(self) -> None:
+        self.num_rounds = 0
+
+    def increment_rounds(self) -> None:
+        self.num_rounds += 1
+
+
 # @dataclass
 # class Output(dict):
 #     def __post_init__(self):
@@ -164,17 +179,18 @@ class MetadataParserMixin:
 
 @dataclass
 class FitOutput(MetadataParserMixin):
+    _cls_output = FitEpochOutput
     output: List[FitEpochOutput] = field(default_factory=list)
 
-    def append(self, _x: FitEpochOutput):
-        assert isinstance(_x, FitEpochOutput), f"You can only append `FitEpochOutput`s, not {type(_x)}"
+    def append(self, _x: _cls_output):
+        assert isinstance(_x, self._cls_output), f"You can only append `{self._cls_output.__name__}`s, not {type(_x)}"
         self.output.append(_x)
 
-    def __getitem__(self, idx: int) -> FitEpochOutput:
+    def __getitem__(self, idx: int) -> _cls_output:
         return self.output[idx]
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(output= ..{len(self.output)} epochs.. , hparams={self.hparams})"
+        return f"{self.__class__.__name__}(output= ..{len(self.output)} outputs.. , hparams={self.hparams})"
 
 
 @dataclass
@@ -188,7 +204,7 @@ Active learning
 
 
 @dataclass
-class QueryOutput(EpochOutput):
+class QueryOutput:
     """Output of a run on an entire pool dataloader.
 
     metrics: Metrics aggregated over the entire pool dataloader.
@@ -199,18 +215,19 @@ class QueryOutput(EpochOutput):
 
     topk_scores: ndarray = None
     indices: List[int] = None
+    output: Optional[List] = None
 
 
 @dataclass
 class RoundOutput:
-    round_idx: int = None
     fit: FitOutput = None
-    test: EpochOutput = None
+    test: EvaluationOutput = None
     query: QueryOutput = None
 
 
 @dataclass
-class ActiveFitOutput(MetadataParserMixin):
+class ActiveFitOutput(FitOutput):
+    _cls_output = RoundOutput
     output = List[RoundOutput]
 
     def __post_init__(self) -> None:

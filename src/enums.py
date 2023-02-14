@@ -32,3 +32,4 @@ class OutputKeys(LightningEnum):
     LOGITS: str = "logits"
     BATCH_SIZE: str = "batch_size"
     METRICS: str = "metrics"
+    SCORES: str = "scores"

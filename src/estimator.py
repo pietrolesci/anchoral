@@ -92,7 +92,7 @@ class Estimator(HyperparametersMixin):
         scheduler: Optional[str] = None,
         scheduler_kwargs: Optional[Dict] = None,
         log_interval: int = 1,
-        dry_run: Optional[bool] = None,
+        dry_run: Optional[bool] = False,
         limit_train_batches: Optional[int] = None,
         limit_validation_batches: Optional[int] = None,
     ) -> FitOutput:
@@ -142,6 +142,10 @@ class Estimator(HyperparametersMixin):
 
             # update counter
             self.counter.increment_epochs()
+
+            # check stopping conditions
+            if self._is_done(dry_run):
+                break
 
         # hook
         self.fabric.call("on_fit_end", estimator=self, model=model, output=outputs)
@@ -239,7 +243,7 @@ class Estimator(HyperparametersMixin):
             output.append(batch_out)
 
             # check stopping conditions
-            if self._is_done(batch_idx, dry_run, limit_batches):
+            if self._is_done(dry_run, limit_batches):
                 break
 
         # hook
@@ -296,7 +300,7 @@ class Estimator(HyperparametersMixin):
         loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
         log_interval: int = 1,
-        dry_run: Optional[bool] = None,
+        dry_run: Optional[bool] = False,
         limit_batches: Optional[int] = None,
     ) -> EvaluationOutput:
         hparams = get_hparams()
@@ -311,7 +315,7 @@ class Estimator(HyperparametersMixin):
         loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
         log_interval: int = 1,
-        dry_run: Optional[bool] = None,
+        dry_run: Optional[bool] = False,
         limit_batches: Optional[int] = None,
     ) -> EvaluationOutput:
         hparams = get_hparams()
@@ -342,7 +346,7 @@ class Estimator(HyperparametersMixin):
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
-        eval_loader: _FabricDataLoader,
+        loader: _FabricDataLoader,
         stage: RunningStage,
         log_interval: int,
         dry_run: Optional[bool],
@@ -357,7 +361,7 @@ class Estimator(HyperparametersMixin):
 
         output = EpochOutput()
 
-        pbar = self._get_batch_progress_bar(eval_loader, stage, dry_run=dry_run, limit_batches=limit_batches)
+        pbar = self._get_batch_progress_bar(loader, stage, dry_run=dry_run, limit_batches=limit_batches)
 
         # hook
         self.fabric.call(f"on_{stage}_epoch_start", estimator=self, model=model, output=output)
@@ -393,7 +397,7 @@ class Estimator(HyperparametersMixin):
                 output.append(batch_out)
 
                 # check stopping conditions
-                if self._is_done(batch_idx, dry_run, limit_batches):
+                if self._is_done(dry_run, limit_batches):
                     break
 
         # hook
@@ -622,11 +626,11 @@ class Estimator(HyperparametersMixin):
     def _get_epoch_progress_bar(self, num_epochs: int) -> tqdm:
         return trange(num_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
 
-    def _is_done(self, batch_idx: int, dry_run: Optional[bool], limit_batches: Optional[int]) -> bool:
+    def _is_done(self, dry_run: Optional[bool], limit_batches: Optional[int] = None) -> bool:
         if dry_run is not None and dry_run is True:
             return True
 
-        if limit_batches is not None and batch_idx >= limit_batches:
+        if limit_batches is not None and self.counter.num_steps >= limit_batches:
             return True
 
         return False
