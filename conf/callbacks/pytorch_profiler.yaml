@@ -7,3 +7,5 @@ pytorch_profiler:
   repeat: 2
   record_shapes: true
   with_stack: true
+  with_flops: true
+  profile_memory: true

@@ -98,7 +98,7 @@ def main(cfg: DictConfig) -> None:
     # ============ STEP 4: save outputs ============
     OmegaConf.save(cfg, "./hparams.yaml")
 
-    # log hparams to tensorboard
+    # log hparams and test results to tensorboard
     if isinstance(estimator.fabric.logger, TensorBoardLogger):
         hparams = OmegaConf.to_container(cfg)
         metrics = srsly.read_json(f"{cfg.callbacks.save_outputs.dirpath}/test/epoch_level.json")
