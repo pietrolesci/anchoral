@@ -184,6 +184,7 @@ class Estimator(HyperparametersMixin):
                 model,
                 validation_loader,
                 RunningStage.VALIDATION,
+                log_interval=log_interval,
                 dry_run=dry_run,
                 limit_batches=limit_validation_batches,
             )
@@ -214,6 +215,8 @@ class Estimator(HyperparametersMixin):
             train_loader, RunningStage.TRAIN, dry_run=dry_run, limit_batches=limit_batches
         )
 
+        self.counter.reset_batches(RunningStage.TRAIN)
+
         # hook
         self.fabric.call("on_train_epoch_start", estimator=self, model=model, output=output)
 
@@ -242,8 +245,10 @@ class Estimator(HyperparametersMixin):
             # record output
             output.append(batch_out)
 
+            self.counter.increment_batches(RunningStage.TRAIN)
+
             # check stopping conditions
-            if self._is_done(dry_run, limit_batches):
+            if self._is_done(dry_run, limit_batches, RunningStage.TRAIN):
                 break
 
         # hook
@@ -396,8 +401,10 @@ class Estimator(HyperparametersMixin):
                 # record output
                 output.append(batch_out)
 
+                self.counter.increment_batches(stage)
+
                 # check stopping conditions
-                if self._is_done(dry_run, limit_batches):
+                if self._is_done(dry_run, limit_batches, stage):
                     break
 
         # hook
@@ -531,7 +538,10 @@ class Estimator(HyperparametersMixin):
         pass
 
     def log(self, output: Union[BATCH_OUTPUT, EVAL_BATCH_OUTPUT], batch_idx: int, stage: RunningStage) -> None:
-        """Runs after the `*_step` methods and is used to log anything."""
+        """Runs after the `*_step` methods and is used to log anything.
+
+        NOTE: output is still on the device you used for training, it's not moved to cpu yet.
+        """
         pass
 
     """
@@ -626,11 +636,15 @@ class Estimator(HyperparametersMixin):
     def _get_epoch_progress_bar(self, num_epochs: int) -> tqdm:
         return trange(num_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
 
-    def _is_done(self, dry_run: Optional[bool], limit_batches: Optional[int] = None) -> bool:
+    def _is_done(self, dry_run: Optional[bool], limit_batches: Optional[int] = None, stage: Optional[RunningStage] = None) -> bool:
+        # print(stage, self.counter)
+        
         if dry_run is not None and dry_run is True:
             return True
 
-        if limit_batches is not None and self.counter.num_steps >= limit_batches:
-            return True
+        if limit_batches is not None and stage is not None:
+            num_batches = getattr(self.counter, f"num_{stage}_batches")
+            if num_batches + 1 > limit_batches:
+                return True
 
         return False

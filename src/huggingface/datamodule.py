@@ -1,6 +1,7 @@
 import os
 from collections import Counter
 from functools import partial
+from pathlib import Path
 from typing import Callable, Dict, List, MutableMapping, Optional, Union
 
 import torch
@@ -9,7 +10,7 @@ from lightning.pytorch.utilities.parsing import AttributeDict
 from torch import Tensor
 from transformers import PreTrainedTokenizerBase
 
-from src.active_learning.data import ActiveClassificationDataModule
+from src.active_learning.data import ActiveDataModule
 from src.data.datamodule import DataModule, _pad
 from src.enums import InputKeys, RunningStage, SpecialKeys
 
@@ -102,15 +103,17 @@ class ClassificationDataModule(DataModule):
             if stage in dataset_dict:
                 dataset = dataset_dict[stage]
 
-                if SpecialKeys.ID in dataset.features and SpecialKeys.ID not in columns_to_keep:
+                if SpecialKeys.ID in dataset.features:
                     columns_to_keep.append(SpecialKeys.ID)
                     columns_on_cpu.append(SpecialKeys.ID)
 
                 datasets[f"{stage}_dataset"] = dataset.with_format(columns=list(set(columns_to_keep)))
 
-        cls.columns_on_cpu = list(set(columns_on_cpu))
+        datamodule = cls(**datasets, tokenizer=tokenizer, **kwargs)
+        datamodule.columns_on_cpu = list(set(columns_on_cpu))
+        datamodule.columns_to_keep = list(set(columns_on_cpu))
 
-        return cls(**datasets, tokenizer=tokenizer, **kwargs)
+        return datamodule
 
 
 def collate_fn(
@@ -151,5 +154,5 @@ def collate_fn(
     return batch
 
 
-class ClassificationActiveDataModule:
-    pass
+class ClassificationActiveDataModule(ActiveDataModule, ClassificationDataModule):
+    ...

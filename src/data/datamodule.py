@@ -25,7 +25,7 @@ class DataModule(HyperparametersMixin):
     """DataModule that defines dataloading and indexing logic."""
 
     _hparams_ignore: List[str] = ["train_dataset", "validation_dataset", "test_dataset"]
-    _index: hb.Index
+    _index: hb.Index = None
 
     def __init__(
         self,
@@ -127,9 +127,10 @@ class DataModule(HyperparametersMixin):
             drop_last=self.drop_last,
         )
 
-    def show_batch(self, stage: RunningStage = RunningStage.TRAIN) -> Any:
+    def show_batch(self, stage: RunningStage = RunningStage.TRAIN) -> Optional[Any]:
         loader = getattr(self, f"{stage}_loader")()
-        return next(iter(loader))
+        if loader is not None:
+            return next(iter(loader))
 
 
 """

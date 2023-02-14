@@ -14,10 +14,16 @@ class Counter:
     # from batch_idx
     num_epochs: int = 0
     num_steps: int = 0
+    num_train_batches: int = 0
+    num_validation_batches: int = 0
+    num_test_batches: int = 0
 
     def reset(self) -> None:
         self.reset_epochs()
         self.reset_steps()
+        self.reset_batches(RunningStage.TRAIN)
+        self.reset_batches(RunningStage.VALIDATION)
+        self.reset_batches(RunningStage.TEST)
 
     def reset_epochs(self) -> None:
         self.num_epochs = 0
@@ -25,26 +31,58 @@ class Counter:
     def reset_steps(self) -> None:
         self.num_steps = 0
 
+    def reset_batches(self, stage: RunningStage) -> None:
+        setattr(self, f"num_{stage}_batches", 0)
+
     def increment_epochs(self) -> None:
         self.num_epochs += 1
 
     def increment_steps(self) -> None:
         self.num_steps += 1
 
+    def increment_batches(self, stage: RunningStage) -> None:
+        key = f"num_{stage}_batches"
+        current = getattr(self, key)
+        setattr(self, key, current + 1)
+
+    # def register_num_batches(self, stage: RunningStage, total: int) -> None:
+    #     setattr(self, f"num_{stage}_batches", total)
 
 @dataclass
 class ActiveCounter(Counter):
     num_rounds: int = 0
+    total_epochs: int = 0
+    total_train_batches: int = 0
+    total_validation_batches: int = 0
+    total_test_batches: int = 0
 
     def reset(self) -> None:
+        super().reset()
         self.reset_rounds()
-        return super().reset()
+        self.reset_total_epochs()
+        self.reset_total_batches(RunningStage.TRAIN)
+        self.reset_total_batches(RunningStage.VALIDATION)
+        self.reset_total_batches(RunningStage.TEST)
 
     def reset_rounds(self) -> None:
         self.num_rounds = 0
 
+    def reset_total_epochs(self) -> None:
+        self.total_epochs = 0
+
+    def reset_total_batches(self, stage: RunningStage) -> None:
+        setattr(self, f"total_{stage}_batches", 0)
+
     def increment_rounds(self) -> None:
         self.num_rounds += 1
+
+    def increment_total_epochs(self) -> None:
+        self.total_epochs += self.num_epochs
+
+    def increment_total_batches(self, stage: RunningStage) -> None:
+        current = getattr(self, f"total_{stage}_batches")
+        num_batches = getattr(self, f"num_{stage}_batches")
+        setattr(self, f"total_{stage}_batches", current + num_batches)
 
 
 # @dataclass

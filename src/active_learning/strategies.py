@@ -10,21 +10,20 @@ from torch.utils.data import DataLoader
 
 from src.active_learning.base import ActiveEstimator
 from src.active_learning.data import ActiveDataModule
-from src.containers import EpochOutput, QueryOutput
+from src.containers import QueryOutput
 from src.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.registries import SCORING_FUNCTIONS
 from src.types import EPOCH_OUTPUT, METRIC, POOL_BATCH_OUTPUT
 
 
 class RandomStrategy(ActiveEstimator):
-    def __init__(self, seed: int, *args, **kwargs) -> None:
+    def __init__(self, seed: Optional[int], *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.seed = seed
         self.rng = check_random_state(seed)  # reproducibility
 
-    def query(self, active_datamodule: ActiveDataModule, query_size: int) -> QueryOutput:
+    def query(self, active_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
         pool_indices = active_datamodule.pool_indices
-        indices = self.rng.choice(pool_indices, size=query_size, replace=False)
+        indices = self.rng.choice(pool_indices, size=query_size, replace=False).tolist()
         return QueryOutput(indices=indices)
 
 

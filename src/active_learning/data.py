@@ -7,32 +7,21 @@
 # That is, the DataModule is only used to feed data to the model during training
 # and evaluation.
 # In addition, the ActiveDataModule also implements the logic to label data.
-import os
 import random
-from functools import partial
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-import torch
 from datasets import Dataset
-from torch import Tensor
 from torch.utils.data import DataLoader
-from transformers import PreTrainedTokenizerBase
 
-from src.data.datamodule import DataModule, _pad
+from src.data.datamodule import DataModule
 from src.enums import InputKeys, RunningStage, SpecialKeys
 
 
 class ActiveDataModule(DataModule):
     _df: pd.DataFrame = None
-    _default_columns: List[int] = [
-        InputKeys.TARGET,
-        InputKeys.INPUT_IDS,
-        InputKeys.ATT_MASK,
-        SpecialKeys.ID,
-    ]
 
     """
     Properties
@@ -99,12 +88,20 @@ class ActiveDataModule(DataModule):
     """
 
     def setup(self, stage: Optional[str] = None) -> None:
-        self._df = self.train_dataset.to_pandas().assign(
-            **{
-                SpecialKeys.IS_LABELLED: False,
-                SpecialKeys.IS_VALIDATION: False,
-                SpecialKeys.LABELLING_ROUND: -1,
-            }
+        # with_format does not remove columns completely;
+        # when the Dataset is cast to pandas they remain, so remove
+        cols = list(self.train_dataset[0].keys())
+
+        self._df = (
+            self.train_dataset.to_pandas()
+            .loc[:, cols]
+            .assign(
+                **{
+                    SpecialKeys.IS_LABELLED: False,
+                    SpecialKeys.IS_VALIDATION: False,
+                    SpecialKeys.LABELLING_ROUND: -1,
+                }
+            )
         )
 
     def mask_train_from_index(self) -> None:
@@ -134,7 +131,7 @@ class ActiveDataModule(DataModule):
     Main methods
     """
 
-    def label(self, indices: List[int], round_idx: int, val_perc: Optional[float] = None) -> None:
+    def label(self, indices: List[int], round_idx: Optional[int] = None, val_perc: Optional[float] = None) -> None:
         """Moves instances at index `pool_idx` from the `pool_fold` to the `train_fold`.
 
         Args:
@@ -155,7 +152,7 @@ class ActiveDataModule(DataModule):
             self._df.loc[self._df[SpecialKeys.ID].isin(val_indices), SpecialKeys.IS_VALIDATION] = True
 
         # remove instance from the index
-        if self.index is not None:
+        if self._index is not None:
             for idx in indices:
                 self.index.mark_deleted(idx)
 
@@ -164,16 +161,17 @@ class ActiveDataModule(DataModule):
     """
 
     def train_loader(self) -> DataLoader:
-        train_df = self._df.loc[
-            (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == False)
-        ]
-        train_dataset = Dataset.from_pandas(train_df, preserve_index=False)
+        if self.train_size > 0:
+            train_df = self._df.loc[
+                (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == False)
+            ]
+            train_dataset = Dataset.from_pandas(train_df, preserve_index=False)
 
-        return DataLoader(
-            train_dataset,
-            sampler=self.get_sampler(train_dataset, RunningStage.TRAIN),
-            collate_fn=self.get_collate_fn(RunningStage.TRAIN),
-        )
+            return DataLoader(
+                train_dataset,
+                sampler=self.get_sampler(train_dataset, RunningStage.TRAIN),
+                collate_fn=self.get_collate_fn(RunningStage.TRAIN),
+            )
 
     def validation_loader(self) -> Optional[DataLoader]:
         if self.should_val_split:
@@ -211,89 +209,8 @@ class ActiveDataModule(DataModule):
     def save_labelled_dataset(self, save_dir: str) -> None:
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
-
-        # remove feature labels
-        to_remove = [i for i in InputKeys if i != InputKeys.TARGET]
-
-        self._df.drop(columns=to_remove).to_parquet(save_dir / "labelled_dataset.parquet", index=False)
-
-
-class ActiveClassificationDataModule(ActiveDataModule):
-    def __init__(
-        self,
-        tokenizer: Optional[PreTrainedTokenizerBase] = None,
-        max_source_length: int = 128,
-        **kwargs,
-    ) -> None:
-        self._hparams_ignore.append("tokenizer")
-        super().__init__(**kwargs)
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        self.tokenizer = tokenizer
-        self.max_source_length = max_source_length
-
-    def get_collate_fn(self, stage: Optional[str] = None) -> Optional[Callable]:
-        return partial(
-            collate_fn,
-            max_source_length=self.max_source_length,
-            columns_on_cpu=[SpecialKeys.ID] if stage == RunningStage.POOL else [],
-            pad_token_id=self.tokenizer.pad_token_id,
-            pad_fn=_pad,
+        (
+            self._df.loc[self._df[SpecialKeys.IS_LABELLED] == True].to_parquet(
+                save_dir / "labelled_dataset.parquet", index=False
+            )
         )
-
-    @property
-    def labels(self) -> List[str]:
-        assert InputKeys.TARGET in self.train_dataset.features, KeyError(
-            "A prepared dataset needs to have a `labels` column."
-        )
-        return self.train_dataset.features[InputKeys.TARGET].names
-
-    @property
-    def id2label(self) -> Dict[int, str]:
-        return dict(enumerate(self.labels))
-
-    @property
-    def label2id(self) -> Dict[str, int]:
-        return {v: k for k, v in self.id2label.items()}
-
-
-"""
-Define as globals otherwise pickle complains when running in multi-gpu
-"""
-
-
-def collate_fn(
-    batch: List[Dict[str, Union[List[str], Tensor]]],
-    max_source_length: int,
-    columns_on_cpu: List[str],
-    pad_token_id: int,
-    pad_fn: Callable,
-) -> Dict[str, Union[List[str], Tensor]]:
-    # NOTE: beacuse of the batch_sampler we already obtain dict of lists
-    # however the dataloader will try to create a list, so we have to unpack it
-    assert len(batch) == 1, "Look at the data collator"
-    batch = batch[0]
-
-    # remove string columns that cannot be transfered on gpu
-    columns_on_cpu = {col: batch.pop(col) for col in columns_on_cpu if col in batch}
-
-    labels = batch.pop(InputKeys.TARGET, None)
-
-    # input_ids and attention_mask to tensor
-    # truncate -> convert to tensor -> pad
-    batch = {
-        k: pad_fn(
-            inputs=batch[k],
-            padding_value=pad_token_id,
-            max_length=max_source_length,
-        )
-        for k in (InputKeys.INPUT_IDS, InputKeys.ATT_MASK)
-    }
-
-    if labels is not None:
-        batch[InputKeys.TARGET] = torch.tensor(labels, dtype=torch.long)
-
-    # add things that need to remain on cpu
-    if len(columns_on_cpu) > 0:
-        batch["on_cpu"] = columns_on_cpu
-
-    return batch

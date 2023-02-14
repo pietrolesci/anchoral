@@ -10,6 +10,7 @@ from src.active_learning.data import ActiveDataModule
 from src.containers import ActiveCounter, ActiveFitOutput, QueryOutput, RoundOutput
 from src.estimator import Estimator
 from src.utilities import get_hparams
+from src.enums import RunningStage
 
 
 class ActiveEstimator(Estimator):
@@ -46,6 +47,7 @@ class ActiveEstimator(Estimator):
         limit_validation_batches: Optional[int] = None,
         limit_test_batches: Optional[int] = None,
         dry_run: Optional[bool] = False,
+        **kwargs,
     ) -> ActiveFitOutput:
         # get passed hyper-parameters
         hparams = get_hparams()
@@ -79,6 +81,7 @@ class ActiveEstimator(Estimator):
                 limit_validation_batches=limit_validation_batches,
                 limit_test_batches=limit_test_batches,
                 dry_run=dry_run,
+                **kwargs,
             )
             outputs.append(output)
 
@@ -87,7 +90,9 @@ class ActiveEstimator(Estimator):
                 # hook
                 self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule, output=outputs)
 
-                active_datamodule.label(indices=output.query.indices, round_idx=output.round_idx, val_perc=val_perc)
+                active_datamodule.label(
+                    indices=output.query.indices, round_idx=self.counter.num_rounds, val_perc=val_perc
+                )
 
                 # hook
                 self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule, output=outputs)
@@ -97,6 +102,8 @@ class ActiveEstimator(Estimator):
 
             # update counter
             self.counter.increment_rounds()
+
+            print(self.counter)
 
             # check stopping conditions
             if self._is_done(dry_run):
@@ -149,6 +156,9 @@ class ActiveEstimator(Estimator):
                 limit_validation_batches=limit_validation_batches,
                 dry_run=dry_run,
             )
+            self.counter.increment_total_epochs()
+            self.counter.increment_batches(RunningStage.TRAIN)
+            self.counter.increment_batches(RunningStage.VALIDATION)
 
         # test model
         if active_datamodule.has_test_data:
@@ -160,14 +170,13 @@ class ActiveEstimator(Estimator):
                 dry_run=dry_run,
                 limit_batches=limit_test_batches,
             )
+            self.counter.increment_batches(RunningStage.TEST)
 
         # query indices to annotate
         if active_datamodule.pool_size > query_size:
             output.query = self.query(
                 active_datamodule=active_datamodule,
                 query_size=query_size,
-                dry_run=dry_run,
-                log_interval=log_interval,
                 **kwargs,
             )
 
