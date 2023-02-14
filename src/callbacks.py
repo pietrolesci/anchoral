@@ -187,10 +187,14 @@ class PytorchTensorboardProfiler(Callback):
     def on_train_epoch_start(self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
         self.prof.start()
 
-    def on_train_batch_end(self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> None:
+    def on_train_batch_end(
+        self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int
+    ) -> None:
         self.prof.step()
-    
-    def on_train_epoch_end(self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs) -> None:
+
+    def on_train_epoch_end(
+        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
+    ) -> None:
         self.prof.stop()
 
 

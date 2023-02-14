@@ -24,7 +24,7 @@ from src.types import DATASET
 class DataModule(HyperparametersMixin):
     """DataModule that defines dataloading and indexing logic."""
 
-    _hparams_ignore = ["train_dataset", "val_dataset", "test_dataset"]
+    _hparams_ignore: List[str] = ["train_dataset", "validation_dataset", "test_dataset"]
     _index: hb.Index
 
     def __init__(

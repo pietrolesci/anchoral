@@ -1,21 +1,24 @@
-from typing import Callable, Dict, Optional, Union
+from typing import Callable, Dict, MutableMapping, Optional, Union
 
 import numpy as np
 import torch
+from lightning.pytorch.utilities.parsing import AttributeDict
 from torchmetrics import MetricCollection
 from torchmetrics.classification import Accuracy, F1Score
+from transformers import AutoModelForSequenceClassification
 
 from src.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.estimator import Estimator
 from src.query_strategies.base import UncertaintyBasedStrategy
 from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, POOL_BATCH_OUTPUT
+from src.utilities import move_to_cpu
 
 
 class SequenceClassificationMixin:
     def step(
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
-        model: torch.nn.Module,
+        model: AutoModelForSequenceClassification,
         batch: Dict,
         batch_idx: int,
         metrics: MetricCollection,
@@ -39,6 +42,12 @@ class SequenceClassificationMixin:
             OutputKeys.METRICS: out_metrics,
             SpecialKeys.ID: unique_ids,
         }
+
+    @property
+    def hparams(self) -> Union[AttributeDict, MutableMapping]:
+        hparams = super().hparams
+        hparams["name_or_path"] = self.model.name_or_path
+        return hparams
 
     def train_step(
         self,
@@ -89,10 +98,15 @@ class SequenceClassificationMixin:
         if stage == RunningStage.TRAIN:
             return
 
-        logs = metrics.compute()
-        logs["avg_loss"] = np.mean([out[OutputKeys.LOSS] for out in output])
+        logs = {
+            **move_to_cpu(metrics.compute()),
+            "avg_loss": round(np.mean([out[OutputKeys.LOSS] for out in output]), 6),
+        }
+
         logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
         self.fabric.log_dict(logs, step=self.counter.num_epochs)
+
+        return logs
 
     def train_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
         return self.epoch_end(output, metrics, RunningStage.TRAIN)

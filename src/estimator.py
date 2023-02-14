@@ -1,7 +1,7 @@
 import inspect
 import os
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, MutableMapping, Optional, Union
 
 import torch
 from lightning.fabric import Fabric
@@ -10,6 +10,8 @@ from lightning.fabric.connector import _PLUGIN_INPUT, _PRECISION_INPUT
 from lightning.fabric.loggers import Logger
 from lightning.fabric.strategies import Strategy
 from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule, _FabricOptimizer
+from lightning.pytorch.core.mixins.hparams_mixin import HyperparametersMixin
+from lightning.pytorch.utilities.parsing import AttributeDict
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
@@ -22,7 +24,8 @@ from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, FORWARD_OUT
 from src.utilities import get_hparams
 
 
-class Estimator:
+class Estimator(HyperparametersMixin):
+    _hparams_ignore: List[str] = ["model", "loggers", "callbacks"]
     _loss_fn: Optional[Union[torch.nn.Module, Callable]] = None
     _counter: Counter = None
 
@@ -50,8 +53,17 @@ class Estimator:
             callbacks=callbacks,
             loggers=loggers,
         )
-        self._init_deterministic(deterministic)
         self.model = model
+        self._init_deterministic(deterministic)
+        self.save_hyperparameters(ignore=self._hparams_ignore)
+
+    @property
+    def hparams(self) -> Union[AttributeDict, MutableMapping]:
+        """Adds counter to hparams."""
+        hparams = super().hparams
+        hparams["num_epochs"] = self.counter.num_epochs
+        hparams["num_steps"] = self.counter.num_steps
+        return hparams
 
     @property
     def device(self) -> torch.device:
@@ -104,14 +116,15 @@ class Estimator:
         # setup model and optimizer with fabric
         model, optimizer = self.fabric.setup(self.model, optimizer)
 
-        # hook
-        self.fabric.call("on_fit_start", estimator=self, model=model, output=outputs)
-
         # reset counter
         self.counter.reset()
 
         # training loop over epochs
         pbar = self._get_epoch_progress_bar(num_epochs)
+
+        # hook
+        self.fabric.call("on_fit_start", estimator=self, model=model, output=outputs)
+
         for _ in pbar:  # NOTE: this can become a while loop
             output = self.fit_epoch_loop(
                 model=model,
@@ -193,7 +206,9 @@ class Estimator:
 
         output = EpochOutput()
 
-        pbar = self._get_batch_progress_bar(train_loader, RunningStage.TRAIN, dry_run=dry_run, limit_batches=limit_batches)
+        pbar = self._get_batch_progress_bar(
+            train_loader, RunningStage.TRAIN, dry_run=dry_run, limit_batches=limit_batches
+        )
 
         # hook
         self.fabric.call("on_train_epoch_start", estimator=self, model=model, output=output)
@@ -209,7 +224,9 @@ class Estimator:
             batch_out = self.train_batch_loop(loss_fn, model, batch, batch_idx, optimizer, scheduler, metrics)
 
             # hook
-            self.fabric.call("on_train_batch_end", estimator=self, model=model, output=batch_out, batch=batch, batch_idx=batch_idx)
+            self.fabric.call(
+                "on_train_batch_end", estimator=self, model=model, output=batch_out, batch=batch, batch_idx=batch_idx
+            )
 
             # update progress
             if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
@@ -341,7 +358,7 @@ class Estimator:
         output = EpochOutput()
 
         pbar = self._get_batch_progress_bar(eval_loader, stage, dry_run=dry_run, limit_batches=limit_batches)
-        
+
         # hook
         self.fabric.call(f"on_{stage}_epoch_start", estimator=self, model=model, output=output)
 

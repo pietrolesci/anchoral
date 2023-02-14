@@ -1,10 +1,11 @@
 import os
 from collections import Counter
 from functools import partial
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, MutableMapping, Optional, Union
 
 import torch
 from datasets import DatasetDict
+from lightning.pytorch.utilities.parsing import AttributeDict
 from torch import Tensor
 from transformers import PreTrainedTokenizerBase
 
@@ -19,13 +20,21 @@ A very tailored datamodule for HuggingFace datasets
 class ClassificationDataModule(DataModule):
     _default_columns: List[str] = [InputKeys.TARGET, InputKeys.INPUT_IDS, InputKeys.ATT_MASK]
     _class_proportions: Optional[List[float]] = None
+    _tokenizer: PreTrainedTokenizerBase = None
 
     def __init__(self, tokenizer: Optional[PreTrainedTokenizerBase], max_source_length: int = 128, **kwargs) -> None:
         self._hparams_ignore.append("tokenizer")
         super().__init__(**kwargs)
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        self._tokenizer = tokenizer
         self.max_source_length = max_source_length
+        self._tokenizer = tokenizer
+
+    @property
+    def hparams(self) -> Union[AttributeDict, MutableMapping]:
+        hparams = super().hparams
+        if self._tokenizer is not None:
+            hparams["tokenizer_name_or_path"] = self._tokenizer.name_or_path
+        return hparams
 
     @property
     def class_weights(self) -> Optional[List[float]]:

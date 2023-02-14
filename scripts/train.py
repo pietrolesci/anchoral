@@ -85,14 +85,16 @@ def main(cfg: DictConfig) -> None:
         callbacks=list(callbacks.values()),
     )
 
-    # fit
+    # # fit
     fit_out = estimator.fit(
         train_loader=datamodule.train_loader(),
         validation_loader=datamodule.validation_loader(),
         **OmegaConf.to_container(cfg.fit),
     )
 
-    # test
+    # test: in our src.huggingface.estimators.EstimatorForSequenceClassification we overwritten
+    # the test_epoch_end method and we return a dictionary with the metrics, so test_out.output
+    # is a Dict
     test_out = estimator.test(datamodule.test_loader(), **OmegaConf.to_container(cfg.test))
 
     # ============ STEP 4: save outputs ============
@@ -100,22 +102,10 @@ def main(cfg: DictConfig) -> None:
 
     # log hparams and test results to tensorboard
     if isinstance(estimator.fabric.logger, TensorBoardLogger):
-        hparams = OmegaConf.to_container(cfg)
-        metrics = srsly.read_json(f"{cfg.callbacks.save_outputs.dirpath}/test/epoch_level.json")
-        hparam_dict = {**hparams["trainer"], **hparams["model"], **hparams["data"], **hparams["fit"]}
-        metric_dict = {f"test_{k}": v for k, v in metrics["metrics"].items()}
-        metric_dict["test_loss"] = metrics["loss"]
         estimator.fabric.logger.experiment.add_hparams(
-            hparam_dict=hparam_dict,
-            metric_dict=metric_dict,
+            hparam_dict={**datamodule.hparams, **estimator.hparams, **fit_out.hparams},
+            metric_dict=test_out.output,
         )
-
-    # # save experiment output
-    # with open("./train_outputs", "wb") as fl:
-    #     pickle.dump(train_outputs, fl)
-
-    # with open("./test_outputs", "wb") as fl:
-    #     pickle.dump(test_outputs, fl)
 
 
 if __name__ == "__main__":

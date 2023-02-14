@@ -1,7 +1,5 @@
 import inspect
-import time
-from dataclasses import dataclass
-from typing import Any, Union
+from typing import Any, Dict, Union
 
 from lightning_utilities.core.apply_func import apply_to_collection
 from numpy import ndarray
@@ -20,25 +18,7 @@ def move_to_cpu(output: Any) -> Any:
     return apply_to_collection(output, *args)
 
 
-def get_hparams():
+def get_hparams() -> Dict:
     frame = inspect.currentframe().f_back
     args, _, _, values = inspect.getargvalues(frame)
     return {arg: values[arg] for arg in args}
-
-
-@dataclass
-class Timer:
-    # The rest of the code is unchanged
-
-    def __enter__(self):
-        """Start a new timer as a context manager"""
-        self.start_time = time.perf_counter()
-        return self
-
-    def __exit__(self, *args, **kwargs):
-        """Stop the context manager timer"""
-        self.end_time = time.perf_counter()
-
-    @property
-    def runtime(self) -> float:
-        return self.end_time - self.start_time
