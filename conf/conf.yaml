@@ -6,6 +6,7 @@ defaults:
     - timer
   - loggers:
     - tensorboard
+  - optional strategy: null
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
 
@@ -28,7 +29,9 @@ hydra:
     dir: ./outputs/multirun/${experiment_group}/${dataset_name}_${now:%Y-%m-%d}T${now:%H-%M-%S}
     subdir: ${hydra.job.override_dirname}
 
-trainer:
+strategy: null
+
+estimator:
   accelerator: gpu
   strategy: null
   devices: null
@@ -78,6 +81,13 @@ test:
   log_interval: ${fit.log_interval}
   dry_run: ${dry_run}
   limit_batches: ${limit_batches}
+
+active_fit:
+  num_rounds: 20
+  query_size: 50
+  val_perc: 0.3
+  reinit_model: true
+  limit_pool_batches: ${limit_batches}
 
 # global settings
 dataset_name: '???'
