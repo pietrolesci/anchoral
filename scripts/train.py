@@ -80,7 +80,7 @@ def main(cfg: DictConfig) -> None:
     # define estimator
     estimator = EstimatorForSequenceClassification(
         model=model,
-        **OmegaConf.to_container(cfg.trainer),
+        **OmegaConf.to_container(cfg.estimator),
         loggers=list(loggers.values()),
         callbacks=list(callbacks.values()),
     )
