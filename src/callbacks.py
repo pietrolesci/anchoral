@@ -176,14 +176,12 @@ class PytorchTensorboardProfiler(Callback):
         warmup: int = 1,
         active: int = 1,
         repeat: int = 2,
-        record_shapes: bool = True,
-        with_stack: bool = True,
+        **kwargs,
     ) -> None:
         self.prof = torch.profiler.profile(
             schedule=torch.profiler.schedule(wait=wait, warmup=warmup, active=active, repeat=repeat),
             on_trace_ready=torch.profiler.tensorboard_trace_handler(str(dirpath)),
-            record_shapes=record_shapes,
-            with_stack=with_stack,
+            **kwargs,
         )
 
     def on_train_epoch_start(self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
