@@ -13,6 +13,11 @@ poetry run python ./scripts/process_agnews.py \
     --output_dir='./data/processed/ag_news' \
     --seed=1994
 
+poetry run python ./scripts/embed_data.py \
+    --data_path='./data/processed/ag_news' \
+    --model_name='all-mpnet-base-v2'
+
+
 
 # Civil Comments
 echo 'Processing Civil Comments'
