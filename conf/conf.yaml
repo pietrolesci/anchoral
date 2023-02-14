@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - callbacks:
-    - pytorch_profiler
+    # - pytorch_profiler
     - save_outputs
     - timer
   - loggers:

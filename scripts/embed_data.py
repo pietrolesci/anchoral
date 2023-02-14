@@ -8,7 +8,7 @@ from datasets import load_from_disk
 from sentence_transformers import SentenceTransformer
 from tqdm.auto import tqdm
 
-from src.enums import SpecialKeys, InputKeys
+from src.enums import InputKeys, SpecialKeys
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
