@@ -138,10 +138,9 @@ class Estimator(HyperparametersMixin):
                 scheduler=scheduler,
                 **kwargs,
             )
-            outputs.append(output)
-
-            # update counter
             self.counter.increment_epochs()
+
+            outputs.append(output)
 
         # hook
         self.fabric.call("on_fit_end", estimator=self, model=model, output=outputs)
@@ -224,20 +223,22 @@ class Estimator(HyperparametersMixin):
 
             # run model on batch
             batch_out = self.train_batch_loop(loss_fn, model, batch, batch_idx, optimizer, scheduler, metrics)
+            self.counter.increment_batches(RunningStage.TRAIN)
 
             # hook
             self.fabric.call(
-                "on_train_batch_end", estimator=self, model=model, output=batch_out, batch=batch, batch_idx=batch_idx
+                "on_train_batch_end",
+                estimator=self,
+                model=model,
+                output=batch_out,
+                batch=batch,
+                batch_idx=batch_idx,
             )
 
-            # update progress
-            if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
-                self.log(batch_out, batch_idx=batch_idx, stage=RunningStage.TRAIN)
+            batch_out = self.train_step_end(batch_out, batch, batch_idx, log_interval)
 
             # record output
             output.append(batch_out)
-
-            self.counter.increment_batches(RunningStage.TRAIN)
 
         # hook
         self.fabric.call(
@@ -369,6 +370,7 @@ class Estimator(HyperparametersMixin):
 
                 # run on batch
                 batch_out = self.eval_batch_loop(loss_fn, model, batch, batch_idx, metrics, stage)
+                self.counter.increment_batches(stage)
 
                 # hook
                 self.fabric.call(
@@ -380,14 +382,10 @@ class Estimator(HyperparametersMixin):
                     batch_idx=batch_idx,
                 )
 
-                # update progress
-                if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
-                    self.log(batch_out, batch_idx=batch_idx, stage=stage)
+                batch_out = getattr(self, f"{stage}_step_end")(batch_out, batch, batch_idx, log_interval)
 
                 # record output
                 output.append(batch_out)
-
-                self.counter.increment_batches(stage)
 
         # hook
         self.fabric.call(f"on_{stage}_epoch_end", estimator=self, model=model, output=output, metrics=metrics)
@@ -519,17 +517,6 @@ class Estimator(HyperparametersMixin):
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[METRIC]:
         pass
 
-    def log(self, output: Union[BATCH_OUTPUT, EVAL_BATCH_OUTPUT], batch_idx: int, stage: RunningStage) -> None:
-        """Runs after the `*_step` methods and is used to log anything.
-
-        NOTE: output is still on the device you used for training, it's not moved to cpu yet.
-        """
-        pass
-
-    """
-    Steps
-    """
-
     def forward_pass(self, model: _FabricModule, batch: Any) -> FORWARD_OUTPUT:
         return model(batch)
 
@@ -571,6 +558,16 @@ class Estimator(HyperparametersMixin):
         metrics: Optional[METRIC] = None,
     ) -> EVAL_BATCH_OUTPUT:
         pass
+
+    def train_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
+        if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
+            self.fabric.log("loss", output[OutputKeys.LOSS], step=self.counter.num_train_batches)
+
+    def validation_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
+        return output
+
+    def test_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
+        return output
 
     def train_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
         return output

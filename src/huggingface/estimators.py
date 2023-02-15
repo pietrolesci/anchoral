@@ -92,8 +92,7 @@ class SequenceClassificationMixin:
         loss = loss_fn(out.logits, batch[InputKeys.TARGET]) if loss_fn is not None else out.loss
 
         # compute metrics
-        preds = out.logits.argmax(-1)
-        out_metrics = metrics(preds, batch[InputKeys.TARGET])
+        out_metrics = metrics(out.logits, batch[InputKeys.TARGET])
 
         return {
             OutputKeys.LOSS: loss,
@@ -111,43 +110,57 @@ class SequenceClassificationMixin:
     def test_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
         return self.epoch_end(output, metrics, RunningStage.TEST)
 
+    def train_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
+        return self.step_end(output, batch, batch_idx, log_interval, RunningStage.TRAIN)
+
+    def validation_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
+        return self.step_end(output, batch, batch_idx, log_interval, RunningStage.VALIDATION)
+
+    def test_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
+        return self.step_end(output, batch, batch_idx, log_interval, RunningStage.TEST)
+
     """
     Aggregation and logging
     """
 
     def epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection, stage: RunningStage) -> EPOCH_OUTPUT:
-        if stage != RunningStage.TRAIN:
-            logs = {
-                **move_to_cpu(metrics.compute()),
-                "avg_loss": round(np.mean([out[OutputKeys.LOSS] for out in output]), 6),
-            }
+        if stage == RunningStage.TRAIN:
+            return
 
-            logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
-            step = self.epoch_level_logging_step(stage)
-            self.fabric.log_dict(logs, step=step)
-            # print("EPOCH", stage, step, flush=True)
+        # NOTE: the metric object and is on device but the output is already on cpu
+        logs = {
+            **move_to_cpu(metrics.compute()),
+            "avg_loss": round(np.mean([out[OutputKeys.LOSS] for out in output]), 6),
+        }
 
-            return logs
+        # rename
+        logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
 
-    def log(self, output: BATCH_OUTPUT, batch_idx: int, stage: RunningStage) -> None:
-        logs = {OutputKeys.LOSS: output[OutputKeys.LOSS], **output[OutputKeys.METRICS]}
-        logs = {f"{stage}/{k}": v for k, v in logs.items()}
-        step = self.batch_level_logging_step(stage, batch_idx)
-        # print("BATCH", stage, step, flush=True)
-        self.fabric.log_dict(logs, step=step)
+        # log
+        self.fabric.log_dict(logs, step=self._epoch_step())
 
-    def batch_level_logging_step(self, stage: RunningStage, batch_idx: int) -> int:
+        return logs
+
+    def step_end(
+        self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int, stage: RunningStage
+    ) -> BATCH_OUTPUT:
+        # control logging interval
+        if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
+            # NOTE: output is still on device
+            logs = {OutputKeys.LOSS: output[OutputKeys.LOSS], **output[OutputKeys.METRICS]}
+
+            # rename and move to cpu
+            logs = move_to_cpu({f"{stage}/{k}": v for k, v in logs.items()})
+
+            # log
+            self.fabric.log_dict(logs, step=self._batch_step(stage, batch_idx))
+
+        return output
+
+    def _batch_step(self, stage: RunningStage, batch_idx: int) -> int:
         return getattr(self.counter, f"num_{stage}_batches")
-        # if stage == RunningStage.TRAIN:
-        #     return self.counter.num_steps
-        # elif stage == RunningStage.VALIDATION:
-        #     if self.counter.num_epochs > 0 and batch_idx == 0:
-        #         return self.counter.num_epochs + 1
-        #     return batch_idx * (self.counter.num_epochs + 1)
-        # elif stage == RunningStage.TEST:
-        #     return batch_idx 
-     
-    def epoch_level_logging_step(self, stage: RunningStage) -> int:
+
+    def _epoch_step(self) -> int:
         return self.counter.num_epochs
 
 
@@ -156,25 +169,11 @@ class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator)
 
 
 class ActiveLearningLoggingMixin:
-    
-    def batch_level_logging_step(self, stage: RunningStage, batch_idx: int) -> int:
+    def _batch_step(self, stage: RunningStage, batch_idx: int) -> int:
         return getattr(self.counter, f"total_{stage}_batches") + getattr(self.counter, f"num_{stage}_batches")
-        # if stage == RunningStage.TRAIN:
-        #     step = self.counter.num_steps
-        # elif stage == RunningStage.VALIDATION:
-        #     step = batch_idx * (self.counter.num_epochs + 1)
-        # elif stage == RunningStage.TEST:
-        #     step = batch_idx 
-        # return (self.counter.num_rounds + 1) * step
 
-    def epoch_level_logging_step(self, stage: RunningStage) -> int:
-        # # step arithmetic
-        # if stage == RunningStage.TEST:
-        #     step = self.counter.num_rounds
-        # elif stage == RunningStage.VALIDATION:
-        #     step = (self.counter.num_rounds + 1) * self.num_epochs
+    def _epoch_step(self) -> int:
         return getattr(self.counter, "total_epochs") + getattr(self.counter, "num_epochs")
-
 
 
 class UncertaintyBasedStrategyForSequenceClassification(
@@ -182,7 +181,6 @@ class UncertaintyBasedStrategyForSequenceClassification(
 ):
     def pool_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Dict,
         batch_idx: int,
