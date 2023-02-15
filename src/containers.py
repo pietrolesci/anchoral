@@ -48,6 +48,7 @@ class Counter:
     # def register_num_batches(self, stage: RunningStage, total: int) -> None:
     #     setattr(self, f"num_{stage}_batches", total)
 
+
 @dataclass
 class ActiveCounter(Counter):
     num_rounds: int = 0
@@ -85,48 +86,6 @@ class ActiveCounter(Counter):
         setattr(self, f"total_{stage}_batches", current + num_batches)
 
 
-# @dataclass
-# class Output(dict):
-#     def __post_init__(self):
-#         for field in fields(self):
-#             self[field.name] = getattr(self, field.name)
-
-#     def __getitem__(self, k: Union[str, int]) -> Any:
-#         inner_dict = {k: v for (k, v) in self.items()}  # avoid recursion
-#         return inner_dict[k]
-
-#     def __setattr__(self, name: str, value: Any) -> None:
-#         value = move_to_cpu(value)
-
-#         if name in self.keys() and value is not None:
-#             # Don't call self.__setitem__ to avoid recursion errors
-#             super().__setitem__(name, value)
-#         super().__setattr__(name, value)
-
-#     def to_tuple(self) -> Tuple[Any]:
-#         """
-#         Convert self to a tuple containing all the attributes/keys that are not `None`.
-#         """
-#         return tuple(self[k] for k in self.keys())
-
-
-# @dataclass
-# class Output(ModelOutput):
-#     time: float = None
-
-# def to_dict(self) -> Dict:
-#     return asdict(self)
-
-# def __getitem__(self, key) -> Any:
-#     return getattr(self, key)
-
-
-# @dataclass
-# class BatchOutput(Output):
-#     batch_idx: int = None
-#     output: BATCH_OUTPUT = None
-
-
 class EpochOutput(list):
     """This is a simple list that moves things to cpu."""
 
@@ -138,31 +97,6 @@ class EpochOutput(list):
 
     def __iadd__(self, _x) -> None:
         super().__iadd__(move_to_cpu(_x))
-
-
-# @dataclass
-# class EpochOutput(Output):
-#     """Output of a run on an entire dataloader.
-
-#     metrics: Metrics aggregated over the entire dataloader.
-#     output: List of individual outputs at the batch level.
-#     """
-
-#     metrics: Optional[Any] = None
-#     output: List[BatchOutput] = field(default_factory=list)
-
-#     def append(self, _x: Union[BATCH_OUTPUT, EVAL_BATCH_OUTPUT, None]) -> None:
-#         if _x is None:
-#             return
-#         return self.output.append(move_to_cpu(_x))
-
-#     def add_metrics(self, _x: Union[MetricCollection, Metric]) -> None:
-#         self.metrics = move_to_cpu(_x)
-
-#     def __repr__(self) -> str:
-#         self.__class__.__name__
-#         s = f"{self.__class__.__name__}(metrics={self.metrics}, output="
-#         return f"{s} ..{len(self.output)} batches.. )"
 
 
 @dataclass
