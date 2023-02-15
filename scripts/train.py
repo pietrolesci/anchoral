@@ -34,7 +34,7 @@ def main(cfg: DictConfig) -> None:
 
     log.info(f"\n{OmegaConf.to_yaml(cfg)}\n{sep_line}")
     if cfg.limit_batches is not None:
-        log.critical("\!!! DEBUGGING !!!")
+        log.critical("!!! DEBUGGING !!!")
 
     # toggle balanced loss
     should_load_class_weights = (
@@ -97,8 +97,6 @@ def main(cfg: DictConfig) -> None:
     # is a Dict
     test_out = estimator.test(datamodule.test_loader(), **OmegaConf.to_container(cfg.test))
 
-    print(estimator.counter)
-
     # ============ STEP 4: save outputs ============
     OmegaConf.save(cfg, "./hparams.yaml")
 
@@ -108,6 +106,8 @@ def main(cfg: DictConfig) -> None:
             hparam_dict={**datamodule.hparams, **estimator.hparams, **fit_out.hparams},
             metric_dict=test_out.output,
         )
+
+    log.info(estimator.counter)
 
 
 if __name__ == "__main__":
