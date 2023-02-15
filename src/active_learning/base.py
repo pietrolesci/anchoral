@@ -8,9 +8,9 @@ from tqdm.auto import tqdm, trange
 
 from src.active_learning.data import ActiveDataModule
 from src.containers import ActiveCounter, ActiveFitOutput, QueryOutput, RoundOutput
+from src.enums import RunningStage
 from src.estimator import Estimator
 from src.utilities import get_hparams
-from src.enums import RunningStage
 
 
 class ActiveEstimator(Estimator):
@@ -42,11 +42,6 @@ class ActiveEstimator(Estimator):
         optimizer_kwargs: Optional[Dict] = None,
         scheduler: Optional[str] = None,
         scheduler_kwargs: Optional[Dict] = None,
-        log_interval: int = 1,
-        limit_train_batches: Optional[int] = None,
-        limit_validation_batches: Optional[int] = None,
-        limit_test_batches: Optional[int] = None,
-        dry_run: Optional[bool] = False,
         **kwargs,
     ) -> ActiveFitOutput:
         # get passed hyper-parameters
@@ -59,12 +54,16 @@ class ActiveEstimator(Estimator):
         # reset counter
         self.counter.reset()
 
-        pbar = self._get_round_progress_bar(num_rounds)
+        pbar = self._get_round_progress_bar(num_rounds, **kwargs)
 
         # hook
         self.fabric.call("on_active_fit_start", estimator=self, datamodule=active_datamodule, output=outputs)
 
         for _ in pbar:
+            # check stopping conditions
+            if self._is_done(**kwargs):
+                break
+
             output = self.round_loop(
                 active_datamodule=active_datamodule,
                 query_size=query_size,
@@ -76,13 +75,10 @@ class ActiveEstimator(Estimator):
                 optimizer_kwargs=optimizer_kwargs,
                 scheduler=scheduler,
                 scheduler_kwargs=scheduler_kwargs,
-                log_interval=log_interval,
-                limit_train_batches=limit_train_batches,
-                limit_validation_batches=limit_validation_batches,
-                limit_test_batches=limit_test_batches,
-                dry_run=dry_run,
                 **kwargs,
             )
+            self.counter.increment_rounds()
+
             outputs.append(output)
 
             # label data
@@ -99,15 +95,6 @@ class ActiveEstimator(Estimator):
 
             if reinit_model:
                 self.load_state_dict(model_cache_dir)
-
-            # update counter
-            self.counter.increment_rounds()
-
-            print(self.counter)
-
-            # check stopping conditions
-            if self._is_done(dry_run):
-                break
 
         # hook
         self.fabric.call("on_active_fit_end", estimator=self, datamodule=active_datamodule, output=outputs)
@@ -126,11 +113,6 @@ class ActiveEstimator(Estimator):
         optimizer_kwargs: Optional[Dict] = None,
         scheduler: Optional[str] = None,
         scheduler_kwargs: Optional[Dict] = None,
-        log_interval: int = 1,
-        limit_train_batches: Optional[int] = None,
-        limit_validation_batches: Optional[int] = None,
-        limit_test_batches: Optional[int] = None,
-        dry_run: Optional[bool] = False,
         **kwargs,
     ) -> RoundOutput:
         output = RoundOutput()
@@ -151,14 +133,11 @@ class ActiveEstimator(Estimator):
                 optimizer_kwargs=optimizer_kwargs,
                 scheduler=scheduler,
                 scheduler_kwargs=scheduler_kwargs,
-                log_interval=log_interval,
-                limit_train_batches=limit_train_batches,
-                limit_validation_batches=limit_validation_batches,
-                dry_run=dry_run,
+                **kwargs,
             )
             self.counter.increment_total_epochs()
-            self.counter.increment_batches(RunningStage.TRAIN)
-            self.counter.increment_batches(RunningStage.VALIDATION)
+            self.counter.increment_total_batches(RunningStage.TRAIN)
+            self.counter.increment_total_batches(RunningStage.VALIDATION)
 
         # test model
         if active_datamodule.has_test_data:
@@ -166,11 +145,9 @@ class ActiveEstimator(Estimator):
                 test_loader=active_datamodule.test_loader(),
                 loss_fn=loss_fn,
                 loss_fn_kwargs=loss_fn_kwargs,
-                log_interval=log_interval,
-                dry_run=dry_run,
-                limit_batches=limit_test_batches,
+                **kwargs,
             )
-            self.counter.increment_batches(RunningStage.TEST)
+            self.counter.increment_total_batches(RunningStage.TEST)
 
         # query indices to annotate
         if active_datamodule.pool_size > query_size:
