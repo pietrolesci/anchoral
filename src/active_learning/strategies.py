@@ -45,15 +45,7 @@ class UncertaintyBasedStrategy(ActiveEstimator):
             - on_pool_batch_end
             - pool_epoch_end
         """
-        output = self.eval_epoch_loop(
-            loss_fn=None,
-            model=model,
-            loader=loader,
-            stage=RunningStage.POOL,
-            log_interval=kwargs.get("log_interval", 1),
-            dry_run=kwargs.get("dry_run", False),
-            limit_batches=kwargs.get("limit_pool_batches", None),
-        )
+        output = self.eval_epoch_loop(None, model, loader, RunningStage.POOL, **kwargs)
         topk_scores, indices = self._topk(output, query_size)
 
         output = QueryOutput(
@@ -78,20 +70,19 @@ class UncertaintyBasedStrategy(ActiveEstimator):
 
         ids = batch[InputKeys.ON_CPU][SpecialKeys.ID]
 
-        # calls the `pool_step`
-        output = super().eval_batch_loop(loss_fn, model, batch, batch_idx, metrics, stage)
+        pool_out = self.pool_step(model, batch, batch_idx, metrics)
 
-        if isinstance(output, torch.Tensor):
-            output = {OutputKeys.SCORES: output}
+        if isinstance(pool_out, torch.Tensor):
+            pool_out = {OutputKeys.SCORES: pool_out}
         else:
-            assert isinstance(output, dict) and "scores" in output, (
+            assert isinstance(pool_out, dict) and "scores" in pool_out, (
                 "In `pool_step` you must return a Tensor with the scores per each element in the batch "
                 f"or a Dict with a '{OutputKeys.SCORES}' key and the Tensor of scores as the value."
             )
 
-        output[SpecialKeys.ID] = np.array(ids)
+        pool_out[SpecialKeys.ID] = np.array(ids)
 
-        return output
+        return pool_out
 
     """
     Methods
@@ -99,7 +90,6 @@ class UncertaintyBasedStrategy(ActiveEstimator):
 
     def pool_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Any,
         batch_idx: int,
