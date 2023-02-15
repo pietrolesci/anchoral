@@ -67,19 +67,19 @@ fit:
   optimizer_kwargs: null
   scheduler: constant_schedule
   scheduler_kwargs: null
-  log_interval: 1
-  dry_run: ${dry_run}
+  log_interval: ${log_interval}
+  progress_bar: ${progress_bar}
   limit_train_batches: ${limit_batches}
   limit_validation_batches: ${limit_batches}
 
 validation:
-  log_interval: ${fit.log_interval}
-  dry_run: ${dry_run}
+  log_interval: ${log_interval}
+  progress_bar: ${progress_bar}
   limit_batches: ${limit_batches}
 
 test:
-  log_interval: ${fit.log_interval}
-  dry_run: ${dry_run}
+  log_interval: ${log_interval}
+  progress_bar: ${progress_bar}
   limit_batches: ${limit_batches}
 
 active_fit:
@@ -90,8 +90,10 @@ active_fit:
   limit_pool_batches: ${limit_batches}
 
 # global settings
+log_interval: 1
+progress_bar: true
+limit_batches: null
+
 dataset_name: '???'
 seed: 42
-limit_batches: null
-dry_run: false
 experiment_group: dry_run

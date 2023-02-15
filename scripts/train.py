@@ -33,8 +33,8 @@ def main(cfg: DictConfig) -> None:
         cfg.model.name_or_path = metadata.name_or_path
 
     log.info(f"\n{OmegaConf.to_yaml(cfg)}\n{sep_line}")
-    if cfg.dry_run:
-        log.critical("\n\n\t !!! DEBUGGING !!! \n\n")
+    if cfg.limit_batches is not None:
+        log.critical("\!!! DEBUGGING !!!")
 
     # toggle balanced loss
     should_load_class_weights = (
@@ -96,6 +96,8 @@ def main(cfg: DictConfig) -> None:
     # the test_epoch_end method and we return a dictionary with the metrics, so test_out.output
     # is a Dict
     test_out = estimator.test(datamodule.test_loader(), **OmegaConf.to_container(cfg.test))
+
+    print(estimator.counter)
 
     # ============ STEP 4: save outputs ============
     OmegaConf.save(cfg, "./hparams.yaml")
