@@ -33,6 +33,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from src.huggingface.datamodule import ClassificationDataModule
 from src.huggingface.estimators import EstimatorForSequenceClassification
 from src.logging import set_ignore_warnings
+from src.utilities.model_summary import summarize
 
 set_ignore_warnings()
 log = logging.getLogger("hydra")
@@ -120,6 +121,7 @@ def main(cfg: DictConfig) -> None:
             **OmegaConf.to_container(cfg.estimator),
             _convert_="all",
         )
+        log.info(f"\n{summarize(estimator)}")
 
         fit_out = estimator.active_fit(
             active_datamodule=datamodule, **OmegaConf.to_container(cfg.active_fit), **OmegaConf.to_container(cfg.fit)
@@ -135,6 +137,7 @@ def main(cfg: DictConfig) -> None:
             loggers=list(loggers.values()),
             callbacks=list(callbacks.values()),
         )
+        log.info(f"\n{summarize(estimator)}")
 
         fit_out = estimator.fit(
             train_loader=datamodule.train_loader(),

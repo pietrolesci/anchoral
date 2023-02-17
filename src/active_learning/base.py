@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, Iterable, Optional, Union
 import torch
 from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm, trange
+from tqdm.auto import tqdm
 
 from src.active_learning.data import ActiveDataModule
 from src.containers import ActiveCounter, ActiveFitOutput, QueryOutput, RoundOutput
