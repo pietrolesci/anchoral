@@ -72,6 +72,15 @@ fit:
   limit_train_batches: ${limit_batches}
   limit_validation_batches: ${limit_batches}
 
+# this is incremental to `fit` above
+active_fit:
+  num_rounds: 20
+  query_size: 50
+  val_perc: 0.3
+  reinit_model: true
+  limit_pool_batches: ${limit_batches}
+  limit_test_batches: ${limit_batches}
+
 validation:
   log_interval: ${log_interval}
   progress_bar: ${progress_bar}
@@ -82,17 +91,11 @@ test:
   progress_bar: ${progress_bar}
   limit_batches: ${limit_batches}
 
-active_fit:
-  num_rounds: 20
-  query_size: 50
-  val_perc: 0.3
-  reinit_model: true
-  limit_pool_batches: ${limit_batches}
-
 # global settings
 log_interval: 1
 progress_bar: true
 limit_batches: null
+initial_budget: null
 
 dataset_name: '???'
 seed: 42

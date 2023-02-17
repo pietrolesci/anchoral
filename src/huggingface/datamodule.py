@@ -7,6 +7,7 @@ from typing import Callable, Dict, List, MutableMapping, Optional, Union
 import torch
 from datasets import DatasetDict
 from lightning.pytorch.utilities.parsing import AttributeDict
+from sklearn.utils import resample
 from torch import Tensor
 from transformers import PreTrainedTokenizerBase
 
@@ -155,4 +156,13 @@ def collate_fn(
 
 
 class ClassificationActiveDataModule(ActiveDataModule, ClassificationDataModule):
-    ...
+    def get_stratified_sample(self, n_samples: int) -> List[int]:
+        pool_df = self._df.loc[(self._df[SpecialKeys.IS_LABELLED] == False), [SpecialKeys.ID, InputKeys.TARGET]]
+
+        return resample(
+            pool_df[SpecialKeys.ID].values,
+            replace=False,
+            stratify=pool_df[InputKeys.TARGET].values,
+            n_samples=n_samples,
+            random_state=self.seed,
+        ).tolist()
