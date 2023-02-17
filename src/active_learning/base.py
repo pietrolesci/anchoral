@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, Iterable, Optional, Union
 
 import torch
 from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule
@@ -54,19 +54,16 @@ class ActiveEstimator(Estimator):
         # reset counter
         self.counter.reset()
 
-        pbar = self._get_round_progress_bar(num_rounds, **kwargs)
+        pbar = self._get_round_progress_bar(num_rounds, **kwargs)  # +1 because on round 0 we do not query
 
         # hook
         self.fabric.call("on_active_fit_start", estimator=self, datamodule=active_datamodule, output=outputs)
 
-        for _ in pbar:
-            # check stopping conditions
-            if self._is_done(**kwargs):
-                break
-
+        while self.counter.num_rounds < num_rounds:
             output = self.round_loop(
                 active_datamodule=active_datamodule,
                 query_size=query_size,
+                val_perc=val_perc,
                 num_epochs=num_epochs,
                 loss_fn=loss_fn,
                 loss_fn_kwargs=loss_fn_kwargs,
@@ -81,20 +78,12 @@ class ActiveEstimator(Estimator):
 
             outputs.append(output)
 
-            # label data
-            if output.query.indices is not None:
-                # hook
-                self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule, output=outputs)
-
-                active_datamodule.label(
-                    indices=output.query.indices, round_idx=self.counter.num_rounds, val_perc=val_perc
-                )
-
-                # hook
-                self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule, output=outputs)
-
             if reinit_model:
                 self.load_state_dict(model_cache_dir)
+
+            # do not increase progress bar on the warm-up round
+            if isinstance(pbar, tqdm) and self.counter.num_rounds > 0:
+                pbar.update(1)
 
         # hook
         self.fabric.call("on_active_fit_end", estimator=self, datamodule=active_datamodule, output=outputs)
@@ -105,6 +94,7 @@ class ActiveEstimator(Estimator):
         self,
         active_datamodule: ActiveDataModule,
         query_size: int,
+        val_perc: float,
         num_epochs: Optional[int] = 3,
         loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
@@ -119,6 +109,18 @@ class ActiveEstimator(Estimator):
 
         # hook
         self.fabric.call("on_round_start", estimator=self, datamodule=active_datamodule, output=output)
+
+        # query indices to annotate, skip first round
+        # do not annotate on the warm-up round
+        if active_datamodule.pool_size > query_size and self.counter.num_rounds >= 0:
+            output.query = self.query(active_datamodule=active_datamodule, query_size=query_size, **kwargs)
+            self.counter.increment_total_batches(RunningStage.POOL)
+
+            # hook
+            self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule, output=output)
+            active_datamodule.label(indices=output.query.indices, round_idx=self.counter.num_rounds, val_perc=val_perc)
+            # hook
+            self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule, output=output)
 
         # fit model on the available data
         if active_datamodule.has_labelled_data:
@@ -149,14 +151,6 @@ class ActiveEstimator(Estimator):
             )
             self.counter.increment_total_batches(RunningStage.TEST)
 
-        # query indices to annotate
-        if active_datamodule.pool_size > query_size:
-            output.query = self.query(
-                active_datamodule=active_datamodule,
-                query_size=query_size,
-                **kwargs,
-            )
-
         # hook
         self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=output)
 
@@ -181,6 +175,8 @@ class ActiveEstimator(Estimator):
 
         # hook
         self.fabric.call("on_query_end", estimator=self, model=model, output=output)
+
+        return output
 
     def query_loop(self, model: _FabricModule, loader: _FabricDataLoader, query_size: int, **kwargs) -> QueryOutput:
         raise NotImplementedError
@@ -218,8 +214,17 @@ class ActiveEstimator(Estimator):
     Utilities
     """
 
-    def _get_round_progress_bar(self, num_rounds: int) -> tqdm:
-        return trange(num_rounds, desc="Completed labelling rounds", dynamic_ncols=True, leave=True)
+    def _get_round_progress_bar(self, num_rounds: int, **kwargs) -> Union[tqdm, Iterable]:
+        # check if progress bar is disabled
+        progress_bar = kwargs.get("progress_bar", True)
+        if not progress_bar:
+            return range(num_rounds)
 
-    def _get_epoch_progress_bar(self, num_epochs: int) -> tqdm:
-        return trange(num_epochs, desc="Completed epochs", dynamic_ncols=True, leave=False)
+        return tqdm(total=num_rounds, desc="Completed rounds", dynamic_ncols=True, leave=True)
+
+    def _get_epoch_progress_bar(self, num_epochs: int, **kwargs) -> Union[tqdm, Iterable]:
+        pbar = super()._get_epoch_progress_bar(num_epochs, **kwargs)
+        # remove the epoch counter progress bar
+        if isinstance(pbar, tqdm):
+            pbar.leave = False
+        return pbar

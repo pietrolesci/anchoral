@@ -116,7 +116,7 @@ class Estimator(HyperparametersMixin):
         model, optimizer = self.fabric.setup(self.model, optimizer)
 
         # reset counter
-        self.counter.reset()
+        self.counter.reset_fit()
 
         # training loop over epochs
         pbar = self._get_epoch_progress_bar(num_epochs, **kwargs)
@@ -125,10 +125,6 @@ class Estimator(HyperparametersMixin):
         self.fabric.call("on_fit_start", estimator=self, model=model, output=outputs)
 
         for _ in pbar:  # NOTE: this can become a while loop
-            # check stopping conditions
-            if self._is_done(**kwargs):
-                break
-
             output = self.fit_epoch_loop(
                 model=model,
                 train_loader=train_loader,
@@ -157,16 +153,12 @@ class Estimator(HyperparametersMixin):
         scheduler: Optional[str],
         **kwargs,
     ) -> FitEpochOutput:
-        limit_train_batches = kwargs.pop("limit_train_batches", None)
-        limit_validation_batches = kwargs.pop("limit_validation_batches", None)
-
         train_out = self.train_epoch_loop(
             loss_fn,
             model,
             train_loader,
             optimizer,
             scheduler,
-            limit_batches=limit_train_batches,
             **kwargs,
         )
 
@@ -178,7 +170,6 @@ class Estimator(HyperparametersMixin):
                 model,
                 validation_loader,
                 RunningStage.VALIDATION,
-                limit_batches=limit_validation_batches,
                 **kwargs,
             )
 
@@ -327,9 +318,13 @@ class Estimator(HyperparametersMixin):
         **kwargs,
     ) -> EvaluationOutput:
         """This method is useful because validation can run in fit when model is already setup."""
+        # configure model and dataloader
         model = self.fabric.setup(self.model)
         loader = self.configure_dataloader(loader)
+
+        # define loss function
         loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.VALIDATION)
+
         return self.eval_epoch_loop(loss_fn, model, loader, stage=stage, **kwargs)
 
     def eval_epoch_loop(
@@ -343,12 +338,15 @@ class Estimator(HyperparametersMixin):
     ) -> EPOCH_OUTPUT:
         """Runs over an entire evaluation dataloader."""
 
+        output = EpochOutput()
+
         model.eval()
 
         # define metrics
         metrics = self.configure_metrics(stage)
 
-        output = EpochOutput()
+        # reset counter
+        self.counter.reset_batches(stage)
 
         pbar = self._get_batch_progress_bar(loader, stage, **kwargs)
 
@@ -603,9 +601,11 @@ class Estimator(HyperparametersMixin):
         if not progress_bar:
             return loader
 
-        limit_batches = kwargs.get("limit_batches", None) or kwargs.get(f"limit_{stage}_batches", None)
-        leave = bool(limit_batches)
         desc = f"Epoch {self.counter.num_epochs}".strip() if stage == RunningStage.TRAIN else f"{stage.title()}"
+        limit_batches = kwargs.get(f"limit_{stage}_batches", None) or kwargs.get("limit_batches", None)
+        if limit_batches is not None:
+            limit_batches = min(limit_batches, len(loader))
+        leave = bool(limit_batches)
 
         return tqdm(loader, desc=desc, dynamic_ncols=True, leave=leave, total=limit_batches)
 
@@ -621,7 +621,7 @@ class Estimator(HyperparametersMixin):
         # if this is not None we are checking within an epoch_loop
         stage = kwargs.get("stage", None)
         if stage is not None:
-            limit_batches = kwargs.get("limit_batches", None) or kwargs.get(f"limit_{stage}_batches", None)
+            limit_batches = kwargs.get(f"limit_{stage}_batches", None) or kwargs.get("limit_batches", None)
             if limit_batches is not None:
                 num_batches = getattr(self.counter, f"num_{stage}_batches")
                 return num_batches + 1 > limit_batches

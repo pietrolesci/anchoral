@@ -1,4 +1,3 @@
-import pickle
 import time
 from pathlib import Path
 from typing import Any, Union
@@ -6,7 +5,7 @@ from typing import Any, Union
 import torch
 from lightning.fabric.wrappers import _FabricModule
 
-from src.containers import ActiveFitOutput, FitOutput, RoundOutput
+from src.containers import FitOutput
 from src.enums import RunningStage
 from src.estimator import Estimator
 from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
@@ -94,7 +93,7 @@ class Timer(Callback):
     def epoch_end(self, estimator: Estimator, stage: RunningStage) -> None:
         setattr(self, f"{stage}_epoch_end_time", time.perf_counter())
         runtime = getattr(self, f"{stage}_epoch_end_time") - getattr(self, f"{stage}_epoch_start_time")
-        estimator.fabric.log(f"timer/{stage}_epoch_time", runtime, step=estimator.counter.num_epochs)
+        estimator.fabric.log(f"timer/{stage}_epoch_time", runtime, step=estimator.counter.get_epoch_step(stage))
 
     def batch_start(self, stage: RunningStage) -> None:
         setattr(self, f"{stage}_batch_start_time", time.perf_counter())
@@ -103,9 +102,7 @@ class Timer(Callback):
         setattr(self, f"{stage}_batch_end_time", time.perf_counter())
         runtime = getattr(self, f"{stage}_batch_end_time") - getattr(self, f"{stage}_batch_start_time")
         estimator.fabric.log(
-            f"timer/{stage}_batch_time",
-            runtime,
-            step=estimator.counter.num_steps if stage == RunningStage.TRAIN else batch_idx,
+            f"timer/{stage}_batch_time", runtime, step=estimator.counter.get_batch_step(stage, batch_idx)
         )
 
     def on_fit_start(self, *args, **kwargs) -> None:

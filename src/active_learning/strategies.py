@@ -97,6 +97,11 @@ class UncertaintyBasedStrategy(ActiveEstimator):
     ) -> POOL_BATCH_OUTPUT:
         raise NotImplementedError
 
+    def pool_step_end(
+        self, output: POOL_BATCH_OUTPUT, batch: Any, batch_idx: int, log_interval: int
+    ) -> POOL_BATCH_OUTPUT:
+        return output
+
     def pool_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
         return output
 

@@ -102,9 +102,9 @@ def main(cfg: DictConfig) -> None:
 
     # log hparams and test results to tensorboard
     if isinstance(estimator.fabric.logger, TensorBoardLogger):
-        estimator.fabric.logger.experiment.add_hparams(
-            hparam_dict={**datamodule.hparams, **estimator.hparams, **fit_out.hparams},
-            metric_dict=test_out.output,
+        estimator.fabric.logger.log_hyperparams(
+            params={**datamodule.hparams, **estimator.hparams, **fit_out.hparams},
+            metrics=test_out.output,
         )
 
     log.info(estimator.counter)

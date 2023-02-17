@@ -99,7 +99,7 @@ class ActiveDataModule(DataModule):
                 **{
                     SpecialKeys.IS_LABELLED: False,
                     SpecialKeys.IS_VALIDATION: False,
-                    SpecialKeys.LABELLING_ROUND: -1,
+                    SpecialKeys.LABELLING_ROUND: -100,
                 }
             )
         )

@@ -16,33 +16,10 @@ from src.utilities import move_to_cpu
 
 
 class SequenceClassificationMixin:
-    @property
-    def hparams(self) -> Union[AttributeDict, MutableMapping]:
-        hparams = super().hparams
-        hparams["name_or_path"] = self.model.name_or_path
-        return hparams
 
-    def configure_loss_fn(
-        self,
-        loss_fn: Optional[Union[str, torch.nn.Module, Callable]],
-        loss_fn_kwargs: Optional[Dict],
-        stage: RunningStage,
-    ) -> Optional[Union[torch.nn.Module, Callable]]:
-        if loss_fn_kwargs is not None and "weight" in loss_fn_kwargs:
-            loss_fn_kwargs["weight"] = torch.tensor(loss_fn_kwargs["weight"], dtype=torch.float32, device=self.device)
-
-        return super().configure_loss_fn(loss_fn, loss_fn_kwargs, stage)
-
-    def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[MetricCollection]:
-        if stage == RunningStage.POOL:
-            return
-        # you are in charge of moving it to the correct device
-        return MetricCollection(
-            {
-                "accuracy": Accuracy("multiclass", num_classes=self.model.num_labels),
-                "f1_macro": F1Score("multiclass", num_classes=self.model.num_labels, average="macro"),
-            }
-        ).to(self.device)
+    """
+    Method forwarding
+    """
 
     def train_step(
         self,
@@ -74,6 +51,56 @@ class SequenceClassificationMixin:
     ) -> EVAL_BATCH_OUTPUT:
         return self.step(loss_fn, model, batch, batch_idx, metrics)
 
+    def train_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
+        return self.epoch_end(output, metrics, RunningStage.TRAIN)
+
+    def validation_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
+        return self.epoch_end(output, metrics, RunningStage.VALIDATION)
+
+    def test_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
+        return self.epoch_end(output, metrics, RunningStage.TEST)
+
+    def train_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
+        return self.step_end(output, batch, batch_idx, log_interval, RunningStage.TRAIN)
+
+    def validation_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
+        return self.step_end(output, batch, batch_idx, log_interval, RunningStage.VALIDATION)
+
+    def test_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
+        return self.step_end(output, batch, batch_idx, log_interval, RunningStage.TEST)
+
+    """
+    Changes
+    """
+
+    @property
+    def hparams(self) -> Union[AttributeDict, MutableMapping]:
+        hparams = super().hparams
+        hparams["name_or_path"] = self.model.name_or_path
+        return hparams
+
+    def configure_loss_fn(
+        self,
+        loss_fn: Optional[Union[str, torch.nn.Module, Callable]],
+        loss_fn_kwargs: Optional[Dict],
+        stage: RunningStage,
+    ) -> Optional[Union[torch.nn.Module, Callable]]:
+        if loss_fn_kwargs is not None and "weight" in loss_fn_kwargs:
+            loss_fn_kwargs["weight"] = torch.tensor(loss_fn_kwargs["weight"], dtype=torch.float32, device=self.device)
+
+        return super().configure_loss_fn(loss_fn, loss_fn_kwargs, stage)
+
+    def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[MetricCollection]:
+        if stage == RunningStage.POOL:
+            return
+        # you are in charge of moving it to the correct device
+        return MetricCollection(
+            {
+                "accuracy": Accuracy("multiclass", num_classes=self.model.num_labels),
+                "f1_macro": F1Score("multiclass", num_classes=self.model.num_labels, average="macro"),
+            }
+        ).to(self.device)
+
     def step(
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
@@ -101,29 +128,28 @@ class SequenceClassificationMixin:
             SpecialKeys.ID: unique_ids,
         }
 
-    def train_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
-        return self.epoch_end(output, metrics, RunningStage.TRAIN)
+    def step_end(
+        self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int, stage: RunningStage
+    ) -> BATCH_OUTPUT:
+        # NOTE: only log at the batch level for the training loop
+        if stage != RunningStage.TRAIN:
+            return output
 
-    def validation_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
-        return self.epoch_end(output, metrics, RunningStage.VALIDATION)
+        # control logging interval
+        if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
+            # NOTE: output is still on device
+            logs = {OutputKeys.LOSS: output[OutputKeys.LOSS], **output[OutputKeys.METRICS]}
 
-    def test_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
-        return self.epoch_end(output, metrics, RunningStage.TEST)
+            # rename and move to cpu
+            logs = move_to_cpu({f"{stage}/{k}": v for k, v in logs.items()})
 
-    def train_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
-        return self.step_end(output, batch, batch_idx, log_interval, RunningStage.TRAIN)
+            # log
+            self.fabric.log_dict(logs, step=self.counter.get_batch_step(stage, batch_idx))
 
-    def validation_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
-        return self.step_end(output, batch, batch_idx, log_interval, RunningStage.VALIDATION)
-
-    def test_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
-        return self.step_end(output, batch, batch_idx, log_interval, RunningStage.TEST)
-
-    """
-    Aggregation and logging
-    """
+        return output
 
     def epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection, stage: RunningStage) -> EPOCH_OUTPUT:
+        # during training do not collect nor aggregate any metric
         if stage == RunningStage.TRAIN:
             return
 
@@ -137,48 +163,16 @@ class SequenceClassificationMixin:
         logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
 
         # log
-        self.fabric.log_dict(logs, step=self._epoch_step())
+        self.fabric.log_dict(logs, step=self.counter.get_epoch_step(stage))
 
         return logs
-
-    def step_end(
-        self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int, stage: RunningStage
-    ) -> BATCH_OUTPUT:
-        # control logging interval
-        if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
-            # NOTE: output is still on device
-            logs = {OutputKeys.LOSS: output[OutputKeys.LOSS], **output[OutputKeys.METRICS]}
-
-            # rename and move to cpu
-            logs = move_to_cpu({f"{stage}/{k}": v for k, v in logs.items()})
-
-            # log
-            self.fabric.log_dict(logs, step=self._batch_step(stage, batch_idx))
-
-        return output
-
-    def _batch_step(self, stage: RunningStage, batch_idx: int) -> int:
-        return getattr(self.counter, f"num_{stage}_batches")
-
-    def _epoch_step(self) -> int:
-        return self.counter.num_epochs
 
 
 class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator):
     ...
 
 
-class ActiveLearningLoggingMixin:
-    def _batch_step(self, stage: RunningStage, batch_idx: int) -> int:
-        return getattr(self.counter, f"total_{stage}_batches") + getattr(self.counter, f"num_{stage}_batches")
-
-    def _epoch_step(self) -> int:
-        return getattr(self.counter, "total_epochs") + getattr(self.counter, "num_epochs")
-
-
-class UncertaintyBasedStrategyForSequenceClassification(
-    ActiveLearningLoggingMixin, SequenceClassificationMixin, UncertaintyBasedStrategy
-):
+class UncertaintyBasedStrategyForSequenceClassification(SequenceClassificationMixin, UncertaintyBasedStrategy):
     def pool_step(
         self,
         model: _FabricModule,

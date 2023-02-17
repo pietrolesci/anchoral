@@ -10,19 +10,21 @@ from src.utilities import move_to_cpu
 
 @dataclass
 class Counter:
-    # TODO: once accumulate batching is implemented, num_steps will be different
-    # from batch_idx
+    # NOTE: once accumulate batching is implemented, num_steps != batch_idx
     num_epochs: int = 0
     num_steps: int = 0
     num_train_batches: int = 0
     num_validation_batches: int = 0
     num_test_batches: int = 0
 
-    def reset(self) -> None:
+    def reset_fit(self) -> None:
         self.reset_epochs()
         self.reset_steps()
         self.reset_batches(RunningStage.TRAIN)
         self.reset_batches(RunningStage.VALIDATION)
+
+    def reset(self) -> None:
+        self.reset_fit()
         self.reset_batches(RunningStage.TEST)
 
     def reset_epochs(self) -> None:
@@ -45,25 +47,24 @@ class Counter:
         current = getattr(self, key)
         setattr(self, key, current + 1)
 
-    # def register_num_batches(self, stage: RunningStage, total: int) -> None:
-    #     setattr(self, f"num_{stage}_batches", total)
+    def get_batch_step(self, stage: RunningStage, batch_idx: int) -> int:
+        return getattr(self, f"num_{stage}_batches")
+
+    def get_epoch_step(self, stage: RunningStage) -> int:
+        if stage == RunningStage.TEST:
+            return 0
+        return self.num_epochs
 
 
 @dataclass
 class ActiveCounter(Counter):
-    num_rounds: int = 0
+    num_rounds: int = -1
     total_epochs: int = 0
     total_train_batches: int = 0
     total_validation_batches: int = 0
     total_test_batches: int = 0
-
-    def reset(self) -> None:
-        super().reset()
-        self.reset_rounds()
-        self.reset_total_epochs()
-        self.reset_total_batches(RunningStage.TRAIN)
-        self.reset_total_batches(RunningStage.VALIDATION)
-        self.reset_total_batches(RunningStage.TEST)
+    num_pool_batches: int = 0
+    total_pool_batches: int = 0
 
     def reset_rounds(self) -> None:
         self.num_rounds = 0
@@ -84,6 +85,14 @@ class ActiveCounter(Counter):
         current = getattr(self, f"total_{stage}_batches")
         num_batches = getattr(self, f"num_{stage}_batches")
         setattr(self, f"total_{stage}_batches", current + num_batches)
+
+    def get_batch_step(self, stage: RunningStage, batch_idx: int) -> int:
+        return getattr(self, f"total_{stage}_batches") + getattr(self, f"num_{stage}_batches")
+
+    def get_epoch_step(self, stage: RunningStage) -> int:
+        if stage == RunningStage.TEST:
+            return self.num_rounds
+        return getattr(self, "total_epochs") + getattr(self, "num_epochs")
 
 
 class EpochOutput(list):
