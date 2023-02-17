@@ -3,6 +3,7 @@ import os
 from functools import partial
 from typing import Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Union
 
+import numpy as np
 import torch
 from lightning.fabric import Fabric
 from lightning.fabric.accelerators.accelerator import Accelerator
@@ -84,6 +85,7 @@ class Estimator(HyperparametersMixin):
         train_loader: DataLoader,
         validation_loader: Optional[DataLoader] = None,
         num_epochs: Optional[int] = 3,
+        num_steps: Optional[int] = None,
         loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
         learning_rate: float = 0.001,
@@ -119,12 +121,15 @@ class Estimator(HyperparametersMixin):
         self.counter.reset_fit()
 
         # training loop over epochs
-        pbar = self._get_epoch_progress_bar(num_epochs, **kwargs)
+        pbar = self._get_epoch_progress_bar(num_epochs, num_steps, train_loader, **kwargs)
 
         # hook
         self.fabric.call("on_fit_start", estimator=self, model=model, output=outputs)
 
-        for _ in pbar:  # NOTE: this can become a while loop
+        while not self._is_fit_done(num_epochs, num_steps):
+            if isinstance(pbar, tqdm):
+                pbar.update(1)
+
             output = self.fit_epoch_loop(
                 model=model,
                 train_loader=train_loader,
@@ -606,16 +611,36 @@ class Estimator(HyperparametersMixin):
         if limit_batches is not None:
             limit_batches = min(limit_batches, len(loader))
         leave = bool(limit_batches)
+        # total_batches = len(train_loader)
+        # if validation_loader is not None:
+        #     validation_batches = len(validation_loader)
+        #     validation_interval = kwargs.get("validation_interval", None)
+        #     if validation_interval is not None:
+        #         assert validation_interval >= 1 and isinstance(validation_interval, int)
+        #         validation_batches *= validation_interval
+
+        #     total_batches += validation_batches
 
         return tqdm(loader, desc=desc, dynamic_ncols=True, leave=leave, total=limit_batches)
 
-    def _get_epoch_progress_bar(self, num_epochs: int, **kwargs) -> Union[tqdm, Iterable]:
+    def _get_epoch_progress_bar(self, num_epochs: int, num_steps, loader: DataLoader, **kwargs) -> Optional[tqdm]:
         # check if progress bar is disabled
         progress_bar = kwargs.get("progress_bar", True)
         if not progress_bar:
-            return range(num_epochs)
+            return None
 
-        return trange(num_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
+        if num_epochs is not None and num_steps is None:
+            _num_epochs = num_epochs
+
+        elif num_steps is not None:
+            total_batches = len(loader)
+            _num_epochs = np.ceil(num_steps / total_batches)
+            _num_epochs = max(_num_epochs, num_epochs)
+
+        else:
+            raise ValueError("At least one between `num_epochs` or `num_steps` should be specified.")
+
+        return trange(_num_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
 
     def _is_done(self, **kwargs) -> bool:
         # if this is not None we are checking within an epoch_loop
@@ -628,3 +653,8 @@ class Estimator(HyperparametersMixin):
 
         # otherwise continue loop
         return False
+
+    def _is_fit_done(self, num_epochs: Optional[int], num_steps: Optional[int]) -> bool:
+        return (num_epochs is not None and self.counter.num_epochs >= num_epochs) or (
+            num_steps is not None and self.counter.num_steps >= num_steps
+        )

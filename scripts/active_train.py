@@ -2,7 +2,6 @@ import logging
 from pathlib import Path
 
 import hydra
-import srsly
 from datasets import load_from_disk
 from hydra.utils import get_original_cwd, instantiate
 from lightning.fabric import seed_everything

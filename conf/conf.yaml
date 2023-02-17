@@ -60,6 +60,7 @@ data:
 
 fit:
   num_epochs: 3
+  num_steps: null
   loss_fn: null
   loss_fn_kwargs: null
   learning_rate: 0.001

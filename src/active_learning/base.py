@@ -222,8 +222,8 @@ class ActiveEstimator(Estimator):
 
         return tqdm(total=num_rounds, desc="Completed rounds", dynamic_ncols=True, leave=True)
 
-    def _get_epoch_progress_bar(self, num_epochs: int, **kwargs) -> Union[tqdm, Iterable]:
-        pbar = super()._get_epoch_progress_bar(num_epochs, **kwargs)
+    def _get_epoch_progress_bar(self, *args, **kwargs) -> Optional[tqdm]:
+        pbar = super()._get_epoch_progress_bar(*args, **kwargs)
         # remove the epoch counter progress bar
         if isinstance(pbar, tqdm):
             pbar.leave = False
