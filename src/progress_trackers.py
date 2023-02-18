@@ -14,10 +14,6 @@ class Tracker:
     total: int = 0
     current: int = 0
 
-    def reset(self) -> None:
-        self.reset_current()
-        self.total = 0
-
     def reset_current(self) -> None:
         self.current = 0
 
@@ -37,33 +33,29 @@ class FitProgressTracker:
     validation_tracker: Tracker
 
     epochs_progress_bar: Optional[tqdm] = None
-    steps_progress_bar: Optional[tqdm] = None
     train_progress_bar: Optional[tqdm] = None
     validation_progress_bar: Optional[tqdm] = None
 
     progress_bar: bool = True
 
     def is_done(self) -> bool:
-        return (self.epochs_tracker is not None and self.epochs_tracker.max_reached()) or (
-            self.steps_tracker is not None and self.steps_tracker.max_reached()
-        )
+        cond = self.epochs_tracker.max_reached()
+        if cond and self.progress_bar:
+            self.epochs_progress_bar.close()
+        return cond
 
     def is_epoch_done(self, stage: RunningStage) -> bool:
-        if stage == RunningStage.TRAIN:
-            return self.train_tracker.max_reached() or self.steps_tracker.max_reached()
-        return self.validation_tracker.max_reached()
+        cond = getattr(self, f"{stage}_tracker").max_reached()        
+        if cond and self.progress_bar:
+            getattr(self, f"{stage}_progress_bar").close()
+        return cond
 
-    def initialize_stage_tracking(self) -> None:
+    def initialize_tracking(self) -> None:
         if not self.progress_bar:
             return
-        if self.steps_tracker.max is None:
-            self.epochs_progress_bar = tqdm(
-                total=self.epochs_tracker.max, desc="Completed epochs", dynamic_ncols=True, leave=True
-            )
-        else:
-            self.steps_progress_bar = tqdm(
-                total=self.steps_tracker.max, desc="Completed steps", dynamic_ncols=True, leave=True
-            )
+        self.epochs_progress_bar = tqdm(
+            total=self.epochs_tracker.max, desc="Completed epochs", dynamic_ncols=True, leave=True
+        )
 
     def initialize_epoch_tracking(self, stage: RunningStage) -> None:
         getattr(self, f"{stage}_tracker").reset_current()
@@ -85,17 +77,6 @@ class FitProgressTracker:
 
     def increment_steps(self) -> None:
         self.steps_tracker.increment()
-        if self.steps_progress_bar is not None:
-            self.steps_progress_bar.update(1)
-
-    def reset(self) -> None:
-        """Resets everything"""
-        self.epochs_tracker.reset()
-        self.train_tracker.reset()
-        self.validation_tracker.reset()
-
-    def get_epochs_progress_bar(self):
-        pass
 
 
 @dataclass
@@ -116,6 +97,10 @@ class ProgressTracker:
         if self.is_training:
             return self.fit_tracker.epochs_tracker.total
         return 0
+    
+    def is_done(self) -> bool:
+        if self.is_training:
+            return self.fit_tracker.is_done()
 
     def is_epoch_done(self, stage: RunningStage) -> bool:
         if self.is_training:
@@ -131,15 +116,10 @@ class ProgressTracker:
     def initialize_fit_tracking(
         self,
         max_epochs: Optional[int],
-        max_steps: Optional[int],
         train_loader: DataLoader,
         validation_loader: DataLoader,
         **kwargs,
     ) -> None:
-        if max_epochs is None and max_steps is None:
-            raise ValueError("`max_epochs` or `max_steps` must be specified.")
-        elif max_epochs is not None and max_steps is not None:
-            raise ValueError("Only one between `max_epochs` or `max_steps` must be specified.")
         progress_bar = kwargs.get("progress_bar", True)
 
         # train
@@ -158,12 +138,12 @@ class ProgressTracker:
 
         self.fit_tracker = FitProgressTracker(
             epochs_tracker=Tracker(max=max_epochs),
-            steps_tracker=Tracker(max=max_steps),
+            steps_tracker=Tracker(),
             train_tracker=Tracker(max=max_train_batches),
             validation_tracker=Tracker(max=max_validation_batches),
             progress_bar=progress_bar,
         )
-        self.fit_tracker.initialize_stage_tracking()
+        self.fit_tracker.initialize_tracking()
         self.is_training = True
 
     def initialize_evaluation_tracking(self, stage: RunningStage, loader: DataLoader, **kwargs) -> None:

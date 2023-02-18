@@ -75,7 +75,6 @@ class Estimator(HyperparametersMixin):
         train_loader: DataLoader,
         validation_loader: Optional[DataLoader] = None,
         max_epochs: Optional[int] = 3,
-        max_steps: Optional[int] = None,
         loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
         learning_rate: float = 0.001,
@@ -94,7 +93,7 @@ class Estimator(HyperparametersMixin):
         self._hparams.update(outputs.hparams)  # add fit hparams to global hparams
 
         # configure progress tracking
-        self.progress_tracker.initialize_fit_tracking(max_epochs, max_steps, train_loader, validation_loader, **kwargs)
+        self.progress_tracker.initialize_fit_tracking(max_epochs, train_loader, validation_loader, **kwargs)
 
         # configure dataloaders
         train_loader = self.configure_dataloader(train_loader)
@@ -112,7 +111,7 @@ class Estimator(HyperparametersMixin):
 
         self.fabric.call("on_fit_start", estimator=self, model=model, output=outputs)
 
-        while not self.progress_tracker.fit_tracker.is_done():
+        while not self.progress_tracker.is_done():
             output = self.fit_epoch_loop(
                 model=model,
                 train_loader=train_loader,
