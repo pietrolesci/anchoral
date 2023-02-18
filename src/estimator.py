@@ -1,9 +1,8 @@
 import inspect
 import os
 from functools import partial
-from typing import Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
-import numpy as np
 import torch
 from lightning.fabric import Fabric
 from lightning.fabric.accelerators.accelerator import Accelerator
@@ -12,14 +11,13 @@ from lightning.fabric.loggers import Logger
 from lightning.fabric.strategies import Strategy
 from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule, _FabricOptimizer
 from lightning.pytorch.core.mixins.hparams_mixin import HyperparametersMixin
-from lightning.pytorch.utilities.parsing import AttributeDict
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm, trange
 
-from src.containers import ProgressTracker, EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
+from src.containers import EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
 from src.enums import OutputKeys, RunningStage
+from src.progress_trackers import ProgressTracker
 from src.registries import LOSS_FUNCTIONS_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, FORWARD_OUTPUT, METRIC
 from src.utilities import get_hparams
@@ -59,14 +57,6 @@ class Estimator(HyperparametersMixin):
         self.save_hyperparameters(ignore=self._hparams_ignore)
 
     @property
-    def hparams(self) -> Union[AttributeDict, MutableMapping]:
-        """Adds progress_tracker to hparams."""
-        hparams = super().hparams
-        hparams["max_epochs"] = self.progress_tracker.max_epochs
-        hparams["max_steps"] = self.progress_tracker.max_steps
-        return hparams
-
-    @property
     def device(self) -> torch.device:
         return self.fabric.device
 
@@ -98,39 +88,31 @@ class Estimator(HyperparametersMixin):
         """Runs full training and validation.
         Kwargs: log_interval: int, limit_train_batches: int, limit_validation_batches: int
         """
-
         # get passed hyper-parameters
         hparams = get_hparams()
         outputs = FitOutput(hparams=hparams)
+        self._hparams.update(outputs.hparams)  # add fit hparams to global hparams
 
-        # configure optimizer and scheduler
-        optimizer = self.configure_optimizer(optimizer, learning_rate, optimizer_kwargs)
-        scheduler = self.configure_scheduler(scheduler, optimizer, train_loader, scheduler_kwargs)
-
-        # configure loss
-        loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.TRAIN)
+        # configure progress tracking
+        self.progress_tracker.initialize_fit_tracking(max_epochs, max_steps, train_loader, validation_loader, **kwargs)
 
         # configure dataloaders
         train_loader = self.configure_dataloader(train_loader)
         validation_loader = self.configure_dataloader(validation_loader)
 
+        # configure optimizer and scheduler
+        optimizer = self.configure_optimizer(optimizer, learning_rate, optimizer_kwargs)
+        scheduler = self.configure_scheduler(scheduler, optimizer, scheduler_kwargs)
+
+        # configure loss
+        loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.TRAIN)
+
         # setup model and optimizer with fabric
         model, optimizer = self.fabric.setup(self.model, optimizer)
 
-        # reset progress_tracker
-        self.progress_tracker.reset_fit()
-        self.progress_tracker.set_limits(RunningStage.TRAIN, max_epochs=max_epochs, max_steps=max_steps)
-
-        # training loop over epochs
-        pbar = self._get_epoch_progress_bar(max_epochs, max_steps, train_loader, **kwargs)
-
-        # hook
         self.fabric.call("on_fit_start", estimator=self, model=model, output=outputs)
 
-        while not self.progress_tracker.limit_reached_epoch():
-            if isinstance(pbar, tqdm):
-                pbar.update(1)
-
+        while not self.progress_tracker.fit_tracker.is_done():
             output = self.fit_epoch_loop(
                 model=model,
                 train_loader=train_loader,
@@ -140,11 +122,12 @@ class Estimator(HyperparametersMixin):
                 scheduler=scheduler,
                 **kwargs,
             )
-            self.progress_tracker.increment_epochs()
 
             outputs.append(output)
 
-        # hook
+            # update progress
+            self.progress_tracker.fit_tracker.increment_epochs()
+
         self.fabric.call("on_fit_end", estimator=self, model=model, output=outputs)
 
         return outputs
@@ -165,7 +148,6 @@ class Estimator(HyperparametersMixin):
             train_loader,
             optimizer,
             scheduler,
-            **kwargs,
         )
 
         # maybe run validation
@@ -189,39 +171,37 @@ class Estimator(HyperparametersMixin):
         optimizer: _FabricOptimizer,
         scheduler: _LRScheduler,
         log_interval: int = 1,
-        **kwargs,
     ) -> EPOCH_OUTPUT:
         """Runs over an entire dataloader."""
 
+        output = EpochOutput()
+
+        # configure progress tracking
+        self.progress_tracker.initialize_epoch_tracking(RunningStage.TRAIN)
+
+        # train mode
         model.train()
 
         # define metrics
         metrics = self.configure_metrics(RunningStage.TRAIN)
 
-        output = EpochOutput()
-
-        pbar = self._get_batch_progress_bar(train_loader, RunningStage.TRAIN, **kwargs)
-
-        self.progress_tracker.reset_batches(RunningStage.TRAIN)
-
-        # hook
         self.fabric.call("on_train_epoch_start", estimator=self, model=model, output=output)
 
-        for batch_idx, batch in enumerate(pbar):
-            if self.progress_tracker.limit_reached_batch(RunningStage.TRAIN):
+        for batch_idx, batch in enumerate(train_loader):
+            if self.progress_tracker.is_epoch_done(RunningStage.TRAIN):
                 break
 
             # put batch on correct device
             batch = self.transfer_to_device(batch)
 
-            # hook
             self.fabric.call("on_train_batch_start", estimator=self, model=model, batch=batch, batch_idx=batch_idx)
 
             # run model on batch
             batch_out = self.train_batch_loop(loss_fn, model, batch, batch_idx, optimizer, scheduler, metrics)
+
+            # update progress tracker
             self.progress_tracker.increment_batches(RunningStage.TRAIN)
 
-            # hook
             self.fabric.call(
                 "on_train_batch_end",
                 estimator=self,
@@ -236,9 +216,12 @@ class Estimator(HyperparametersMixin):
             # record output
             output.append(batch_out)
 
-        # hook
         self.fabric.call(
-            "on_train_epoch_end", estimator=self, model=model, output=output, metrics=metrics, progress_tracker=self.progress_tracker
+            "on_train_epoch_end",
+            estimator=self,
+            model=model,
+            output=output,
+            metrics=metrics,
         )
 
         # method to possibly aggregate
@@ -276,7 +259,7 @@ class Estimator(HyperparametersMixin):
             scheduler.step()
 
         # update progress_tracker
-        self.progress_tracker.increment_steps()
+        self.progress_tracker.fit_tracker.increment_steps()
 
         return output
 
@@ -297,7 +280,8 @@ class Estimator(HyperparametersMixin):
         """
         hparams = get_hparams()
         output = self._evaluate(validation_loader, loss_fn, loss_fn_kwargs, RunningStage.VALIDATION, **kwargs)
-        return EvaluationOutput(hparams=hparams, output=output)
+        output = EvaluationOutput(hparams=hparams, output=output)
+        self._hparams.update(output.hparams)
 
     def test(
         self,
@@ -312,7 +296,9 @@ class Estimator(HyperparametersMixin):
         """
         hparams = get_hparams()
         output = self._evaluate(test_loader, loss_fn, loss_fn_kwargs, RunningStage.TEST, **kwargs)
-        return EvaluationOutput(hparams=hparams, output=output)
+        output = EvaluationOutput(hparams=hparams, output=output)
+        self._hparams.update(output.hparams)
+        return output
 
     def _evaluate(
         self,
@@ -321,18 +307,22 @@ class Estimator(HyperparametersMixin):
         loss_fn_kwargs: Optional[Dict],
         stage: RunningStage,
         **kwargs,
-    ) -> EvaluationOutput:
+    ) -> EPOCH_OUTPUT:
         """This method is useful because validation can run in fit when model is already setup."""
-        # configure model and dataloader
-        model = self.fabric.setup(self.model)
+
+        # progress tracking
+        self.progress_tracker.initialize_evaluation_tracking(stage, loader, **kwargs)
+
+        # configure dataloader
         loader = self.configure_dataloader(loader)
 
         # define loss function
         loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.VALIDATION)
 
-        self.progress_tracker.set_limits(stage, **kwargs)
+        # configure model
+        model = self.fabric.setup(self.model)
 
-        return self.eval_epoch_loop(loss_fn, model, loader, stage=stage, **kwargs)
+        return self.eval_epoch_loop(loss_fn, model, loader, stage=stage, log_interval=kwargs.get("log_interval", 1))
 
     def eval_epoch_loop(
         self,
@@ -341,43 +331,38 @@ class Estimator(HyperparametersMixin):
         loader: _FabricDataLoader,
         stage: RunningStage,
         log_interval: int = 1,
-        **kwargs,
     ) -> EPOCH_OUTPUT:
         """Runs over an entire evaluation dataloader."""
 
         output = EpochOutput()
+
+        # configure progress tracking
+        self.progress_tracker.initialize_epoch_tracking(stage)
 
         model.eval()
 
         # define metrics
         metrics = self.configure_metrics(stage)
 
-        # reset progress_tracker
-        self.progress_tracker.reset_batches(stage)
-
-        pbar = self._get_batch_progress_bar(loader, stage, **kwargs)
-
-        # hook
         self.fabric.call(f"on_{stage}_epoch_start", estimator=self, model=model, output=output)
 
         with torch.inference_mode():
-            for batch_idx, batch in enumerate(pbar):
-                # check stopping conditions
-                if self.progress_tracker.limit_reached_batch(stage):
+            for batch_idx, batch in enumerate(loader):
+                if self.progress_tracker.is_epoch_done(stage):
                     break
 
                 batch = self.transfer_to_device(batch)
 
-                # hook
                 self.fabric.call(
                     f"on_{stage}_batch_start", estimator=self, model=model, batch=batch, batch_idx=batch_idx
                 )
 
                 # run on batch
                 batch_out = self.eval_batch_loop(loss_fn, model, batch, batch_idx, metrics, stage)
+
+                # update progress tracker
                 self.progress_tracker.increment_batches(stage)
 
-                # hook
                 self.fabric.call(
                     f"on_{stage}_batch_end",
                     estimator=self,
@@ -392,7 +377,6 @@ class Estimator(HyperparametersMixin):
                 # record output
                 output.append(batch_out)
 
-        # hook
         self.fabric.call(f"on_{stage}_epoch_end", estimator=self, model=model, output=output, metrics=metrics)
 
         # method to possibly aggregate
@@ -460,7 +444,6 @@ class Estimator(HyperparametersMixin):
         self,
         scheduler: str,
         optimizer: Optimizer,
-        train_loader: DataLoader,
         scheduler_kwargs: Optional[Dict] = None,
     ) -> Optional[_LRScheduler]:
         if scheduler is None:
@@ -471,7 +454,7 @@ class Estimator(HyperparametersMixin):
         # collect scheduler kwargs
         params = list(inspect.signature(scheduler_fn).parameters.keys())
         scheduler_kwargs = scheduler_kwargs or {}
-        num_train_steps = self._compute_num_train_steps(train_loader)
+        num_train_steps = self.progress_tracker.fit_tracker.train_tracker.max
         num_warmup_steps = scheduler_kwargs.get("num_warmup_steps", None)
         if num_warmup_steps is not None and isinstance(num_warmup_steps, float):
             num_warmup_steps *= num_train_steps
@@ -602,44 +585,46 @@ class Estimator(HyperparametersMixin):
         # FIXME: when accumulate batches is added
         return len(train_loader)
 
-    def _get_batch_progress_bar(self, loader: DataLoader, stage: RunningStage, **kwargs) -> Union[tqdm, Iterable]:
-        # check if progress bar is disabled
-        progress_bar = kwargs.get("progress_bar", True)
-        if not progress_bar:
-            return loader
+    # def _get_batch_progress_bar(self, loader: DataLoader, stage: RunningStage, **kwargs) -> Union[tqdm, Iterable]:
+    #     # check if progress bar is disabled
+    #     progress_bar = kwargs.get("progress_bar", True)
+    #     if not progress_bar:
+    #         return loader
 
-        desc = f"Epoch {self.progress_tracker.max_epochs}".strip() if stage == RunningStage.TRAIN else f"{stage.title()}"
-        limit_batches = kwargs.get(f"limit_{stage}_batches", None) or kwargs.get("limit_batches", None)
-        if limit_batches is not None:
-            limit_batches = min(limit_batches, len(loader))
-        leave = bool(limit_batches)
-        # total_batches = len(train_loader)
-        # if validation_loader is not None:
-        #     validation_batches = len(validation_loader)
-        #     validation_interval = kwargs.get("validation_interval", None)
-        #     if validation_interval is not None:
-        #         assert validation_interval >= 1 and isinstance(validation_interval, int)
-        #         validation_batches *= validation_interval
+    #     desc = (
+    #         f"Epoch {self.progress_tracker.max_epochs}".strip() if stage == RunningStage.TRAIN else f"{stage.title()}"
+    #     )
+    #     limit_batches = kwargs.get(f"limit_{stage}_batches", None) or kwargs.get("limit_batches", None)
+    #     if limit_batches is not None:
+    #         limit_batches = min(limit_batches, len(loader))
+    #     leave = bool(limit_batches)
+    #     # total_batches = len(train_loader)
+    #     # if validation_loader is not None:
+    #     #     validation_batches = len(validation_loader)
+    #     #     validation_interval = kwargs.get("validation_interval", None)
+    #     #     if validation_interval is not None:
+    #     #         assert validation_interval >= 1 and isinstance(validation_interval, int)
+    #     #         validation_batches *= validation_interval
 
-        #     total_batches += validation_batches
+    #     #     total_batches += validation_batches
 
-        return tqdm(loader, desc=desc, dynamic_ncols=True, leave=leave, total=limit_batches)
+    #     return tqdm(loader, desc=desc, dynamic_ncols=True, leave=leave, total=limit_batches)
 
-    def _get_epoch_progress_bar(self, max_epochs: int, max_steps, loader: DataLoader, **kwargs) -> Optional[tqdm]:
-        # check if progress bar is disabled
-        progress_bar = kwargs.get("progress_bar", True)
-        if not progress_bar:
-            return None
+    # def _get_epoch_progress_bar(self, max_epochs: int, max_steps, loader: DataLoader, **kwargs) -> Optional[tqdm]:
+    #     # check if progress bar is disabled
+    #     progress_bar = kwargs.get("progress_bar", True)
+    #     if not progress_bar:
+    #         return None
 
-        if max_epochs is not None and max_steps is None:
-            _max_epochs = max_epochs
+    #     if max_epochs is not None and max_steps is None:
+    #         _max_epochs = max_epochs
 
-        elif max_steps is not None:
-            total_batches = len(loader)
-            _max_epochs = np.ceil(max_steps / total_batches)
-            _max_epochs = max(_max_epochs, max_epochs)
+    #     elif max_steps is not None:
+    #         total_batches = len(loader)
+    #         _max_epochs = np.ceil(max_steps / total_batches)
+    #         _max_epochs = max(_max_epochs, max_epochs)
 
-        return trange(_max_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
+    #     return trange(_max_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
 
     # def _is_done(self, **kwargs) -> bool:
     #     # if this is not None we are checking within an epoch_loop
@@ -649,5 +634,5 @@ class Estimator(HyperparametersMixin):
     #         if limit_batches is not None:
     #             num_batches = getattr(self.progress_tracker, f"num_{stage}_batches")
     #             return num_batches + 1 > limit_batches
-        
+
     #     return self.progress_tracker.check_limit_reached()

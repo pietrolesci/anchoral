@@ -7,9 +7,10 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from src.active_learning.data import ActiveDataModule
-from src.containers import ActiveProgressTracker, ActiveFitOutput, QueryOutput, RoundOutput
+from src.containers import ActiveFitOutput, QueryOutput, RoundOutput
 from src.enums import RunningStage
 from src.estimator import Estimator
+from src.progress_trackers import ActiveProgressTracker
 from src.utilities import get_hparams
 
 
@@ -118,7 +119,9 @@ class ActiveEstimator(Estimator):
 
             # hook
             self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule, output=output)
-            active_datamodule.label(indices=output.query.indices, round_idx=self.progress_tracker.num_rounds, val_perc=val_perc)
+            active_datamodule.label(
+                indices=output.query.indices, round_idx=self.progress_tracker.num_rounds, val_perc=val_perc
+            )
             # hook
             self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule, output=output)
 

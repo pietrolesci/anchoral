@@ -144,7 +144,7 @@ class SequenceClassificationMixin:
             logs = move_to_cpu({f"{stage}/{k}": v for k, v in logs.items()})
 
             # log
-            self.fabric.log_dict(logs, step=self.progress_tracker.get_batch_step(stage, batch_idx))
+            self.fabric.log_dict(logs, step=self.progress_tracker.get_batch_num(stage))
 
         return output
 
@@ -163,7 +163,7 @@ class SequenceClassificationMixin:
         logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
 
         # log
-        self.fabric.log_dict(logs, step=self.progress_tracker.get_epoch_step(stage))
+        self.fabric.log_dict(logs, step=self.progress_tracker.get_epoch_num())
 
         return logs
 
