@@ -51,11 +51,10 @@ class FitProgressTracker:
         return cond
 
     def initialize_tracking(self) -> None:
-        if not self.progress_bar:
-            return
-        self.epochs_progress_bar = tqdm(
-            total=self.epochs_tracker.max, desc="Completed epochs", dynamic_ncols=True, leave=True
-        )
+        if self.progress_bar:
+            self.epochs_progress_bar = tqdm(
+                total=self.epochs_tracker.max, desc="Completed epochs", dynamic_ncols=True, leave=True
+            )
 
     def initialize_epoch_tracking(self, stage: RunningStage) -> None:
         getattr(self, f"{stage}_tracker").reset_current()
