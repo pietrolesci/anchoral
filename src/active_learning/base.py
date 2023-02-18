@@ -7,19 +7,19 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from src.active_learning.data import ActiveDataModule
-from src.containers import ActiveCounter, ActiveFitOutput, QueryOutput, RoundOutput
+from src.containers import ActiveProgressTracker, ActiveFitOutput, QueryOutput, RoundOutput
 from src.enums import RunningStage
 from src.estimator import Estimator
 from src.utilities import get_hparams
 
 
 class ActiveEstimator(Estimator):
-    _counter: ActiveCounter = None
+    _counter: ActiveProgressTracker = None
 
     @property
-    def counter(self) -> ActiveCounter:
+    def progress_tracker(self) -> ActiveProgressTracker:
         if self._counter is None:
-            self._counter = ActiveCounter()
+            self._counter = ActiveProgressTracker()
         return self._counter
 
     """
@@ -51,15 +51,15 @@ class ActiveEstimator(Estimator):
         if reinit_model:
             self.save_state_dict(model_cache_dir)
 
-        # reset counter
-        self.counter.reset()
+        # reset progress_tracker
+        self.progress_tracker.reset()
 
         pbar = self._get_round_progress_bar(num_rounds, **kwargs)  # +1 because on round 0 we do not query
 
         # hook
         self.fabric.call("on_active_fit_start", estimator=self, datamodule=active_datamodule, output=outputs)
 
-        while self.counter.num_rounds < num_rounds:
+        while self.progress_tracker.num_rounds < num_rounds:
             output = self.round_loop(
                 active_datamodule=active_datamodule,
                 query_size=query_size,
@@ -74,7 +74,7 @@ class ActiveEstimator(Estimator):
                 scheduler_kwargs=scheduler_kwargs,
                 **kwargs,
             )
-            self.counter.increment_rounds()
+            self.progress_tracker.increment_rounds()
 
             outputs.append(output)
 
@@ -82,7 +82,7 @@ class ActiveEstimator(Estimator):
                 self.load_state_dict(model_cache_dir)
 
             # do not increase progress bar on the warm-up round
-            if isinstance(pbar, tqdm) and self.counter.num_rounds > 0:
+            if isinstance(pbar, tqdm) and self.progress_tracker.num_rounds > 0:
                 pbar.update(1)
 
         # hook
@@ -112,13 +112,13 @@ class ActiveEstimator(Estimator):
 
         # query indices to annotate, skip first round
         # do not annotate on the warm-up round
-        if active_datamodule.pool_size > query_size and self.counter.num_rounds >= 0:
+        if active_datamodule.pool_size > query_size and self.progress_tracker.num_rounds >= 0:
             output.query = self.query(active_datamodule=active_datamodule, query_size=query_size, **kwargs)
-            self.counter.increment_total_batches(RunningStage.POOL)
+            self.progress_tracker.increment_total_batches(RunningStage.POOL)
 
             # hook
             self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule, output=output)
-            active_datamodule.label(indices=output.query.indices, round_idx=self.counter.num_rounds, val_perc=val_perc)
+            active_datamodule.label(indices=output.query.indices, round_idx=self.progress_tracker.num_rounds, val_perc=val_perc)
             # hook
             self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule, output=output)
 
@@ -137,9 +137,9 @@ class ActiveEstimator(Estimator):
                 scheduler_kwargs=scheduler_kwargs,
                 **kwargs,
             )
-            self.counter.increment_total_epochs()
-            self.counter.increment_total_batches(RunningStage.TRAIN)
-            self.counter.increment_total_batches(RunningStage.VALIDATION)
+            self.progress_tracker.increment_total_epochs()
+            self.progress_tracker.increment_total_batches(RunningStage.TRAIN)
+            self.progress_tracker.increment_total_batches(RunningStage.VALIDATION)
 
         # test model
         if active_datamodule.has_test_data:
@@ -149,7 +149,7 @@ class ActiveEstimator(Estimator):
                 loss_fn_kwargs=loss_fn_kwargs,
                 **kwargs,
             )
-            self.counter.increment_total_batches(RunningStage.TEST)
+            self.progress_tracker.increment_total_batches(RunningStage.TEST)
 
         # hook
         self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=output)
@@ -224,7 +224,7 @@ class ActiveEstimator(Estimator):
 
     def _get_epoch_progress_bar(self, *args, **kwargs) -> Optional[tqdm]:
         pbar = super()._get_epoch_progress_bar(*args, **kwargs)
-        # remove the epoch counter progress bar
+        # remove the epoch progress_tracker progress bar
         if isinstance(pbar, tqdm):
             pbar.leave = False
         return pbar

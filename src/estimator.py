@@ -18,7 +18,7 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm, trange
 
-from src.containers import Counter, EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
+from src.containers import ProgressTracker, EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
 from src.enums import OutputKeys, RunningStage
 from src.registries import LOSS_FUNCTIONS_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, FORWARD_OUTPUT, METRIC
@@ -28,7 +28,7 @@ from src.utilities import get_hparams
 class Estimator(HyperparametersMixin):
     _hparams_ignore: List[str] = ["model", "loggers", "callbacks"]
     _loss_fn: Optional[Union[torch.nn.Module, Callable]] = None
-    _counter: Counter = None
+    _progress_tracker: ProgressTracker = None
 
     def __init__(
         self,
@@ -60,10 +60,10 @@ class Estimator(HyperparametersMixin):
 
     @property
     def hparams(self) -> Union[AttributeDict, MutableMapping]:
-        """Adds counter to hparams."""
+        """Adds progress_tracker to hparams."""
         hparams = super().hparams
-        hparams["num_epochs"] = self.counter.num_epochs
-        hparams["num_steps"] = self.counter.num_steps
+        hparams["max_epochs"] = self.progress_tracker.max_epochs
+        hparams["max_steps"] = self.progress_tracker.max_steps
         return hparams
 
     @property
@@ -71,10 +71,10 @@ class Estimator(HyperparametersMixin):
         return self.fabric.device
 
     @property
-    def counter(self) -> Counter:
-        if self._counter is None:
-            self._counter = Counter()
-        return self._counter
+    def progress_tracker(self) -> ProgressTracker:
+        if self._progress_tracker is None:
+            self._progress_tracker = ProgressTracker()
+        return self._progress_tracker
 
     """
     Fit loop
@@ -84,8 +84,8 @@ class Estimator(HyperparametersMixin):
         self,
         train_loader: DataLoader,
         validation_loader: Optional[DataLoader] = None,
-        num_epochs: Optional[int] = 3,
-        num_steps: Optional[int] = None,
+        max_epochs: Optional[int] = 3,
+        max_steps: Optional[int] = None,
         loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
         learning_rate: float = 0.001,
@@ -117,16 +117,17 @@ class Estimator(HyperparametersMixin):
         # setup model and optimizer with fabric
         model, optimizer = self.fabric.setup(self.model, optimizer)
 
-        # reset counter
-        self.counter.reset_fit()
+        # reset progress_tracker
+        self.progress_tracker.reset_fit()
+        self.progress_tracker.set_limits(RunningStage.TRAIN, max_epochs=max_epochs, max_steps=max_steps)
 
         # training loop over epochs
-        pbar = self._get_epoch_progress_bar(num_epochs, num_steps, train_loader, **kwargs)
+        pbar = self._get_epoch_progress_bar(max_epochs, max_steps, train_loader, **kwargs)
 
         # hook
         self.fabric.call("on_fit_start", estimator=self, model=model, output=outputs)
 
-        while not self._is_fit_done(num_epochs, num_steps):
+        while not self.progress_tracker.limit_reached_epoch():
             if isinstance(pbar, tqdm):
                 pbar.update(1)
 
@@ -139,7 +140,7 @@ class Estimator(HyperparametersMixin):
                 scheduler=scheduler,
                 **kwargs,
             )
-            self.counter.increment_epochs()
+            self.progress_tracker.increment_epochs()
 
             outputs.append(output)
 
@@ -201,14 +202,13 @@ class Estimator(HyperparametersMixin):
 
         pbar = self._get_batch_progress_bar(train_loader, RunningStage.TRAIN, **kwargs)
 
-        self.counter.reset_batches(RunningStage.TRAIN)
+        self.progress_tracker.reset_batches(RunningStage.TRAIN)
 
         # hook
         self.fabric.call("on_train_epoch_start", estimator=self, model=model, output=output)
 
         for batch_idx, batch in enumerate(pbar):
-            # check stopping conditions
-            if self._is_done(stage=RunningStage.TRAIN, **kwargs):
+            if self.progress_tracker.limit_reached_batch(RunningStage.TRAIN):
                 break
 
             # put batch on correct device
@@ -219,7 +219,7 @@ class Estimator(HyperparametersMixin):
 
             # run model on batch
             batch_out = self.train_batch_loop(loss_fn, model, batch, batch_idx, optimizer, scheduler, metrics)
-            self.counter.increment_batches(RunningStage.TRAIN)
+            self.progress_tracker.increment_batches(RunningStage.TRAIN)
 
             # hook
             self.fabric.call(
@@ -238,7 +238,7 @@ class Estimator(HyperparametersMixin):
 
         # hook
         self.fabric.call(
-            "on_train_epoch_end", estimator=self, model=model, output=output, metrics=metrics, counter=self.counter
+            "on_train_epoch_end", estimator=self, model=model, output=output, metrics=metrics, progress_tracker=self.progress_tracker
         )
 
         # method to possibly aggregate
@@ -275,8 +275,8 @@ class Estimator(HyperparametersMixin):
         if scheduler is not None:
             scheduler.step()
 
-        # update counter
-        self.counter.increment_steps()
+        # update progress_tracker
+        self.progress_tracker.increment_steps()
 
         return output
 
@@ -330,6 +330,8 @@ class Estimator(HyperparametersMixin):
         # define loss function
         loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.VALIDATION)
 
+        self.progress_tracker.set_limits(stage, **kwargs)
+
         return self.eval_epoch_loop(loss_fn, model, loader, stage=stage, **kwargs)
 
     def eval_epoch_loop(
@@ -350,8 +352,8 @@ class Estimator(HyperparametersMixin):
         # define metrics
         metrics = self.configure_metrics(stage)
 
-        # reset counter
-        self.counter.reset_batches(stage)
+        # reset progress_tracker
+        self.progress_tracker.reset_batches(stage)
 
         pbar = self._get_batch_progress_bar(loader, stage, **kwargs)
 
@@ -361,7 +363,7 @@ class Estimator(HyperparametersMixin):
         with torch.inference_mode():
             for batch_idx, batch in enumerate(pbar):
                 # check stopping conditions
-                if self._is_done(stage=stage, **kwargs):
+                if self.progress_tracker.limit_reached_batch(stage):
                     break
 
                 batch = self.transfer_to_device(batch)
@@ -373,7 +375,7 @@ class Estimator(HyperparametersMixin):
 
                 # run on batch
                 batch_out = self.eval_batch_loop(loss_fn, model, batch, batch_idx, metrics, stage)
-                self.counter.increment_batches(stage)
+                self.progress_tracker.increment_batches(stage)
 
                 # hook
                 self.fabric.call(
@@ -564,7 +566,7 @@ class Estimator(HyperparametersMixin):
 
     def train_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
         if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
-            self.fabric.log("loss", output[OutputKeys.LOSS], step=self.counter.num_train_batches)
+            self.fabric.log("loss", output[OutputKeys.LOSS], step=self.progress_tracker.num_train_batches)
 
     def validation_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
         return output
@@ -606,7 +608,7 @@ class Estimator(HyperparametersMixin):
         if not progress_bar:
             return loader
 
-        desc = f"Epoch {self.counter.num_epochs}".strip() if stage == RunningStage.TRAIN else f"{stage.title()}"
+        desc = f"Epoch {self.progress_tracker.max_epochs}".strip() if stage == RunningStage.TRAIN else f"{stage.title()}"
         limit_batches = kwargs.get(f"limit_{stage}_batches", None) or kwargs.get("limit_batches", None)
         if limit_batches is not None:
             limit_batches = min(limit_batches, len(loader))
@@ -623,38 +625,29 @@ class Estimator(HyperparametersMixin):
 
         return tqdm(loader, desc=desc, dynamic_ncols=True, leave=leave, total=limit_batches)
 
-    def _get_epoch_progress_bar(self, num_epochs: int, num_steps, loader: DataLoader, **kwargs) -> Optional[tqdm]:
+    def _get_epoch_progress_bar(self, max_epochs: int, max_steps, loader: DataLoader, **kwargs) -> Optional[tqdm]:
         # check if progress bar is disabled
         progress_bar = kwargs.get("progress_bar", True)
         if not progress_bar:
             return None
 
-        if num_epochs is not None and num_steps is None:
-            _num_epochs = num_epochs
+        if max_epochs is not None and max_steps is None:
+            _max_epochs = max_epochs
 
-        elif num_steps is not None:
+        elif max_steps is not None:
             total_batches = len(loader)
-            _num_epochs = np.ceil(num_steps / total_batches)
-            _num_epochs = max(_num_epochs, num_epochs)
+            _max_epochs = np.ceil(max_steps / total_batches)
+            _max_epochs = max(_max_epochs, max_epochs)
 
-        else:
-            raise ValueError("At least one between `num_epochs` or `num_steps` should be specified.")
+        return trange(_max_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
 
-        return trange(_num_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
-
-    def _is_done(self, **kwargs) -> bool:
-        # if this is not None we are checking within an epoch_loop
-        stage = kwargs.get("stage", None)
-        if stage is not None:
-            limit_batches = kwargs.get(f"limit_{stage}_batches", None) or kwargs.get("limit_batches", None)
-            if limit_batches is not None:
-                num_batches = getattr(self.counter, f"num_{stage}_batches")
-                return num_batches + 1 > limit_batches
-
-        # otherwise continue loop
-        return False
-
-    def _is_fit_done(self, num_epochs: Optional[int], num_steps: Optional[int]) -> bool:
-        return (num_epochs is not None and self.counter.num_epochs >= num_epochs) or (
-            num_steps is not None and self.counter.num_steps >= num_steps
-        )
+    # def _is_done(self, **kwargs) -> bool:
+    #     # if this is not None we are checking within an epoch_loop
+    #     stage = kwargs.get("stage", None)
+    #     if stage is not None:
+    #         limit_batches = kwargs.get(f"limit_{stage}_batches", None) or kwargs.get("limit_batches", None)
+    #         if limit_batches is not None:
+    #             num_batches = getattr(self.progress_tracker, f"num_{stage}_batches")
+    #             return num_batches + 1 > limit_batches
+        
+    #     return self.progress_tracker.check_limit_reached()

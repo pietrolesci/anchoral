@@ -11,7 +11,7 @@ from src.active_learning.base import ActiveEstimator
 from src.active_learning.callbacks import ActiveLearningCallbackMixin
 from src.active_learning.data import ActiveDataModule
 from src.callbacks import Callback, Timer
-from src.containers import ActiveCounter, ActiveFitOutput, QueryOutput, RoundOutput
+from src.containers import ActiveProgressTracker, ActiveFitOutput, QueryOutput, RoundOutput
 from src.enums import OutputKeys, RunningStage, SpecialKeys
 from src.estimator import Estimator
 from src.types import EPOCH_OUTPUT, METRIC
@@ -36,7 +36,7 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
         **kwargs,
     ) -> None:
         # output directory setup
-        suffix = f"_epoch_{estimator.counter.get_epoch_step(stage)}"
+        suffix = f"_epoch_{estimator.progress_tracker.get_epoch_step(stage)}"
         path = self.dirpath / f"{stage}"
         path.mkdir(exist_ok=True, parents=True)
 
@@ -90,13 +90,13 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
 
 
 class Timer(ActiveLearningCallbackMixin, Timer):
-    def _batch_step(self, counter: ActiveCounter, stage: RunningStage, batch_idx: int) -> int:
-        return getattr(counter, f"total_{stage}_batches") + getattr(counter, f"num_{stage}_batches")
+    def _batch_step(self, progress_tracker: ActiveProgressTracker, stage: RunningStage, batch_idx: int) -> int:
+        return getattr(progress_tracker, f"total_{stage}_batches") + getattr(progress_tracker, f"num_{stage}_batches")
 
-    def _epoch_step(self, counter: ActiveCounter, stage: RunningStage) -> int:
+    def _epoch_step(self, progress_tracker: ActiveProgressTracker, stage: RunningStage) -> int:
         if stage == RunningStage.TEST:
-            return counter.num_rounds
-        return getattr(counter, "total_epochs") + getattr(counter, "num_epochs")
+            return progress_tracker.num_rounds
+        return getattr(progress_tracker, "total_epochs") + getattr(progress_tracker, "num_epochs")
 
     def on_active_fit_start(
         self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: ActiveFitOutput
@@ -114,21 +114,21 @@ class Timer(ActiveLearningCallbackMixin, Timer):
 
     def on_round_end(self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: RoundOutput) -> None:
         self.round_end = time.perf_counter()
-        estimator.fabric.log("timer/round_time", self.round_end - self.round_start, step=estimator.counter.num_rounds)
+        estimator.fabric.log("timer/round_time", self.round_end - self.round_start, step=estimator.progress_tracker.num_rounds)
 
     def on_query_start(self, estimator: ActiveEstimator, model: _FabricModule) -> None:
         self.query_start = time.perf_counter()
 
     def on_query_end(self, estimator: ActiveEstimator, model: _FabricModule, output: QueryOutput) -> None:
         self.query_end = time.perf_counter()
-        estimator.fabric.log("timer/query_time", self.query_end - self.query_start, step=estimator.counter.num_rounds)
+        estimator.fabric.log("timer/query_time", self.query_end - self.query_start, step=estimator.progress_tracker.num_rounds)
 
     def on_label_start(self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: RoundOutput) -> None:
         self.label_start = time.perf_counter()
 
     def on_label_end(self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: RoundOutput) -> None:
         self.label_end = time.perf_counter()
-        estimator.fabric.log("timer/label_time", self.label_end - self.label_start, step=estimator.counter.num_rounds)
+        estimator.fabric.log("timer/label_time", self.label_end - self.label_start, step=estimator.progress_tracker.num_rounds)
 
     def on_pool_epoch_start(self, *args, **kwargs) -> None:
         self.epoch_start(RunningStage.POOL)

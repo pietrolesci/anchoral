@@ -108,7 +108,7 @@ def main(cfg: DictConfig) -> None:
             metrics=test_out.output,
         )
 
-    log.info(estimator.counter)
+    log.info(estimator.progress_tracker)
 
 
 if __name__ == "__main__":

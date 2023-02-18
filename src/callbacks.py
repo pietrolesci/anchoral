@@ -93,7 +93,7 @@ class Timer(Callback):
     def epoch_end(self, estimator: Estimator, stage: RunningStage) -> None:
         setattr(self, f"{stage}_epoch_end_time", time.perf_counter())
         runtime = getattr(self, f"{stage}_epoch_end_time") - getattr(self, f"{stage}_epoch_start_time")
-        estimator.fabric.log(f"timer/{stage}_epoch_time", runtime, step=estimator.counter.get_epoch_step(stage))
+        estimator.fabric.log(f"timer/{stage}_epoch_time", runtime, step=estimator.progress_tracker.get_epoch_step(stage))
 
     def batch_start(self, stage: RunningStage) -> None:
         setattr(self, f"{stage}_batch_start_time", time.perf_counter())
@@ -102,7 +102,7 @@ class Timer(Callback):
         setattr(self, f"{stage}_batch_end_time", time.perf_counter())
         runtime = getattr(self, f"{stage}_batch_end_time") - getattr(self, f"{stage}_batch_start_time")
         estimator.fabric.log(
-            f"timer/{stage}_batch_time", runtime, step=estimator.counter.get_batch_step(stage, batch_idx)
+            f"timer/{stage}_batch_time", runtime, step=estimator.progress_tracker.get_batch_step(stage, batch_idx)
         )
 
     def on_fit_start(self, *args, **kwargs) -> None:
