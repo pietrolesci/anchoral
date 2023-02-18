@@ -5,7 +5,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from src.enums import RunningStage
+from src.energizer.enums import RunningStage
 
 
 @dataclass

@@ -4,8 +4,8 @@ from typing import Any, Dict, List, Optional
 from numpy import ndarray
 from torch.utils.data import BatchSampler, DataLoader, SequentialSampler
 
-from src.enums import RunningStage
-from src.utilities import move_to_cpu
+from src.energizer.enums import RunningStage
+from src.energizer.utilities import move_to_cpu
 
 
 class EpochOutput(list):

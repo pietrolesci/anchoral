@@ -8,7 +8,7 @@ from datasets.features import ClassLabel, Features, Value
 from sklearn.utils import resample
 from tqdm.auto import tqdm
 
-from src.enums import InputKeys, RunningStage, SpecialKeys
+from src.energizer.enums import InputKeys, RunningStage, SpecialKeys
 
 ############################################################################################
 # Download data from Kaggle

@@ -8,12 +8,12 @@ from sklearn.utils.validation import (
 )
 from torch.utils.data import DataLoader
 
-from src.active_learning.base import ActiveEstimator
-from src.active_learning.data import ActiveDataModule
-from src.containers import QueryOutput
-from src.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
-from src.registries import SCORING_FUNCTIONS
-from src.types import EPOCH_OUTPUT, METRIC, POOL_BATCH_OUTPUT
+from src.energizer.active_learning.base import ActiveEstimator
+from src.energizer.active_learning.data import ActiveDataModule
+from src.energizer.containers import QueryOutput
+from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
+from src.energizer.registries import SCORING_FUNCTIONS
+from src.energizer.types import EPOCH_OUTPUT, METRIC, POOL_BATCH_OUTPUT
 
 
 class RandomStrategy(ActiveEstimator):

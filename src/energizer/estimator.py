@@ -15,12 +15,12 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
-from src.containers import EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
-from src.enums import OutputKeys, RunningStage
-from src.progress_trackers import ProgressTracker
-from src.registries import LOSS_FUNCTIONS_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
-from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, FORWARD_OUTPUT, METRIC
-from src.utilities import get_hparams
+from src.energizer.containers import EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
+from src.energizer.enums import OutputKeys, RunningStage
+from src.energizer.progress_trackers import ProgressTracker
+from src.energizer.registries import LOSS_FUNCTIONS_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
+from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, FORWARD_OUTPUT, METRIC
+from src.energizer.utilities import get_hparams
 
 
 class Estimator(HyperparametersMixin):

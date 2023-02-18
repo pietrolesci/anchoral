@@ -1,7 +1,6 @@
 import os
 from collections import Counter
 from functools import partial
-from pathlib import Path
 from typing import Callable, Dict, List, MutableMapping, Optional, Union
 
 import torch
@@ -11,9 +10,9 @@ from sklearn.utils import resample
 from torch import Tensor
 from transformers import PreTrainedTokenizerBase
 
-from src.active_learning.data import ActiveDataModule
-from src.data.datamodule import DataModule, _pad
-from src.enums import InputKeys, RunningStage, SpecialKeys
+from src.energizer.active_learning.data import ActiveDataModule
+from src.energizer.datamodule import DataModule, _pad
+from src.energizer.enums import InputKeys, RunningStage, SpecialKeys
 
 """
 A very tailored datamodule for HuggingFace datasets

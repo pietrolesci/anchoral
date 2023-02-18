@@ -1,193 +1,150 @@
 import time
 from pathlib import Path
-from typing import Any, Union
+from typing import Union
 
-import torch
+import numpy as np
+import pandas as pd
+import srsly
 from lightning.fabric.wrappers import _FabricModule
 
-from src.containers import FitOutput
-from src.enums import RunningStage
-from src.estimator import Estimator
-from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
+from src.energizer.active_learning.base import ActiveEstimator
+from src.energizer.active_learning.callbacks import ActiveLearningCallbackMixin
+from src.energizer.active_learning.data import ActiveDataModule
+from src.energizer.callbacks import Callback, Timer
+from src.energizer.containers import ActiveFitOutput, QueryOutput, RoundOutput
+from src.energizer.enums import OutputKeys, RunningStage, SpecialKeys
+from src.energizer.estimator import Estimator
+from src.energizer.progress_trackers import ActiveProgressTracker
+from src.energizer.types import EPOCH_OUTPUT, METRIC
+from src.energizer.utilities import move_to_cpu
 
 
-class Callback:
-    r"""
-    Abstract base class used to build new callbacks.
+class SaveOutputs(ActiveLearningCallbackMixin, Callback):
+    def __init__(self, dirpath: Union[str, Path], instance_level: bool, batch_level: bool, epoch_level: bool) -> None:
+        super().__init__()
+        self.dirpath = Path(dirpath)
+        self.instance_level = instance_level
+        self.batch_level = batch_level
+        self.epoch_level = epoch_level
 
-    Subclass this class and override any of the relevant hooks
-    """
+    def on_epoch_end(
+        self,
+        estimator: Estimator,
+        model: _FabricModule,
+        output: EPOCH_OUTPUT,
+        metrics: METRIC,
+        stage: RunningStage,
+        **kwargs,
+    ) -> None:
+        # output directory setup
+        suffix = f"_epoch_{estimator.progress_tracker.get_epoch_num(stage)}"
+        path = self.dirpath / f"{stage}"
+        path.mkdir(exist_ok=True, parents=True)
 
-    def on_fit_start(self, estimator: Estimator, model: _FabricModule, output: FitOutput) -> None:
-        """Called when fit begins."""
+        # list of dicts to dict of lists
+        data = {k: [dic[k] for dic in output] for k in output[0]}
 
-    def on_fit_end(self, estimator: Estimator, model: _FabricModule, output: FitOutput) -> None:
-        """Called when fit ends."""
+        # instance-level output
+        if self.instance_level:
+            logits = np.concatenate(data.pop(OutputKeys.LOGITS))
+            idx = np.concatenate(data.pop(SpecialKeys.ID))
+            instance_level_output = pd.DataFrame(logits, columns=[f"logit_{i}" for i in range(logits.shape[1])]).assign(
+                **{SpecialKeys.ID: idx}
+            )
+            instance_level_output.to_parquet(path / f"instance_level{suffix}.parquet", index=False)
 
-    def on_train_epoch_start(self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
-        """Called when the train epoch begins."""
+        # batch-level output
+        if self.batch_level:
+            batch_metrics = data.pop(OutputKeys.METRICS)
+            batch_metrics = {k: [dic[k] for dic in batch_metrics] for k in batch_metrics[0]}
+            batch_level_output = pd.DataFrame(batch_metrics).assign(loss=data[OutputKeys.LOSS])
+            batch_level_output.to_parquet(path / f"batch_level{suffix}.parquet", index=False)
+
+        # epoch-level output
+        if self.epoch_level:
+            total_metrics = move_to_cpu(metrics.compute())
+            epoch_level_output = {
+                OutputKeys.METRICS: total_metrics,
+                OutputKeys.LOSS: round(np.mean(data[OutputKeys.LOSS]), 6),
+            }
+            srsly.write_json(path / f"epoch_level{suffix}.json", epoch_level_output)
 
     def on_train_epoch_end(
         self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
     ) -> None:
-        """Called when the train epoch ends.
-
-        To access all batch outputs at the end of the epoch, either:
-
-        1. Implement `training_epoch_end` in the `LightningModule` and access outputs via the module OR
-        2. Cache data across train batch hooks inside the callback implementation to post-process in this hook.
-        """
-
-    def on_validation_epoch_start(
-        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs
-    ) -> None:
-        """Called when the val epoch begins."""
+        return self.on_epoch_end(estimator, model, output, metrics, RunningStage.TRAIN, **kwargs)
 
     def on_validation_epoch_end(
         self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
     ) -> None:
-        """Called when the val epoch ends."""
-
-    def on_test_epoch_start(self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
-        """Called when the test epoch begins."""
+        return self.on_epoch_end(estimator, model, output, metrics, RunningStage.VALIDATION, **kwargs)
 
     def on_test_epoch_end(
         self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
     ) -> None:
-        """Called when the test epoch ends."""
+        return self.on_epoch_end(estimator, model, output, metrics, RunningStage.TEST, **kwargs)
 
-    def on_train_batch_start(self, estimator: Estimator, model: _FabricModule, batch: Any, batch_idx: int) -> None:
-        """Called when the train batch begins."""
-
-    def on_train_batch_end(
-        self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int
+    def on_active_fit_end(
+        self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: ActiveFitOutput
     ) -> None:
-        """Called when the train batch ends.
+        datamodule.save_labelled_dataset(self.dirpath)
 
-        Note:
-            The value ``outputs["loss"]`` here will be the normalized value w.r.t ``accumulate_grad_batches`` of the
-            loss returned from ``train_step``.
-        """
 
-    def on_validation_batch_start(self, estimator: Estimator, model: _FabricModule, batch: Any, batch_idx: int) -> None:
-        """Called when the validation batch begins."""
+class Timer(ActiveLearningCallbackMixin, Timer):
+    def _batch_step(self, progress_tracker: ActiveProgressTracker, stage: RunningStage, batch_idx: int) -> int:
+        return getattr(progress_tracker, f"total_{stage}_batches") + getattr(progress_tracker, f"num_{stage}_batches")
 
-    def on_validation_batch_end(
-        self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int
+    def _epoch_step(self, progress_tracker: ActiveProgressTracker, stage: RunningStage) -> int:
+        if stage == RunningStage.TEST:
+            return progress_tracker.num_rounds
+        return getattr(progress_tracker, "total_epochs") + getattr(progress_tracker, "num_epochs")
+
+    def on_active_fit_start(
+        self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: ActiveFitOutput
     ) -> None:
-        """Called when the validation batch ends."""
+        self.active_fit_start = time.perf_counter()
 
-    def on_test_batch_start(self, estimator: Estimator, model: _FabricModule, batch: Any, batch_idx: int) -> None:
-        """Called when the test batch begins."""
-
-    def on_test_batch_end(
-        self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int
+    def on_active_fit_end(
+        self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: ActiveFitOutput
     ) -> None:
-        """Called when the test batch ends."""
+        self.active_fit_end = time.perf_counter()
+        estimator.fabric.log("timer/active_fit_time", self.active_fit_end - self.active_fit_start, step=0)
 
+    def on_round_start(self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: RoundOutput) -> None:
+        self.round_start = time.perf_counter()
 
-class Timer(Callback):
-    def epoch_start(self, stage: RunningStage) -> None:
-        setattr(self, f"{stage}_epoch_start_time", time.perf_counter())
-
-    def epoch_end(self, estimator: Estimator, stage: RunningStage) -> None:
-        setattr(self, f"{stage}_epoch_end_time", time.perf_counter())
-        runtime = getattr(self, f"{stage}_epoch_end_time") - getattr(self, f"{stage}_epoch_start_time")
-        estimator.fabric.log(f"timer/{stage}_epoch_time", runtime, step=estimator.progress_tracker.get_epoch_num(stage))
-
-    def batch_start(self, stage: RunningStage) -> None:
-        setattr(self, f"{stage}_batch_start_time", time.perf_counter())
-
-    def batch_end(self, estimator: Estimator, stage: RunningStage, batch_idx: int) -> None:
-        setattr(self, f"{stage}_batch_end_time", time.perf_counter())
-        runtime = getattr(self, f"{stage}_batch_end_time") - getattr(self, f"{stage}_batch_start_time")
-        estimator.fabric.log(f"timer/{stage}_batch_time", runtime, step=estimator.progress_tracker.get_batch_num(stage))
-
-    def on_fit_start(self, *args, **kwargs) -> None:
-        self.fit_start = time.perf_counter()
-
-    def on_fit_end(self, estimator: Estimator, *args, **kwargs) -> None:
-        self.fit_end = time.perf_counter()
-        estimator.fabric.log("timer/fit_time", self.fit_end - self.fit_start, step=0)
-
-    """
-    Epoch start
-    """
-
-    def on_train_epoch_start(self, *args, **kwargs) -> None:
-        self.epoch_start(RunningStage.TRAIN)
-
-    def on_validation_epoch_start(self, *args, **kwargs) -> None:
-        self.epoch_start(RunningStage.VALIDATION)
-
-    def on_test_epoch_start(self, *args, **kwargs) -> None:
-        self.epoch_start(RunningStage.TEST)
-
-    """
-    Epoch end
-    """
-
-    def on_train_epoch_end(self, estimator: Estimator, *args, **kwargs) -> None:
-        self.epoch_end(estimator, RunningStage.TRAIN)
-
-    def on_validation_epoch_end(self, estimator: Estimator, *args, **kwargs) -> None:
-        self.epoch_end(estimator, RunningStage.VALIDATION)
-
-    def on_test_epoch_end(self, estimator: Estimator, *args, **kwargs) -> None:
-        self.epoch_end(estimator, RunningStage.TEST)
-
-    """
-    Batch start
-    """
-
-    def on_train_batch_start(self, *args, **kwargs) -> None:
-        self.batch_start(RunningStage.TRAIN)
-
-    def on_validation_batch_start(self, *args, **kwargs) -> None:
-        self.batch_start(RunningStage.VALIDATION)
-
-    def on_test_batch_start(self, *args, **kwargs) -> None:
-        self.batch_start(RunningStage.TEST)
-
-    """
-    Batch end
-    """
-
-    def on_train_batch_end(self, estimator: Estimator, batch_idx: int, *args, **kwargs) -> None:
-        self.batch_end(estimator, RunningStage.TRAIN, batch_idx)
-
-    def on_validation_batch_end(self, estimator: Estimator, batch_idx: int, *args, **kwargs) -> None:
-        self.batch_end(estimator, RunningStage.VALIDATION, batch_idx)
-
-    def on_test_batch_end(self, estimator: Estimator, batch_idx: int, *args, **kwargs) -> None:
-        self.batch_end(estimator, RunningStage.TEST, batch_idx)
-
-
-class PytorchTensorboardProfiler(Callback):
-    def __init__(
-        self,
-        dirpath: Union[str, Path],
-        wait: int = 1,
-        warmup: int = 1,
-        active: int = 1,
-        repeat: int = 2,
-        **kwargs,
-    ) -> None:
-        self.prof = torch.profiler.profile(
-            schedule=torch.profiler.schedule(wait=wait, warmup=warmup, active=active, repeat=repeat),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler(str(dirpath)),
-            **kwargs,
+    def on_round_end(self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: RoundOutput) -> None:
+        self.round_end = time.perf_counter()
+        estimator.fabric.log(
+            "timer/round_time", self.round_end - self.round_start, step=estimator.progress_tracker.num_rounds
         )
 
-    def on_train_epoch_start(self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
-        self.prof.start()
+    def on_query_start(self, estimator: ActiveEstimator, model: _FabricModule) -> None:
+        self.query_start = time.perf_counter()
 
-    def on_train_batch_end(
-        self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int
-    ) -> None:
-        self.prof.step()
+    def on_query_end(self, estimator: ActiveEstimator, model: _FabricModule, output: QueryOutput) -> None:
+        self.query_end = time.perf_counter()
+        estimator.fabric.log(
+            "timer/query_time", self.query_end - self.query_start, step=estimator.progress_tracker.num_rounds
+        )
 
-    def on_train_epoch_end(
-        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
-    ) -> None:
-        self.prof.stop()
+    def on_label_start(self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: RoundOutput) -> None:
+        self.label_start = time.perf_counter()
+
+    def on_label_end(self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: RoundOutput) -> None:
+        self.label_end = time.perf_counter()
+        estimator.fabric.log(
+            "timer/label_time", self.label_end - self.label_start, step=estimator.progress_tracker.num_rounds
+        )
+
+    def on_pool_epoch_start(self, *args, **kwargs) -> None:
+        self.epoch_start(RunningStage.POOL)
+
+    def on_pool_epoch_end(self, estimator: ActiveEstimator, *args, **kwargs) -> None:
+        self.epoch_end(estimator, RunningStage.POOL)
+
+    def on_pool_batch_start(self, *args, **kwargs) -> None:
+        self.batch_start(RunningStage.POOL)
+
+    def on_pool_batch_end(self, estimator: ActiveEstimator, batch_idx: int, *args, **kwargs) -> None:
+        self.batch_end(estimator, RunningStage.POOL, batch_idx)

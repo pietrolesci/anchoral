@@ -8,11 +8,11 @@ from torchmetrics import MetricCollection
 from torchmetrics.classification import Accuracy, F1Score
 from transformers import AutoModelForSequenceClassification
 
-from src.active_learning.strategies import RandomStrategy, UncertaintyBasedStrategy
-from src.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
-from src.estimator import Estimator
-from src.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, POOL_BATCH_OUTPUT
-from src.utilities import move_to_cpu
+from src.energizer.active_learning.strategies import RandomStrategy, UncertaintyBasedStrategy
+from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
+from src.energizer.estimator import Estimator
+from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, POOL_BATCH_OUTPUT
+from src.energizer.utilities import move_to_cpu
 
 
 class SequenceClassificationMixin:

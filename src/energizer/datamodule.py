@@ -17,8 +17,8 @@ from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 
-from src.enums import RunningStage
-from src.types import DATASET
+from src.energizer.enums import RunningStage
+from src.energizer.types import DATASET
 
 
 class DataModule(HyperparametersMixin):

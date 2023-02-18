@@ -1,2 +1,2 @@
-_target_: src.huggingface.estimators.UncertaintyBasedStrategyForSequenceClassification
+_target_: src.estimators.UncertaintyBasedStrategyForSequenceClassification
 score_fn: '???'

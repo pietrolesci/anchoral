@@ -1,5 +1,5 @@
 pytorch_profiler:
-  _target_: src.callbacks.PytorchTensorboardProfiler
+  _target_: src.energizer.callbacks.PytorchTensorboardProfiler
   dirpath: tensorboard_logs
   wait: 1
   warmup: 1

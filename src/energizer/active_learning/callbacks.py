@@ -2,10 +2,10 @@ from typing import Any
 
 from lightning.fabric.wrappers import _FabricModule
 
-from src.active_learning.base import ActiveEstimator
-from src.active_learning.data import ActiveDataModule
-from src.containers import ActiveFitOutput, QueryOutput, RoundOutput
-from src.types import EPOCH_OUTPUT, METRIC, POOL_BATCH_OUTPUT
+from src.energizer.active_learning.base import ActiveEstimator
+from src.energizer.active_learning.data import ActiveDataModule
+from src.energizer.containers import ActiveFitOutput, QueryOutput, RoundOutput
+from src.energizer.types import EPOCH_OUTPUT, METRIC, POOL_BATCH_OUTPUT
 
 
 class ActiveLearningCallbackMixin:

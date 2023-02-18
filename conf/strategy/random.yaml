@@ -1,2 +1,2 @@
-_target_: src.huggingface.estimators.RandomStrategyForSequenceClassification
+_target_: src.estimators.RandomStrategyForSequenceClassification
 seed: 42

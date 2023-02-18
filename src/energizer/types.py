@@ -3,7 +3,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Union
 from torch import Tensor
 from torchmetrics import Metric
 
-from src.containers import EpochOutput
+from src.energizer.containers import EpochOutput
 
 BATCH_OUTPUT = Union[Tensor, Dict]
 EVAL_BATCH_OUTPUT = Union[Tensor, Dict, None]

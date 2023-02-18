@@ -9,7 +9,7 @@ from lightning.pytorch.utilities.model_summary.model_summary import (
 )
 from torch import nn
 
-from src.estimator import Estimator
+from src.energizer.estimator import Estimator
 
 
 class LayerSummary:

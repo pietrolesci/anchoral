@@ -8,7 +8,7 @@ from datasets.features import Features, Value
 from sklearn.model_selection import train_test_split
 from tqdm.auto import tqdm
 
-from src.enums import InputKeys, RunningStage, SpecialKeys
+from src.energizer.enums import InputKeys, RunningStage, SpecialKeys
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

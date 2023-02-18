@@ -16,8 +16,8 @@ import pandas as pd
 from datasets import Dataset
 from torch.utils.data import DataLoader
 
-from src.data.datamodule import DataModule
-from src.enums import InputKeys, RunningStage, SpecialKeys
+from src.energizer.datamodule import DataModule
+from src.energizer.enums import InputKeys, RunningStage, SpecialKeys
 
 
 class ActiveDataModule(DataModule):

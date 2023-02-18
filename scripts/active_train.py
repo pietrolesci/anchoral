@@ -9,9 +9,9 @@ from lightning.fabric.loggers import TensorBoardLogger
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from src.huggingface.datamodule import ClassificationActiveDataModule, ClassificationDataModule
-from src.huggingface.estimators import EstimatorForSequenceClassification
-from src.logging import set_ignore_warnings
+from src.datamodule import ClassificationActiveDataModule, ClassificationDataModule
+from src.estimators import EstimatorForSequenceClassification
+from src.energizer.logging import set_ignore_warnings
 
 set_ignore_warnings()
 log = logging.getLogger("hydra")
@@ -29,10 +29,10 @@ from lightning.fabric.loggers import TensorBoardLogger
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from src.huggingface.datamodule import ClassificationDataModule
-from src.huggingface.estimators import EstimatorForSequenceClassification
-from src.logging import set_ignore_warnings
-from src.utilities.model_summary import summarize
+from src.datamodule import ClassificationDataModule
+from src.estimators import EstimatorForSequenceClassification
+from src.energizer.logging import set_ignore_warnings
+from src.energizer.utilities.model_summary import summarize
 
 set_ignore_warnings()
 log = logging.getLogger("hydra")
