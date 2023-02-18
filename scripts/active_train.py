@@ -158,7 +158,7 @@ def main(cfg: DictConfig) -> None:
 
     # ============ STEP 6: save outputs ============
     OmegaConf.save(cfg, "./hparams.yaml")
-    log.info(estimator.counter)
+    log.info(estimator.progress_tracker)
 
 
 if __name__ == "__main__":
