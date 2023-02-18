@@ -60,14 +60,14 @@ class SequenceClassificationMixin:
     def test_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
         return self.epoch_end(output, metrics, RunningStage.TEST)
 
-    def train_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
-        return self.step_end(output, batch, batch_idx, log_interval, RunningStage.TRAIN)
+    def train_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int) -> BATCH_OUTPUT:
+        return self.step_end(output, batch, batch_idx, RunningStage.TRAIN)
 
-    def validation_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
-        return self.step_end(output, batch, batch_idx, log_interval, RunningStage.VALIDATION)
+    def validation_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int) -> BATCH_OUTPUT:
+        return self.step_end(output, batch, batch_idx, RunningStage.VALIDATION)
 
-    def test_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
-        return self.step_end(output, batch, batch_idx, log_interval, RunningStage.TEST)
+    def test_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int) -> BATCH_OUTPUT:
+        return self.step_end(output, batch, batch_idx, RunningStage.TEST)
 
     """
     Changes
@@ -129,14 +129,14 @@ class SequenceClassificationMixin:
         }
 
     def step_end(
-        self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, log_interval: int, stage: RunningStage
+        self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, stage: RunningStage
     ) -> BATCH_OUTPUT:
         # NOTE: only log at the batch level for the training loop
         if stage != RunningStage.TRAIN:
             return output
 
         # control logging interval
-        if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
+        if self.progress_tracker.should_log(batch_idx):
             # NOTE: output is still on device
             logs = {OutputKeys.LOSS: output[OutputKeys.LOSS], **output[OutputKeys.METRICS]}
 
@@ -163,7 +163,7 @@ class SequenceClassificationMixin:
         logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
 
         # log
-        self.fabric.log_dict(logs, step=self.progress_tracker.get_epoch_num())
+        self.fabric.log_dict(logs, step=self.progress_tracker.get_epoch_num(stage))
 
         return logs
 

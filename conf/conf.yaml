@@ -48,7 +48,7 @@ model:
 
 data:
   batch_size: 128
-  eval_batch_size: 128
+  eval_batch_size: 256
   num_workers: 32
   pin_memory: true
   drop_last: false
@@ -60,7 +60,6 @@ data:
 
 fit:
   max_epochs: 3
-  max_steps: null
   loss_fn: null
   loss_fn_kwargs: null
   learning_rate: 0.001
@@ -72,6 +71,7 @@ fit:
   progress_bar: ${progress_bar}
   limit_train_batches: ${limit_batches}
   limit_validation_batches: ${limit_batches}
+  validation_interval: null
 
 # this is incremental to `fit` above
 active_fit:

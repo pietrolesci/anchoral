@@ -119,7 +119,6 @@ class Estimator(HyperparametersMixin):
                 loss_fn=loss_fn,
                 optimizer=optimizer,
                 scheduler=scheduler,
-                **kwargs,
             )
 
             outputs.append(output)
@@ -139,56 +138,29 @@ class Estimator(HyperparametersMixin):
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
         optimizer: _FabricOptimizer,
         scheduler: Optional[str],
-        **kwargs,
     ) -> FitEpochOutput:
-        train_out = self.train_epoch_loop(
-            loss_fn,
-            model,
-            train_loader,
-            optimizer,
-            scheduler,
-        )
-
-        # maybe run validation
-        validation_out = None
-        if validation_loader is not None:
-            validation_out = self.eval_epoch_loop(
-                loss_fn,
-                model,
-                validation_loader,
-                RunningStage.VALIDATION,
-                **kwargs,
-            )
-
-        return FitEpochOutput(train=train_out, validation=validation_out)
-
-    def train_epoch_loop(
-        self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
-        model: _FabricModule,
-        train_loader: _FabricDataLoader,
-        optimizer: _FabricOptimizer,
-        scheduler: _LRScheduler,
-        log_interval: int = 1,
-    ) -> EPOCH_OUTPUT:
-        """Runs over an entire dataloader."""
-
-        output = EpochOutput()
+        train_out = EpochOutput()
+        validation_out = EpochOutput()
 
         # configure progress tracking
         self.progress_tracker.initialize_epoch_tracking(RunningStage.TRAIN)
 
-        # train mode
-        model.train()
-
         # define metrics
         metrics = self.configure_metrics(RunningStage.TRAIN)
 
-        self.fabric.call("on_train_epoch_start", estimator=self, model=model, output=output)
+        # train mode
+        model.train()
+
+        self.fabric.call("on_train_epoch_start", estimator=self, model=model, output=train_out)
 
         for batch_idx, batch in enumerate(train_loader):
             if self.progress_tracker.is_epoch_done(RunningStage.TRAIN):
                 break
+
+            # validation
+            if self.progress_tracker.fit_tracker.should_validate():
+                out = self.eval_epoch_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION)
+                validation_out.append(out)
 
             # put batch on correct device
             batch = self.transfer_to_device(batch)
@@ -197,9 +169,6 @@ class Estimator(HyperparametersMixin):
 
             # run model on batch
             batch_out = self.train_batch_loop(loss_fn, model, batch, batch_idx, optimizer, scheduler, metrics)
-
-            # update progress tracker
-            self.progress_tracker.increment_batches(RunningStage.TRAIN)
 
             self.fabric.call(
                 "on_train_batch_end",
@@ -210,23 +179,31 @@ class Estimator(HyperparametersMixin):
                 batch_idx=batch_idx,
             )
 
-            batch_out = self.train_step_end(batch_out, batch, batch_idx, log_interval)
+            batch_out = self.train_step_end(batch_out, batch, batch_idx)
 
             # record output
-            output.append(batch_out)
+            train_out.append(batch_out)
+
+            # update progress tracker
+            self.progress_tracker.increment_batches(RunningStage.TRAIN)
 
         self.fabric.call(
             "on_train_epoch_end",
             estimator=self,
             model=model,
-            output=output,
+            output=train_out,
             metrics=metrics,
         )
 
         # method to possibly aggregate
-        output = self.train_epoch_end(output, metrics)
+        train_out = self.train_epoch_end(train_out, metrics)
 
-        return output
+        # validation
+        if self.progress_tracker.fit_tracker.should_validate():
+            out = self.eval_epoch_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION)
+            validation_out.append(out)
+
+        return FitEpochOutput(train=train_out, validation=validation_out)
 
     def train_batch_loop(
         self,
@@ -321,7 +298,7 @@ class Estimator(HyperparametersMixin):
         # configure model
         model = self.fabric.setup(self.model)
 
-        return self.eval_epoch_loop(loss_fn, model, loader, stage=stage, log_interval=kwargs.get("log_interval", 1))
+        return self.eval_epoch_loop(loss_fn, model, loader, stage)
 
     def eval_epoch_loop(
         self,
@@ -329,7 +306,6 @@ class Estimator(HyperparametersMixin):
         model: _FabricModule,
         loader: _FabricDataLoader,
         stage: RunningStage,
-        log_interval: int = 1,
     ) -> EPOCH_OUTPUT:
         """Runs over an entire evaluation dataloader."""
 
@@ -338,10 +314,11 @@ class Estimator(HyperparametersMixin):
         # configure progress tracking
         self.progress_tracker.initialize_epoch_tracking(stage)
 
-        model.eval()
-
-        # define metrics
+        # configure metrics
         metrics = self.configure_metrics(stage)
+
+        # eval mode
+        model.eval()
 
         self.fabric.call(f"on_{stage}_epoch_start", estimator=self, model=model, output=output)
 
@@ -359,9 +336,6 @@ class Estimator(HyperparametersMixin):
                 # run on batch
                 batch_out = self.eval_batch_loop(loss_fn, model, batch, batch_idx, metrics, stage)
 
-                # update progress tracker
-                self.progress_tracker.increment_batches(stage)
-
                 self.fabric.call(
                     f"on_{stage}_batch_end",
                     estimator=self,
@@ -371,10 +345,13 @@ class Estimator(HyperparametersMixin):
                     batch_idx=batch_idx,
                 )
 
-                batch_out = getattr(self, f"{stage}_step_end")(batch_out, batch, batch_idx, log_interval)
+                batch_out = getattr(self, f"{stage}_step_end")(batch_out, batch, batch_idx)
 
                 # record output
                 output.append(batch_out)
+
+                # update progress tracker
+                self.progress_tracker.increment_batches(stage)
 
         self.fabric.call(f"on_{stage}_epoch_end", estimator=self, model=model, output=output, metrics=metrics)
 
@@ -546,14 +523,14 @@ class Estimator(HyperparametersMixin):
     ) -> EVAL_BATCH_OUTPUT:
         pass
 
-    def train_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
-        if (batch_idx == 0) or ((batch_idx + 1) % log_interval == 0):
+    def train_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> BATCH_OUTPUT:
+        if self.progress_tracker.should_log(batch_idx):
             self.fabric.log("loss", output[OutputKeys.LOSS], step=self.progress_tracker.num_train_batches)
 
-    def validation_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
+    def validation_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> BATCH_OUTPUT:
         return output
 
-    def test_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int, log_interval: int) -> BATCH_OUTPUT:
+    def test_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> BATCH_OUTPUT:
         return output
 
     def train_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
@@ -579,59 +556,3 @@ class Estimator(HyperparametersMixin):
 
             # https://docs.nvidia.com/cuda/cublas/index.html#cublasApi_reproducibility
             os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-
-    def _compute_num_train_steps(self, train_loader: DataLoader) -> int:
-        # FIXME: when accumulate batches is added
-        return len(train_loader)
-
-    # def _get_batch_progress_bar(self, loader: DataLoader, stage: RunningStage, **kwargs) -> Union[tqdm, Iterable]:
-    #     # check if progress bar is disabled
-    #     progress_bar = kwargs.get("progress_bar", True)
-    #     if not progress_bar:
-    #         return loader
-
-    #     desc = (
-    #         f"Epoch {self.progress_tracker.max_epochs}".strip() if stage == RunningStage.TRAIN else f"{stage.title()}"
-    #     )
-    #     limit_batches = kwargs.get(f"limit_{stage}_batches", None) or kwargs.get("limit_batches", None)
-    #     if limit_batches is not None:
-    #         limit_batches = min(limit_batches, len(loader))
-    #     leave = bool(limit_batches)
-    #     # total_batches = len(train_loader)
-    #     # if validation_loader is not None:
-    #     #     validation_batches = len(validation_loader)
-    #     #     validation_interval = kwargs.get("validation_interval", None)
-    #     #     if validation_interval is not None:
-    #     #         assert validation_interval >= 1 and isinstance(validation_interval, int)
-    #     #         validation_batches *= validation_interval
-
-    #     #     total_batches += validation_batches
-
-    #     return tqdm(loader, desc=desc, dynamic_ncols=True, leave=leave, total=limit_batches)
-
-    # def _get_epoch_progress_bar(self, max_epochs: int, max_steps, loader: DataLoader, **kwargs) -> Optional[tqdm]:
-    #     # check if progress bar is disabled
-    #     progress_bar = kwargs.get("progress_bar", True)
-    #     if not progress_bar:
-    #         return None
-
-    #     if max_epochs is not None and max_steps is None:
-    #         _max_epochs = max_epochs
-
-    #     elif max_steps is not None:
-    #         total_batches = len(loader)
-    #         _max_epochs = np.ceil(max_steps / total_batches)
-    #         _max_epochs = max(_max_epochs, max_epochs)
-
-    #     return trange(_max_epochs, desc="Completed epochs", dynamic_ncols=True, leave=True)
-
-    # def _is_done(self, **kwargs) -> bool:
-    #     # if this is not None we are checking within an epoch_loop
-    #     stage = kwargs.get("stage", None)
-    #     if stage is not None:
-    #         limit_batches = kwargs.get(f"limit_{stage}_batches", None) or kwargs.get("limit_batches", None)
-    #         if limit_batches is not None:
-    #             num_batches = getattr(self.progress_tracker, f"num_{stage}_batches")
-    #             return num_batches + 1 > limit_batches
-
-    #     return self.progress_tracker.check_limit_reached()

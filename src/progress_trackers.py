@@ -1,7 +1,7 @@
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Optional, List
 
-from numpy import ndarray
+import numpy as np
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
@@ -37,6 +37,7 @@ class FitProgressTracker:
     validation_progress_bar: Optional[tqdm] = None
 
     progress_bar: bool = True
+    validation_interval: Optional[List[int]] = None
 
     def is_done(self) -> bool:
         cond = self.epochs_tracker.max_reached()
@@ -45,7 +46,7 @@ class FitProgressTracker:
         return cond
 
     def is_epoch_done(self, stage: RunningStage) -> bool:
-        cond = getattr(self, f"{stage}_tracker").max_reached()        
+        cond = getattr(self, f"{stage}_tracker").max_reached()
         if cond and self.progress_bar:
             getattr(self, f"{stage}_progress_bar").close()
         return cond
@@ -77,10 +78,21 @@ class FitProgressTracker:
     def increment_steps(self) -> None:
         self.steps_tracker.increment()
 
+    def should_validate(self) -> bool:
+        if self.validation_tracker.max is None:
+            return False
+
+        if self.is_epoch_done(RunningStage.TRAIN):
+            return True
+
+        if self.validation_interval is not None:
+            return self.train_tracker.current in self.validation_interval
+
 
 @dataclass
 class ProgressTracker:
     is_training: bool = False
+    log_interval: int = 1
     fit_tracker: FitProgressTracker = None
     validation_tracker: Tracker = None
     test_tracker: Tracker = None
@@ -92,11 +104,11 @@ class ProgressTracker:
             tracker = getattr(self, f"{stage}_tracker")
         return tracker.total
 
-    def get_epoch_num(self) -> int:
+    def get_epoch_num(self, stage: RunningStage) -> int:
         if self.is_training:
             return self.fit_tracker.epochs_tracker.total
         return 0
-    
+
     def is_done(self) -> bool:
         if self.is_training:
             return self.fit_tracker.is_done()
@@ -119,8 +131,6 @@ class ProgressTracker:
         validation_loader: DataLoader,
         **kwargs,
     ) -> None:
-        progress_bar = kwargs.get("progress_bar", True)
-
         # train
         max_train_batches = len(train_loader)
         limit_train_batches = kwargs.get("limit_train_batches", None)
@@ -129,21 +139,29 @@ class ProgressTracker:
 
         # validation
         max_validation_batches = None
+        validation_interval = kwargs.get("validation_interval", None)
         if validation_loader is not None:
             max_validation_batches = len(validation_loader)
             limit_validation_batches = kwargs.get("limit_validation_batches", None)
             if limit_validation_batches is not None:
                 max_validation_batches = min(limit_train_batches, max_train_batches)
 
+            if validation_interval is not None:
+                validation_interval = np.linspace(
+                    max_train_batches / validation_interval, max_train_batches, validation_interval, dtype=int
+                ).tolist()[:-1]
+
         self.fit_tracker = FitProgressTracker(
             epochs_tracker=Tracker(max=max_epochs),
             steps_tracker=Tracker(),
             train_tracker=Tracker(max=max_train_batches),
             validation_tracker=Tracker(max=max_validation_batches),
-            progress_bar=progress_bar,
+            progress_bar=kwargs.get("progress_bar", True),
+            validation_interval=validation_interval,
         )
         self.fit_tracker.initialize_tracking()
         self.is_training = True
+        self.log_interval = kwargs.get("log_interval", 1)
 
     def initialize_evaluation_tracking(self, stage: RunningStage, loader: DataLoader, **kwargs) -> None:
         max_batches = len(loader)
@@ -154,12 +172,16 @@ class ProgressTracker:
         tracker = Tracker(max=max_batches)
         setattr(self, f"{stage}_tracker", tracker)
         self.is_training = False
+        self.log_interval = kwargs.get("log_interval", 1)
 
     def initialize_epoch_tracking(self, stage: RunningStage) -> None:
         if self.is_training:
             self.fit_tracker.initialize_epoch_tracking(stage)
         else:
             getattr(self, f"{stage}_tracker").reset_current()
+    
+    def should_log(self, batch_idx: int) -> None:
+        return (batch_idx == 0) or ((batch_idx + 1) % self.log_interval == 0)
 
 
 @dataclass

@@ -89,7 +89,8 @@ def main(cfg: DictConfig) -> None:
     # fit
     fit_out = estimator.fit(
         train_loader=datamodule.train_loader(),
-        validation_loader=datamodule.validation_loader(),
+        # validation_loader=datamodule.validation_loader(),
+        validation_loader=datamodule.test_loader(),
         **OmegaConf.to_container(cfg.fit),
     )
 

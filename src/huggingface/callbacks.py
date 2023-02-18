@@ -37,7 +37,7 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
         **kwargs,
     ) -> None:
         # output directory setup
-        suffix = f"_epoch_{estimator.progress_tracker.get_epoch_num()}"
+        suffix = f"_epoch_{estimator.progress_tracker.get_epoch_num(stage)}"
         path = self.dirpath / f"{stage}"
         path.mkdir(exist_ok=True, parents=True)
 
