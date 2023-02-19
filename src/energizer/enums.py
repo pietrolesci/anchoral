@@ -1,6 +1,11 @@
 from lightning.pytorch.utilities.enums import LightningEnum
 
 
+class Interval(LightningEnum):
+    BATCH: str = "batch"
+    EPOCH: str = "epoch"
+
+
 class RunningStage(LightningEnum):
     TRAIN: str = "train"
     VALIDATION: str = "validation"

@@ -1,0 +1,11 @@
+early_stopping:
+  _target_: src.energizer.callbacks.EarlyStopping
+  monitor: loss
+  stage: train
+  interval: batch
+  mode: min
+  min_delta: 1
+  patience: 3
+  stopping_threshold: null
+  divergence_threshold: null
+

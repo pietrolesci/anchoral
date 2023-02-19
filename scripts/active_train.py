@@ -10,8 +10,8 @@ from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from src.datamodule import ClassificationActiveDataModule, ClassificationDataModule
-from src.estimators import EstimatorForSequenceClassification
 from src.energizer.logging import set_ignore_warnings
+from src.estimators import EstimatorForSequenceClassification
 
 set_ignore_warnings()
 log = logging.getLogger("hydra")
@@ -30,9 +30,9 @@ from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from src.datamodule import ClassificationDataModule
-from src.estimators import EstimatorForSequenceClassification
 from src.energizer.logging import set_ignore_warnings
 from src.energizer.utilities.model_summary import summarize
+from src.estimators import EstimatorForSequenceClassification
 
 set_ignore_warnings()
 log = logging.getLogger("hydra")

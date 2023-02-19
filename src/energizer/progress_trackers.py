@@ -1,5 +1,6 @@
+import sys
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import List, Optional
 
 import numpy as np
 from torch.utils.data import DataLoader
@@ -26,6 +27,49 @@ class Tracker:
 
 
 @dataclass
+class EvaluationProgressTracker:
+    tracker: Tracker
+
+    progress_bar: bool = True
+    evaluation_progress_bar: Optional[tqdm] = None
+
+    """
+    Status
+    """
+
+    def is_batch_progress_done(self) -> bool:
+        cond = self.tracker.max_reached()
+        if cond and self.evaluation_progress_bar:
+            sys.stdout.flush()
+            self.evaluation_progress_bar.close()
+        return cond
+
+    """
+    Initializers
+    """
+
+    def initialize_batch_progress(self, stage: RunningStage) -> None:
+        self.tracker.reset_current()
+        if self.progress_bar and self.tracker.max is not None:
+            self.evaluation_progress_bar = tqdm(
+                total=self.tracker.max,
+                desc=f"{stage.title()}",
+                dynamic_ncols=True,
+                leave=True,
+                file=sys.stdout,
+            )
+
+    """
+    Operations
+    """
+
+    def increment_batch_progress(self) -> None:
+        self.tracker.increment()
+        if self.progress_bar is not None:
+            self.evaluation_progress_bar.update(1)
+
+
+@dataclass
 class FitProgressTracker:
     epochs_tracker: Tracker
     steps_tracker: Tracker
@@ -39,12 +83,22 @@ class FitProgressTracker:
     progress_bar: bool = True
     validation_interval: Optional[List[int]] = None
 
+    _stop_training: bool = False
+
+    @property
+    def stop_training(self) -> bool:
+        return self._stop_training
+
+    @stop_training.setter
+    def stop_training(self, value: bool) -> None:
+        self._stop_training = value
+
     """
     Status
     """
 
     def is_epoch_progress_done(self) -> bool:
-        cond = self.epochs_tracker.max_reached()
+        cond = self.epochs_tracker.max_reached() or self.stop_training
 
         # if training and num_steps is provided, check whether to stop
         if self.steps_tracker.max is not None:
@@ -56,15 +110,17 @@ class FitProgressTracker:
 
     def is_batch_progress_done(self, stage: RunningStage) -> bool:
         cond = getattr(self, f"{stage}_tracker").max_reached()
-        
+
         # if training and num_steps is provided, check whether to stop
-        if stage == RunningStage.TRAIN and self.steps_tracker.max is not None:
-            cond = cond or self.steps_tracker.max_reached()
-        
+        if stage == RunningStage.TRAIN:
+            cond = cond or self.stop_training
+            if self.steps_tracker.max is not None:
+                cond = cond or self.steps_tracker.max_reached()
+
         if cond and self.progress_bar:
             getattr(self, f"{stage}_progress_bar").close()
         return cond
-    
+
     def should_validate(self) -> bool:
         if self.validation_tracker.max is None:
             return False
@@ -96,24 +152,33 @@ class FitProgressTracker:
     """
     Initializers
     """
+
     def initialize_epoch_progress(self) -> None:
         if self.progress_bar:
             self.epochs_progress_bar = tqdm(
-                total=self.epochs_tracker.max, desc="Completed epochs", dynamic_ncols=True, leave=True
+                total=self.epochs_tracker.max,
+                desc="Completed epochs",
+                dynamic_ncols=True,
+                leave=True,
+                file=sys.stdout,
+                colour="green",
             )
 
     def initialize_batch_progress(self, stage: RunningStage) -> None:
         getattr(self, f"{stage}_tracker").reset_current()
         if self.progress_bar and getattr(self, f"{stage}_tracker").max is not None:
             desc = f"Epoch {self.epochs_tracker.current}".strip() if stage == RunningStage.TRAIN else f"{stage.title()}"
-            pbar = tqdm(total=self.train_tracker.max, desc=desc, dynamic_ncols=True, leave=False)
+            pbar = tqdm(
+                total=getattr(self, f"{stage}_tracker").max, desc=desc, dynamic_ncols=True, leave=False, file=sys.stdout
+            )
             setattr(self, f"{stage}_progress_bar", pbar)
+
 
 @dataclass
 class ProgressTracker:
     fit_tracker: FitProgressTracker = None
-    validation_tracker: Tracker = None
-    test_tracker: Tracker = None
+    validation_tracker: EvaluationProgressTracker = None
+    test_tracker: EvaluationProgressTracker = None
 
     is_training: bool = False
     log_interval: int = 1
@@ -121,6 +186,7 @@ class ProgressTracker:
     """
     Status
     """
+
     def is_epoch_progress_done(self) -> bool:
         if self.is_training:
             return self.fit_tracker.is_epoch_progress_done()
@@ -128,13 +194,13 @@ class ProgressTracker:
     def is_batch_progress_done(self, stage: RunningStage) -> bool:
         if self.is_training:
             return self.fit_tracker.is_batch_progress_done(stage)
-        return getattr(self, f"{stage}_tracker").max_reached()
+        return getattr(self, f"{stage}_tracker").is_batch_progress_done()
 
     def get_batch_num(self, stage: RunningStage) -> int:
         if self.is_training:
             tracker = getattr(self.fit_tracker, f"{stage}_tracker")
         else:
-            tracker = getattr(self, f"{stage}_tracker")
+            tracker = getattr(self, f"{stage}_tracker").tracker
         return tracker.total
 
     def get_epoch_num(self, stage: RunningStage) -> int:
@@ -153,14 +219,18 @@ class ProgressTracker:
         if self.is_training:
             self.fit_tracker.increment_batch_progress(stage)
         else:
-            getattr(self, f"{stage}_tracker").increment()
+            getattr(self, f"{stage}_tracker").increment_batch_progress()
 
     def increment_epoch_progress(self) -> None:
         self.fit_tracker.increment_epoch_progress()
 
+    def set_stop_training(self, value: bool) -> None:
+        self.fit_tracker.stop_training = value
+
     """
     Initializers
     """
+
     def initialize_fit_progress(
         self,
         num_epochs: Optional[int],
@@ -180,7 +250,7 @@ class ProgressTracker:
         # train: epochs and steps
         if num_epochs is None:
             num_epochs = np.ceil(num_steps / max_train_batches)
-        
+
         if num_steps is not None:
             num_epochs_for_num_steps = int(np.ceil(num_steps / max_train_batches))
             if num_epochs < num_epochs_for_num_steps:
@@ -222,7 +292,9 @@ class ProgressTracker:
         if limit_batches is not None:
             max_batches = min(limit_batches, max_batches)
 
-        tracker = Tracker(max=max_batches)
+        tracker = EvaluationProgressTracker(
+            tracker=Tracker(max=max_batches), progress_bar=kwargs.get("progress_bar", True)
+        )
         setattr(self, f"{stage}_tracker", tracker)
         self.is_training = False
         self.log_interval = kwargs.get("log_interval", 1)
@@ -231,7 +303,7 @@ class ProgressTracker:
         if self.is_training:
             self.fit_tracker.initialize_batch_progress(stage)
         else:
-            getattr(self, f"{stage}_tracker").reset_current()
+            getattr(self, f"{stage}_tracker").initialize_batch_progress(stage)
 
 
 @dataclass

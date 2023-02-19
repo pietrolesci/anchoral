@@ -128,9 +128,7 @@ class SequenceClassificationMixin:
             SpecialKeys.ID: unique_ids,
         }
 
-    def step_end(
-        self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, stage: RunningStage
-    ) -> BATCH_OUTPUT:
+    def step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, stage: RunningStage) -> BATCH_OUTPUT:
         # NOTE: only log at the batch level for the training loop
         if stage != RunningStage.TRAIN:
             return output
