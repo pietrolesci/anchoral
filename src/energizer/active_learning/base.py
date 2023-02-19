@@ -4,13 +4,12 @@ from typing import Any, Callable, Dict, Iterable, Optional, Union
 import torch
 from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
 
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.containers import ActiveFitOutput, QueryOutput, RoundOutput
 from src.energizer.enums import RunningStage
 from src.energizer.estimator import Estimator
-from src.energizer.progress_trackers import ActiveProgressTracker
+from src.energizer.active_learning.progress_trackers import ActiveProgressTracker
 from src.energizer.utilities import get_hparams
 
 
