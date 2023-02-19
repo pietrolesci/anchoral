@@ -15,13 +15,13 @@ from src.energizer.utilities import get_hparams
 
 
 class ActiveEstimator(Estimator):
-    _counter: ActiveProgressTracker = None
+    _progress_tracker: ActiveProgressTracker = None
 
     @property
     def progress_tracker(self) -> ActiveProgressTracker:
-        if self._counter is None:
-            self._counter = ActiveProgressTracker()
-        return self._counter
+        if self._progress_tracker is None:
+            self._progress_tracker = ActiveProgressTracker()
+        return self._progress_tracker
 
     """
     Active learning loop
@@ -36,6 +36,7 @@ class ActiveEstimator(Estimator):
         reinit_model: bool = True,
         model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
         num_epochs: Optional[int] = 3,
+        min_steps: Optional[int] = None,
         loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
         learning_rate: float = 0.001,
@@ -48,24 +49,25 @@ class ActiveEstimator(Estimator):
         # get passed hyper-parameters
         hparams = get_hparams()
         outputs = ActiveFitOutput(hparams=hparams)
+        self._hparams.update(outputs.hparams)  # add fit hparams to global hparams
 
         if reinit_model:
             self.save_state_dict(model_cache_dir)
 
-        # reset progress_tracker
-        self.progress_tracker.reset()
-
-        pbar = self._get_round_progress_bar(num_rounds, **kwargs)  # +1 because on round 0 we do not query
+        # configure progress tracking
+        self.progress_tracker.initialize_active_fit_progress(num_rounds, **kwargs)
 
         # hook
         self.fabric.call("on_active_fit_start", estimator=self, datamodule=active_datamodule, output=outputs)
 
-        while self.progress_tracker.num_rounds < num_rounds:
+        self.progress_tracker.initialize_round_progress()
+        while not self.progress_tracker.is_round_progress_done():
             output = self.round_loop(
                 active_datamodule=active_datamodule,
                 query_size=query_size,
                 val_perc=val_perc,
                 num_epochs=num_epochs,
+                min_steps=min_steps,
                 loss_fn=loss_fn,
                 loss_fn_kwargs=loss_fn_kwargs,
                 learning_rate=learning_rate,
@@ -75,16 +77,14 @@ class ActiveEstimator(Estimator):
                 scheduler_kwargs=scheduler_kwargs,
                 **kwargs,
             )
-            self.progress_tracker.increment_rounds()
 
             outputs.append(output)
 
             if reinit_model:
                 self.load_state_dict(model_cache_dir)
 
-            # do not increase progress bar on the warm-up round
-            if isinstance(pbar, tqdm) and self.progress_tracker.num_rounds > 0:
-                pbar.update(1)
+            # update progress
+            self.progress_tracker.increment_round_progress()
 
         # hook
         self.fabric.call("on_active_fit_end", estimator=self, datamodule=active_datamodule, output=outputs)
@@ -115,7 +115,6 @@ class ActiveEstimator(Estimator):
         # do not annotate on the warm-up round
         if active_datamodule.pool_size > query_size and self.progress_tracker.num_rounds >= 0:
             output.query = self.query(active_datamodule=active_datamodule, query_size=query_size, **kwargs)
-            self.progress_tracker.increment_total_batches(RunningStage.POOL)
 
             # hook
             self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule, output=output)
@@ -140,9 +139,6 @@ class ActiveEstimator(Estimator):
                 scheduler_kwargs=scheduler_kwargs,
                 **kwargs,
             )
-            self.progress_tracker.increment_total_epochs()
-            self.progress_tracker.increment_total_batches(RunningStage.TRAIN)
-            self.progress_tracker.increment_total_batches(RunningStage.VALIDATION)
 
         # test model
         if active_datamodule.has_test_data:
@@ -152,7 +148,6 @@ class ActiveEstimator(Estimator):
                 loss_fn_kwargs=loss_fn_kwargs,
                 **kwargs,
             )
-            self.progress_tracker.increment_total_batches(RunningStage.TEST)
 
         # hook
         self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=output)
@@ -167,6 +162,9 @@ class ActiveEstimator(Estimator):
         # configure dataloaders
         loader = self.get_pool_loader(active_datamodule=active_datamodule)
         loader = self.configure_dataloader(loader)
+
+        # progress tracking
+        self.progress_tracker.initialize_evaluation_progress(RunningStage.POOL, loader, **kwargs)
 
         # setup model with fabric
         model = self.fabric.setup(self.model)
@@ -212,22 +210,3 @@ class ActiveEstimator(Estimator):
 
     def get_pool_loader(self, active_datamodule: ActiveDataModule) -> DataLoader:
         return active_datamodule.pool_loader()
-
-    """
-    Utilities
-    """
-
-    def _get_round_progress_bar(self, num_rounds: int, **kwargs) -> Union[tqdm, Iterable]:
-        # check if progress bar is disabled
-        progress_bar = kwargs.get("progress_bar", True)
-        if not progress_bar:
-            return range(num_rounds)
-
-        return tqdm(total=num_rounds, desc="Completed rounds", dynamic_ncols=True, leave=True)
-
-    def _get_epoch_progress_bar(self, *args, **kwargs) -> Optional[tqdm]:
-        pbar = super()._get_epoch_progress_bar(*args, **kwargs)
-        # remove the epoch progress_tracker progress bar
-        if isinstance(pbar, tqdm):
-            pbar.leave = False
-        return pbar

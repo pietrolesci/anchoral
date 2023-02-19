@@ -75,7 +75,7 @@ class Estimator(HyperparametersMixin):
         train_loader: DataLoader,
         validation_loader: Optional[DataLoader] = None,
         num_epochs: Optional[int] = 3,
-        num_steps: Optional[int] = None,
+        min_steps: Optional[int] = None,
         loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
         learning_rate: float = 0.001,
@@ -94,7 +94,7 @@ class Estimator(HyperparametersMixin):
         self._hparams.update(outputs.hparams)  # add fit hparams to global hparams
 
         # configure progress tracking
-        self.progress_tracker.initialize_fit_progress(num_epochs, num_steps, train_loader, validation_loader, **kwargs)
+        self.progress_tracker.initialize_fit_progress(num_epochs, min_steps, train_loader, validation_loader, **kwargs)
 
         # configure dataloaders
         train_loader = self.configure_dataloader(train_loader)
@@ -112,6 +112,7 @@ class Estimator(HyperparametersMixin):
 
         self.fabric.call("on_fit_start", estimator=self, model=model, output=outputs)
 
+        self.progress_tracker.initialize_epoch_progress()
         while not self.progress_tracker.is_epoch_progress_done():
             output = self.fit_epoch_loop(
                 model=model,
@@ -159,7 +160,7 @@ class Estimator(HyperparametersMixin):
                 break
 
             # validation
-            if self.progress_tracker.fit_tracker.should_validate():
+            if self.progress_tracker.should_validate():
                 out = self.eval_epoch_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION)
                 validation_out.append(out)
 
@@ -200,7 +201,7 @@ class Estimator(HyperparametersMixin):
         train_out = self.train_epoch_end(train_out, metrics)
 
         # validation
-        if self.progress_tracker.fit_tracker.should_validate():
+        if self.progress_tracker.should_validate():
             out = self.eval_epoch_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION)
             validation_out.append(out)
 
@@ -236,7 +237,7 @@ class Estimator(HyperparametersMixin):
             scheduler.step()
 
         # update progress_tracker
-        self.progress_tracker.fit_tracker.increment_steps()
+        self.progress_tracker.increment_step_progress()
 
         return output
 

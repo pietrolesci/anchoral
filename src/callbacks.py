@@ -96,7 +96,7 @@ class Timer(ActiveLearningCallbackMixin, Timer):
 
     def _epoch_step(self, progress_tracker: ActiveProgressTracker, stage: RunningStage) -> int:
         if stage == RunningStage.TEST:
-            return progress_tracker.num_rounds
+            return progress_tracker.round_tracker.current
         return getattr(progress_tracker, "total_epochs") + getattr(progress_tracker, "num_epochs")
 
     def on_active_fit_start(
