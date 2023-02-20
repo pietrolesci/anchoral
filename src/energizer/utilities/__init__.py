@@ -1,5 +1,5 @@
 import inspect
-from typing import Any, Dict, Union
+from typing import Any, Dict, List, Union
 
 from lightning_utilities.core.apply_func import apply_to_collection
 from numpy import ndarray
@@ -22,3 +22,7 @@ def get_hparams() -> Dict:
     frame = inspect.currentframe().f_back
     args, _, _, values = inspect.getargvalues(frame)
     return {arg: values[arg] for arg in args}
+
+
+def ld_to_dl(ld: List[Dict]) -> Dict[str, List]:
+    return {k: [dic[k] for dic in ld] for k in ld[0]}

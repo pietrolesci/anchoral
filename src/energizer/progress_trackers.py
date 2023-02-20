@@ -53,10 +53,6 @@ class EpochTracker(Tracker):
             file=sys.stderr,
         )
 
-    def initialize(self) -> None:
-        super().initialize()
-        self.total = 0
-
 
 @dataclass
 class StageTracker(Tracker):
@@ -160,9 +156,9 @@ class ProgressTracker:
         return tracker.total
 
     def get_epoch_num(self, stage: RunningStage) -> int:
-        if self.is_training:
-            return self.fit_tracker.epoch_tracker.total
-        return 0
+        if stage == RunningStage.TEST:
+            return 0
+        return self.fit_tracker.epoch_tracker.total
 
     def should_log(self, batch_idx: int) -> None:
         return (batch_idx == 0) or ((batch_idx + 1) % self.log_interval == 0)

@@ -77,7 +77,7 @@ class FitOutput(MetadataParserMixin):
     output: List[FitEpochOutput] = field(default_factory=list)
 
     def append(self, _x: _cls_output):
-        assert isinstance(_x, self._cls_output), f"You can only append `{self._cls_output.__name__}`s, not {type(_x)}"
+        # assert isinstance(_x, self._cls_output), f"You can only append `{self._cls_output.__name__}`s, not {type(_x)}"
         self.output.append(_x)
 
     def __getitem__(self, idx: int) -> _cls_output:

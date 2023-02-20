@@ -9,10 +9,11 @@ from torchmetrics.classification import Accuracy, F1Score
 from transformers import AutoModelForSequenceClassification
 
 from src.energizer.active_learning.strategies import RandomStrategy, UncertaintyBasedStrategy
+from src.energizer.containers import RoundOutput
 from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.energizer.estimator import Estimator
-from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, POOL_BATCH_OUTPUT
-from src.energizer.utilities import move_to_cpu
+from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, METRIC, POOL_BATCH_OUTPUT, ROUND_OUTPUT
+from src.energizer.utilities import ld_to_dl, move_to_cpu
 
 
 class SequenceClassificationMixin:
@@ -20,6 +21,32 @@ class SequenceClassificationMixin:
     """
     Method forwarding
     """
+
+    def step(
+        self,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
+        model: AutoModelForSequenceClassification,
+        batch: Dict,
+        metrics: MetricCollection,
+    ) -> BATCH_OUTPUT:
+        unique_ids = batch.pop(InputKeys.ON_CPU)[SpecialKeys.ID]
+
+        # forward pass
+        out = model(**batch)
+
+        # compute weighted loss if provided otherwise
+        # used the unweighted loss automaticaly computed by transformers
+        loss = loss_fn(out.logits, batch[InputKeys.TARGET]) if loss_fn is not None else out.loss
+
+        # compute metrics
+        out_metrics = metrics(out.logits, batch[InputKeys.TARGET])
+
+        return {
+            OutputKeys.LOSS: loss,
+            OutputKeys.LOGITS: out.logits,
+            OutputKeys.METRICS: out_metrics,
+            SpecialKeys.ID: unique_ids,
+        }
 
     def train_step(
         self,
@@ -29,7 +56,7 @@ class SequenceClassificationMixin:
         batch_idx: int,
         metrics: MetricCollection,
     ) -> BATCH_OUTPUT:
-        return self.step(loss_fn, model, batch, batch_idx, metrics)
+        return self.step(loss_fn, model, batch, metrics)
 
     def validation_step(
         self,
@@ -39,7 +66,7 @@ class SequenceClassificationMixin:
         batch_idx: int,
         metrics: MetricCollection,
     ) -> EVAL_BATCH_OUTPUT:
-        return self.step(loss_fn, model, batch, batch_idx, metrics)
+        return self.step(loss_fn, model, batch, metrics)
 
     def test_step(
         self,
@@ -49,25 +76,28 @@ class SequenceClassificationMixin:
         batch_idx: int,
         metrics: MetricCollection,
     ) -> EVAL_BATCH_OUTPUT:
-        return self.step(loss_fn, model, batch, batch_idx, metrics)
+        return self.step(loss_fn, model, batch, metrics)
 
-    def train_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
+    def epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC], stage: RunningStage) -> Dict:
+        """Aggregate."""
+        data = ld_to_dl(output)
+        return {
+            **move_to_cpu(metrics.compute()),
+            f"avg_{OutputKeys.LOSS}": round(np.mean(data[OutputKeys.LOSS]), 6),
+        }
+
+    def train_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
         return self.epoch_end(output, metrics, RunningStage.TRAIN)
 
-    def validation_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
+    def validation_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
         return self.epoch_end(output, metrics, RunningStage.VALIDATION)
 
-    def test_epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection) -> EPOCH_OUTPUT:
+    def test_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
         return self.epoch_end(output, metrics, RunningStage.TEST)
 
-    def train_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int) -> BATCH_OUTPUT:
-        return self.step_end(output, batch, batch_idx, RunningStage.TRAIN)
-
-    def validation_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int) -> BATCH_OUTPUT:
-        return self.step_end(output, batch, batch_idx, RunningStage.VALIDATION)
-
-    def test_step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int) -> BATCH_OUTPUT:
-        return self.step_end(output, batch, batch_idx, RunningStage.TEST)
+    def round_end(self, output: RoundOutput) -> ROUND_OUTPUT:
+        """Only keep test outputs."""
+        return output.test
 
     """
     Changes
@@ -100,70 +130,6 @@ class SequenceClassificationMixin:
                 "f1_macro": F1Score("multiclass", num_classes=self.model.num_labels, average="macro"),
             }
         ).to(self.device)
-
-    def step(
-        self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
-        model: AutoModelForSequenceClassification,
-        batch: Dict,
-        batch_idx: int,
-        metrics: MetricCollection,
-    ) -> BATCH_OUTPUT:
-        unique_ids = batch.pop(InputKeys.ON_CPU)[SpecialKeys.ID]
-
-        # forward pass
-        out = model(**batch)
-
-        # compute weighted loss if provided otherwise
-        # used the unweighted loss automaticaly computed by transformers
-        loss = loss_fn(out.logits, batch[InputKeys.TARGET]) if loss_fn is not None else out.loss
-
-        # compute metrics
-        out_metrics = metrics(out.logits, batch[InputKeys.TARGET])
-
-        return {
-            OutputKeys.LOSS: loss,
-            OutputKeys.LOGITS: out.logits,
-            OutputKeys.METRICS: out_metrics,
-            SpecialKeys.ID: unique_ids,
-        }
-
-    def step_end(self, output: BATCH_OUTPUT, batch: Dict, batch_idx: int, stage: RunningStage) -> BATCH_OUTPUT:
-        # NOTE: only log at the batch level for the training loop
-        if stage != RunningStage.TRAIN:
-            return output
-
-        # control logging interval
-        if self.progress_tracker.should_log(batch_idx):
-            # NOTE: output is still on device
-            logs = {OutputKeys.LOSS: output[OutputKeys.LOSS], **output[OutputKeys.METRICS]}
-
-            # rename and move to cpu
-            logs = move_to_cpu({f"{stage}/{k}": v for k, v in logs.items()})
-
-            # log
-            self.fabric.log_dict(logs, step=self.progress_tracker.get_batch_num(stage))
-
-        return output
-
-    def epoch_end(self, output: EPOCH_OUTPUT, metrics: MetricCollection, stage: RunningStage) -> EPOCH_OUTPUT:
-        # during training do not collect nor aggregate any metric
-        if stage == RunningStage.TRAIN:
-            return
-
-        # NOTE: the metric object and is on device but the output is already on cpu
-        logs = {
-            **move_to_cpu(metrics.compute()),
-            "avg_loss": round(np.mean([out[OutputKeys.LOSS] for out in output]), 6),
-        }
-
-        # rename
-        logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
-
-        # log
-        self.fabric.log_dict(logs, step=self.progress_tracker.get_epoch_num(stage))
-
-        return logs
 
 
 class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator):

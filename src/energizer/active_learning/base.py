@@ -1,15 +1,16 @@
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import torch
 from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule
 from torch.utils.data import DataLoader
 
 from src.energizer.active_learning.data import ActiveDataModule
+from src.energizer.active_learning.progress_trackers import ActiveProgressTracker
 from src.energizer.containers import ActiveFitOutput, QueryOutput, RoundOutput
 from src.energizer.enums import RunningStage
 from src.energizer.estimator import Estimator
-from src.energizer.active_learning.progress_trackers import ActiveProgressTracker
+from src.energizer.types import ROUND_OUTPUT
 from src.energizer.utilities import get_hparams
 
 
@@ -104,7 +105,7 @@ class ActiveEstimator(Estimator):
         scheduler: Optional[str] = None,
         scheduler_kwargs: Optional[Dict] = None,
         **kwargs,
-    ) -> RoundOutput:
+    ) -> ROUND_OUTPUT:
         output = RoundOutput()
 
         # hook
@@ -151,11 +152,17 @@ class ActiveEstimator(Estimator):
         # hook
         self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=output)
 
+        # method to possibly aggregate
+        output = self.round_end(output)
+
         return output
 
     """
     Query loop
     """
+
+    def round_end(self, output: RoundOutput) -> ROUND_OUTPUT:
+        return output
 
     def query(self, active_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
         # configure dataloaders

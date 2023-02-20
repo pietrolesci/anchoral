@@ -526,8 +526,7 @@ class Estimator(HyperparametersMixin):
         pass
 
     def train_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> BATCH_OUTPUT:
-        if self.progress_tracker.should_log(batch_idx):
-            self.fabric.log("loss", output[OutputKeys.LOSS], step=self.progress_tracker.num_train_batches)
+        return output
 
     def validation_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> BATCH_OUTPUT:
         return output

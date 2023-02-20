@@ -1,6 +1,6 @@
 import time
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 import numpy as np
 import pandas as pd
@@ -10,16 +10,18 @@ from lightning.fabric.wrappers import _FabricModule
 from src.energizer.active_learning.base import ActiveEstimator
 from src.energizer.active_learning.callbacks import ActiveLearningCallbackMixin
 from src.energizer.active_learning.data import ActiveDataModule
+from src.energizer.active_learning.progress_trackers import ActiveProgressTracker
 from src.energizer.callbacks import Callback, Timer
 from src.energizer.containers import ActiveFitOutput, QueryOutput, RoundOutput
 from src.energizer.enums import OutputKeys, RunningStage, SpecialKeys
 from src.energizer.estimator import Estimator
-from src.energizer.progress_trackers import ActiveProgressTracker
-from src.energizer.types import EPOCH_OUTPUT, METRIC
-from src.energizer.utilities import move_to_cpu
+from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
+from src.energizer.utilities import ld_to_dl, move_to_cpu
 
 
 class SaveOutputs(ActiveLearningCallbackMixin, Callback):
+    """All the logic to sae artifacts and log."""
+
     def __init__(self, dirpath: Union[str, Path], instance_level: bool, batch_level: bool, epoch_level: bool) -> None:
         super().__init__()
         self.dirpath = Path(dirpath)
@@ -27,14 +29,30 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
         self.batch_level = batch_level
         self.epoch_level = epoch_level
 
+    def on_batch_end(
+        self, estimator: Union[Estimator, ActiveEstimator], output: BATCH_OUTPUT, batch_idx: int, stage: RunningStage
+    ) -> None:
+        # NOTE: only log at the batch level for the training loop
+        if stage != RunningStage.TRAIN:
+            return output
+
+        # control logging interval
+        if estimator.progress_tracker.should_log(batch_idx):
+            # NOTE: output is still on device
+            logs = {OutputKeys.LOSS: output[OutputKeys.LOSS], **output[OutputKeys.METRICS]}
+
+            # rename and move to cpu
+            logs = move_to_cpu({f"{stage}/{k}": v for k, v in logs.items()})
+
+            # log
+            estimator.fabric.log_dict(logs, step=estimator.progress_tracker.get_batch_num(stage))
+
     def on_epoch_end(
         self,
-        estimator: Estimator,
-        model: _FabricModule,
+        estimator: Union[Estimator, ActiveEstimator],
         output: EPOCH_OUTPUT,
         metrics: METRIC,
         stage: RunningStage,
-        **kwargs,
     ) -> None:
         # output directory setup
         suffix = f"_epoch_{estimator.progress_tracker.get_epoch_num(stage)}"
@@ -42,7 +60,7 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
         path.mkdir(exist_ok=True, parents=True)
 
         # list of dicts to dict of lists
-        data = {k: [dic[k] for dic in output] for k in output[0]}
+        data = ld_to_dl(output)
 
         # instance-level output
         if self.instance_level:
@@ -61,33 +79,97 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
             batch_level_output.to_parquet(path / f"batch_level{suffix}.parquet", index=False)
 
         # epoch-level output
+        epoch_level_output = {
+            **move_to_cpu(metrics.compute()),
+            f"avg_{OutputKeys.LOSS}": round(np.mean(data[OutputKeys.LOSS]), 6),
+        }
         if self.epoch_level:
-            total_metrics = move_to_cpu(metrics.compute())
-            epoch_level_output = {
-                OutputKeys.METRICS: total_metrics,
-                OutputKeys.LOSS: round(np.mean(data[OutputKeys.LOSS]), 6),
-            }
             srsly.write_json(path / f"epoch_level{suffix}.json", epoch_level_output)
 
+        if stage != RunningStage.TEST:
+            logs = {f"{stage}_end/{k}": v for k, v in epoch_level_output.items()}
+            estimator.fabric.log_dict(logs, step=estimator.progress_tracker.get_epoch_num(stage))
+
+    def on_round_end(self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: RoundOutput) -> None:
+        logs = {f"test_end/{k}": v for k, v in output.test.output.items()}
+        estimator.fabric.log_dict(logs, step=datamodule.train_size)
+        estimator.fabric.log_dict(
+            {f"{k}_vs_rounds": v for k, v in logs.items()}, step=estimator.progress_tracker.num_rounds
+        )
+
     def on_train_epoch_end(
-        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
+        self,
+        estimator: Union[Estimator, ActiveEstimator],
+        model: _FabricModule,
+        output: EPOCH_OUTPUT,
+        metrics: METRIC,
+        **kwargs,
     ) -> None:
-        return self.on_epoch_end(estimator, model, output, metrics, RunningStage.TRAIN, **kwargs)
+        self.on_epoch_end(estimator, output, metrics, RunningStage.TRAIN)
 
     def on_validation_epoch_end(
-        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
+        self,
+        estimator: Union[Estimator, ActiveEstimator],
+        model: _FabricModule,
+        output: EPOCH_OUTPUT,
+        metrics: METRIC,
+        **kwargs,
     ) -> None:
-        return self.on_epoch_end(estimator, model, output, metrics, RunningStage.VALIDATION, **kwargs)
+        self.on_epoch_end(estimator, output, metrics, RunningStage.VALIDATION)
 
     def on_test_epoch_end(
-        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
+        self,
+        estimator: Union[Estimator, ActiveEstimator],
+        model: _FabricModule,
+        output: EPOCH_OUTPUT,
+        metrics: METRIC,
+        **kwargs,
     ) -> None:
-        return self.on_epoch_end(estimator, model, output, metrics, RunningStage.TEST, **kwargs)
+        self.on_epoch_end(estimator, output, metrics, RunningStage.TEST)
+
+    def on_train_batch_end(
+        self,
+        estimator: Union[Estimator, ActiveEstimator],
+        model: _FabricModule,
+        output: BATCH_OUTPUT,
+        batch: Any,
+        batch_idx: int,
+    ) -> None:
+        self.on_batch_end(estimator, output, batch_idx, RunningStage.TRAIN)
+
+    def on_validation_batch_end(
+        self,
+        estimator: Union[Estimator, ActiveEstimator],
+        model: _FabricModule,
+        output: BATCH_OUTPUT,
+        batch: Any,
+        batch_idx: int,
+    ) -> None:
+        self.on_batch_end(estimator, output, batch_idx, RunningStage.VALIDATION)
+
+    def on_test_batch_end(
+        self,
+        estimator: Union[Estimator, ActiveEstimator],
+        model: _FabricModule,
+        output: BATCH_OUTPUT,
+        batch: Any,
+        batch_idx: int,
+    ) -> None:
+        self.on_batch_end(estimator, output, batch_idx, RunningStage.TEST)
 
     def on_active_fit_end(
         self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: ActiveFitOutput
     ) -> None:
         datamodule.save_labelled_dataset(self.dirpath)
+
+        # NOTE: output.output is a List[RoundOutput]
+        # each RoundOutput has a `.test` attribute which is an EvaluationOutput
+        # the EvaluationOutput has the attribute `.output`
+        test_outputs = ld_to_dl([out.output for out in output.output])
+
+        # NOTE: no aggregation since we aggregate in the `{stage}_epoch_end` methods
+        test_outputs = {f"active_learning_end/test_{k}_auc": np.trapz(v) for k, v in test_outputs.items()}
+        estimator.fabric.log_dict(test_outputs, step=0)
 
 
 class Timer(ActiveLearningCallbackMixin, Timer):

@@ -1,9 +1,11 @@
-from torch.utils.data import DataLoader
-from dataclasses import dataclass
-from src.energizer.progress_trackers import ProgressTracker, StageTracker, Tracker
-from tqdm.auto import tqdm
 import sys
+from dataclasses import dataclass
+
+from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
+
 from src.energizer.containers import RunningStage
+from src.energizer.progress_trackers import ProgressTracker, StageTracker, Tracker
 
 
 @dataclass
@@ -29,6 +31,7 @@ class RoundTracker(Tracker):
         if self.progress_bar is not None and self.current > 0:
             self.progress_bar.update(1)
 
+
 @dataclass
 class ActiveProgressTracker(ProgressTracker):
     round_tracker: RoundTracker = None
@@ -44,6 +47,11 @@ class ActiveProgressTracker(ProgressTracker):
     @property
     def num_rounds(self) -> int:
         return self.round_tracker.total
+
+    def get_epoch_num(self, stage: RunningStage) -> int:
+        if stage == RunningStage.TEST:
+            return self.num_rounds
+        return self.fit_tracker.epoch_tracker.total
 
     """
     Initializers
@@ -63,6 +71,8 @@ class ActiveProgressTracker(ProgressTracker):
         self.fit_tracker.update_from_hparams(**hparams)
         self.fit_tracker.initialize()
         self.fit_tracker.epoch_tracker.leave = False
+        self.fit_tracker.train_tracker.leave = False
+        self.fit_tracker.validation_tracker.leave = False
         self.is_training = True
         self.log_interval = kwargs.get("log_interval", 1)
 
@@ -71,6 +81,8 @@ class ActiveProgressTracker(ProgressTracker):
             super().initialize_evaluation_progress(stage, loader, **kwargs)
             tracker = getattr(self, f"{stage}_tracker")
             tracker.leave = False
+            return
+
         self.is_training = False
         self.log_interval = kwargs.get("log_interval", 1)
 

@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 
 import hydra
+import numpy as np
 from datasets import load_from_disk
 from hydra.utils import get_original_cwd, instantiate
 from lightning.fabric import seed_everything
@@ -11,6 +12,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from src.datamodule import ClassificationActiveDataModule, ClassificationDataModule
 from src.energizer.logging import set_ignore_warnings
+from src.energizer.utilities import ld_to_dl
 from src.estimators import EstimatorForSequenceClassification
 
 set_ignore_warnings()
@@ -122,10 +124,20 @@ def main(cfg: DictConfig) -> None:
         )
         log.info(f"\n{summarize(estimator)}")
 
+        # NOTE: in our src.huggingface.estimators.ActiveEstimatorForSequenceClassification we overwritten
+        # the round_end method and we return only the test metrics, so fit_out.output
+        # is a List[Dict]
         fit_out = estimator.active_fit(
             active_datamodule=datamodule, **OmegaConf.to_container(cfg.active_fit), **OmegaConf.to_container(cfg.fit)
         )
-
+        metrics_hparams = ld_to_dl([out.output for out in fit_out.output])
+        metrics_hparams = {f"active_learning_end/test_{k}_auc": np.trapz(v) for k, v in metrics_hparams.items()}
+        hparams = {
+            **datamodule.hparams,
+            **estimator.hparams,
+            **fit_out.hparams,
+            "initial_budget": cfg.initial_budget or 0,
+        }
         log.info(f"Labelled dataset size: {datamodule.train_size}")
 
     else:
@@ -144,20 +156,20 @@ def main(cfg: DictConfig) -> None:
             **OmegaConf.to_container(cfg.fit),
         )
 
-        # test: in our src.huggingface.estimators.EstimatorForSequenceClassification we overwritten
+        # NOTE: in our src.huggingface.estimators.EstimatorForSequenceClassification we overwritten
         # the test_epoch_end method and we return a dictionary with the metrics, so test_out.output
         # is a Dict
-        test_out = estimator.test(datamodule.test_loader(), **OmegaConf.to_container(cfg.test))
-
-        # log hparams and test results to tensorboard
-        if isinstance(estimator.fabric.logger, TensorBoardLogger):
-            estimator.fabric.logger.log_hyperparams(
-                params={**datamodule.hparams, **estimator.hparams, **fit_out.hparams},
-                metrics=test_out.output,
-            )
+        metrics_hparams = estimator.test(datamodule.test_loader(), **OmegaConf.to_container(cfg.test))
+        hparams = {**datamodule.hparams, **estimator.hparams, **fit_out.hparams}
 
     # ============ STEP 6: save outputs ============
     OmegaConf.save(cfg, "./hparams.yaml")
+    # log hparams and test results to tensorboard
+    if isinstance(estimator.fabric.logger, TensorBoardLogger):
+        estimator.fabric.logger.log_hyperparams(
+            params=hparams,
+            metrics=metrics_hparams,
+        )
     log.info(estimator.progress_tracker)
 
 
