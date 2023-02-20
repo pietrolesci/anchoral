@@ -1,6 +1,4 @@
-import sys
 from dataclasses import dataclass
-from typing import Optional
 
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
@@ -23,7 +21,7 @@ class RoundTracker(Tracker):
             desc="Completed rounds",
             dynamic_ncols=True,
             leave=True,
-            file=sys.stderr,
+            colour="#32a852",
         )
 
     def increment(self) -> None:
@@ -61,6 +59,7 @@ class ActiveProgressTracker(ProgressTracker):
             self.round_tracker.close_progress_bar()
             self.fit_tracker.close_progress_bars()
             self.test_tracker.close_progress_bar()
+            self.pool_tracker.close_progress_bar()
         return cond
 
     def get_epoch_num(self, stage: RunningStage) -> int:
@@ -79,10 +78,12 @@ class ActiveProgressTracker(ProgressTracker):
             step_tracker=Tracker(),
         )
         self.test_tracker = StageTracker(stage=RunningStage.TEST)
+        self.pool_tracker = StageTracker(stage=RunningStage.POOL)
         if kwargs.get("progress_bar", True):
             self.round_tracker.make_progress_bar()
             self.fit_tracker.make_progress_bars()
             self.test_tracker.make_progress_bar()
+            self.pool_tracker.make_progress_bar()
 
     def initialize_fit_progress(self, *args, **kwargs) -> None:
         self.is_training = True
@@ -95,7 +96,7 @@ class ActiveProgressTracker(ProgressTracker):
         self.is_training = False
         self.log_interval = kwargs.get("log_interval", 1)
 
-        tracker = self._get_active_tracker(stage)
+        tracker = getattr(self, f"{stage}_tracker")
         tracker.max = self._solve_num_batches(loader, kwargs.get("limit_batches", None))
         tracker.reset()
 
