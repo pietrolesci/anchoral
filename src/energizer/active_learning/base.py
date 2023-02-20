@@ -60,8 +60,7 @@ class ActiveEstimator(Estimator):
         # hook
         self.fabric.call("on_active_fit_start", estimator=self, datamodule=active_datamodule, output=outputs)
 
-        self.progress_tracker.initialize_round_progress()
-        while not self.progress_tracker.is_round_progress_done():
+        while not self.progress_tracker.is_active_fit_done():
             output = self.round_loop(
                 active_datamodule=active_datamodule,
                 query_size=query_size,
@@ -84,7 +83,7 @@ class ActiveEstimator(Estimator):
                 self.load_state_dict(model_cache_dir)
 
             # update progress
-            self.progress_tracker.increment_round_progress()
+            self.progress_tracker.increment_active_fit_progress()
 
         # hook
         self.fabric.call("on_active_fit_end", estimator=self, datamodule=active_datamodule, output=outputs)

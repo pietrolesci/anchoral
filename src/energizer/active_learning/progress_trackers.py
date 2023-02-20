@@ -1,11 +1,12 @@
 import sys
 from dataclasses import dataclass
+from typing import Optional
 
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from src.energizer.containers import RunningStage
-from src.energizer.progress_trackers import ProgressTracker, StageTracker, Tracker
+from src.energizer.progress_trackers import EpochTracker, FitTracker, ProgressTracker, StageTracker, Tracker
 
 
 @dataclass
@@ -41,54 +42,66 @@ class ActiveProgressTracker(ProgressTracker):
     Status
     """
 
-    def is_round_progress_done(self) -> None:
-        return self.round_tracker.max_reached()
-
     @property
     def num_rounds(self) -> int:
         return self.round_tracker.total
 
+    def is_fit_done(self) -> bool:
+        return self.fit_tracker.epoch_tracker.max_reached() or self.fit_tracker.stop_training
+
+    def is_epoch_done(self, stage: RunningStage) -> bool:
+        cond = self._get_active_tracker(stage).max_reached()
+        if stage == RunningStage.TRAIN and self.is_training:
+            cond = cond or self.fit_tracker.stop_training
+        return cond
+
+    def is_active_fit_done(self) -> bool:
+        cond = self.round_tracker.max_reached()
+        if cond:
+            self.round_tracker.close_progress_bar()
+            self.fit_tracker.close_progress_bars()
+            self.test_tracker.close_progress_bar()
+        return cond
+
     def get_epoch_num(self, stage: RunningStage) -> int:
-        if stage == RunningStage.TEST:
-            return self.num_rounds
-        return self.fit_tracker.epoch_tracker.total
+        return self.num_rounds if stage == RunningStage.TEST else self.fit_tracker.epoch_tracker.total
 
     """
     Initializers
     """
 
     def initialize_active_fit_progress(self, num_rounds: int, **kwargs) -> None:
-        self.round_tracker = RoundTracker(max=num_rounds, show_progress_bar=kwargs.get("progress_bar", True))
-
-    def initialize_round_progress(self) -> None:
-        self.round_tracker.initialize()
+        self.round_tracker = RoundTracker(max=num_rounds)
+        self.fit_tracker = FitTracker(
+            epoch_tracker=EpochTracker(),
+            train_tracker=StageTracker(stage=RunningStage.TRAIN),
+            validation_tracker=StageTracker(stage=RunningStage.VALIDATION),
+            step_tracker=Tracker(),
+        )
+        self.test_tracker = StageTracker(stage=RunningStage.TEST)
+        if kwargs.get("progress_bar", True):
+            self.round_tracker.make_progress_bar()
+            self.fit_tracker.make_progress_bars()
+            self.test_tracker.make_progress_bar()
 
     def initialize_fit_progress(self, *args, **kwargs) -> None:
-        if self.fit_tracker is None:
-            super().initialize_fit_progress(*args, **kwargs)
-            return
-        hparams = self._solve_hparams(*args, **kwargs)
-        self.fit_tracker.update_from_hparams(**hparams)
-        self.fit_tracker.initialize()
-        self.fit_tracker.epoch_tracker.leave = False
-        self.fit_tracker.train_tracker.leave = False
-        self.fit_tracker.validation_tracker.leave = False
         self.is_training = True
         self.log_interval = kwargs.get("log_interval", 1)
 
-    def initialize_evaluation_progress(self, stage: RunningStage, loader: DataLoader, **kwargs) -> None:
-        if getattr(self, f"{stage}_tracker") is None:
-            super().initialize_evaluation_progress(stage, loader, **kwargs)
-            tracker = getattr(self, f"{stage}_tracker")
-            tracker.leave = False
-            return
+        self.fit_tracker.update_from_hparams(**self._solve_hparams(*args, **kwargs))
+        self.fit_tracker.reset()
 
+    def initialize_evaluation_progress(self, stage: RunningStage, loader: DataLoader, **kwargs) -> None:
         self.is_training = False
         self.log_interval = kwargs.get("log_interval", 1)
+
+        tracker = self._get_active_tracker(stage)
+        tracker.max = self._solve_num_batches(loader, kwargs.get("limit_batches", None))
+        tracker.reset()
 
     """
     Operations
     """
 
-    def increment_round_progress(self) -> None:
+    def increment_active_fit_progress(self) -> None:
         self.round_tracker.increment()

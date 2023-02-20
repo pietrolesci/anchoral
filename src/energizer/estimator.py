@@ -112,8 +112,7 @@ class Estimator(HyperparametersMixin):
 
         self.fabric.call("on_fit_start", estimator=self, model=model, output=outputs)
 
-        self.progress_tracker.initialize_epoch_progress()
-        while not self.progress_tracker.is_epoch_progress_done():
+        while not self.progress_tracker.is_fit_done():
             output = self.fit_epoch_loop(
                 model=model,
                 train_loader=train_loader,
@@ -126,7 +125,7 @@ class Estimator(HyperparametersMixin):
             outputs.append(output)
 
             # update progress
-            self.progress_tracker.increment_epoch_progress()
+            self.progress_tracker.increment_fit_progress()
 
         self.fabric.call("on_fit_end", estimator=self, model=model, output=outputs)
 
@@ -145,7 +144,7 @@ class Estimator(HyperparametersMixin):
         validation_out = EpochOutput()
 
         # configure progress tracking
-        self.progress_tracker.initialize_batch_progress(RunningStage.TRAIN)
+        self.progress_tracker.initialize_epoch_progress(RunningStage.TRAIN)
 
         # define metrics
         metrics = self.configure_metrics(RunningStage.TRAIN)
@@ -156,7 +155,7 @@ class Estimator(HyperparametersMixin):
         self.fabric.call("on_train_epoch_start", estimator=self, model=model, output=train_out)
 
         for batch_idx, batch in enumerate(train_loader):
-            if self.progress_tracker.is_batch_progress_done(RunningStage.TRAIN):
+            if self.progress_tracker.is_epoch_done(RunningStage.TRAIN):
                 break
 
             # validation
@@ -187,7 +186,7 @@ class Estimator(HyperparametersMixin):
             train_out.append(batch_out)
 
             # update progress tracker
-            self.progress_tracker.increment_batch_progress(RunningStage.TRAIN)
+            self.progress_tracker.increment_epoch_progress(RunningStage.TRAIN)
 
         self.fabric.call(
             "on_train_epoch_end",
@@ -314,7 +313,7 @@ class Estimator(HyperparametersMixin):
         output = EpochOutput()
 
         # configure progress tracking
-        self.progress_tracker.initialize_batch_progress(stage)
+        self.progress_tracker.initialize_epoch_progress(stage)
 
         # configure metrics
         metrics = self.configure_metrics(stage)
@@ -326,7 +325,7 @@ class Estimator(HyperparametersMixin):
 
         with torch.inference_mode():
             for batch_idx, batch in enumerate(loader):
-                if self.progress_tracker.is_batch_progress_done(stage):
+                if self.progress_tracker.is_epoch_done(stage):
                     break
 
                 batch = self.transfer_to_device(batch)
@@ -353,7 +352,7 @@ class Estimator(HyperparametersMixin):
                 output.append(batch_out)
 
                 # update progress tracker
-                self.progress_tracker.increment_batch_progress(stage)
+                self.progress_tracker.increment_epoch_progress(stage)
 
         self.fabric.call(f"on_{stage}_epoch_end", estimator=self, model=model, output=output, metrics=metrics)
 
