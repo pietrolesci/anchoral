@@ -10,13 +10,12 @@ set -e
 echo 'Processing AG-News'
 
 poetry run python ./scripts/process_agnews.py \
-    --output_dir='./data/processed/ag_news' \
+    --output_dir='./data/processed/agnews' \
     --seed=1994
 
 poetry run python ./scripts/embed_data.py \
-    --data_path='./data/processed/ag_news' \
+    --data_path='./data/processed/agnews' \
     --model_name='all-mpnet-base-v2'
-
 
 
 # Civil Comments
