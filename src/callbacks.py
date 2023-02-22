@@ -85,8 +85,8 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
             )
 
         if self.epoch_level:
-            data = {"epoch": estimator.progress_tracker.get_epoch_num(), **output}
-            srsly.write_jsonl(path / "epoch_level.json", data, append=True)
+            data = {"epoch": estimator.progress_tracker.get_epoch_num(), **output[OutputKeys.METRICS]}
+            srsly.write_jsonl(path / "epoch_level.json", [data], append=True)
 
     def on_round_end(self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: ROUND_OUTPUT) -> None:
         test_out = output.test
