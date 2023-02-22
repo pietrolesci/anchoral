@@ -8,12 +8,11 @@ from sklearn.utils.validation import (
 )
 from torch.utils.data import DataLoader
 
-from src.energizer.active_learning.base import ActiveEstimator
+from src.energizer.active_learning.base import ActiveEstimator, QueryOutput
 from src.energizer.active_learning.data import ActiveDataModule
-from src.energizer.containers import QueryOutput
 from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.energizer.registries import SCORING_FUNCTIONS
-from src.energizer.types import EPOCH_OUTPUT, METRIC, POOL_BATCH_OUTPUT
+from src.energizer.types import EPOCH_OUTPUT, METRIC, Dict
 
 
 class RandomStrategy(ActiveEstimator):
@@ -64,7 +63,7 @@ class UncertaintyBasedStrategy(ActiveEstimator):
         batch_idx: int,
         metrics: Optional[METRIC],
         stage: RunningStage,
-    ) -> POOL_BATCH_OUTPUT:
+    ) -> Dict:
         if stage != RunningStage.POOL:
             return super().eval_batch_loop(loss_fn, model, batch, batch_idx, metrics, stage)
 
@@ -94,10 +93,10 @@ class UncertaintyBasedStrategy(ActiveEstimator):
         batch: Any,
         batch_idx: int,
         metrics: Optional[METRIC] = None,
-    ) -> POOL_BATCH_OUTPUT:
+    ) -> Dict:
         raise NotImplementedError
 
-    def pool_step_end(self, output: POOL_BATCH_OUTPUT, batch: Any, batch_idx: int) -> POOL_BATCH_OUTPUT:
+    def pool_step_end(self, output: Dict, batch: Any, batch_idx: int) -> Dict:
         return output
 
     def pool_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:

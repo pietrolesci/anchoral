@@ -32,10 +32,10 @@ poetry run python scripts/active_train.py \
 ## TESTING
 poetry run python scripts/train.py dataset_name=ag_news limit_batches=50
 
-poetry run python scripts/active_train.py dataset_name=ag_news strategy=random active_fit.num_rounds=3
 
 
 
-
+# low budget
 poetry run python scripts/active_train.py dataset_name=ag_news strategy=random active_fit.num_rounds=50
+
 poetry run python scripts/active_train.py dataset_name=ag_news strategy=uncertainty strategy.score_fn=entropy active_fit.num_rounds=50

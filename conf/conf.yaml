@@ -76,7 +76,7 @@ fit:
 
 # this is incremental to `fit` above
 active_fit:
-  num_rounds: 20
+  num_rounds: 50
   query_size: 50
   val_perc: 0.3
   reinit_model: true

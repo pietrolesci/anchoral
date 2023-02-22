@@ -1,18 +1,19 @@
-from typing import Callable, Dict, MutableMapping, Optional, Union
+# NOTE: type annotation is in line with what it is actually returned by
+# the overridden methods
+from typing import Any, Callable, Dict, List, MutableMapping, Optional, Union
 
 import numpy as np
 import torch
 from lightning.fabric.wrappers import _FabricModule
 from lightning.pytorch.utilities.parsing import AttributeDict
 from torchmetrics import MetricCollection
-from torchmetrics.classification import Accuracy, F1Score
+from torchmetrics.classification import Accuracy, F1Score, Precision, Recall
 from transformers import AutoModelForSequenceClassification
 
 from src.energizer.active_learning.strategies import RandomStrategy, UncertaintyBasedStrategy
-from src.energizer.containers import RoundOutput
 from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.energizer.estimator import Estimator
-from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, METRIC, POOL_BATCH_OUTPUT, ROUND_OUTPUT
+from src.energizer.types import ROUND_OUTPUT, Dict
 from src.energizer.utilities import ld_to_dl, move_to_cpu
 
 
@@ -22,32 +23,6 @@ class SequenceClassificationMixin:
     Method forwarding
     """
 
-    def step(
-        self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
-        model: AutoModelForSequenceClassification,
-        batch: Dict,
-        metrics: MetricCollection,
-    ) -> BATCH_OUTPUT:
-        unique_ids = batch.pop(InputKeys.ON_CPU)[SpecialKeys.ID]
-
-        # forward pass
-        out = model(**batch)
-
-        # compute weighted loss if provided otherwise
-        # used the unweighted loss automaticaly computed by transformers
-        loss = loss_fn(out.logits, batch[InputKeys.TARGET]) if loss_fn is not None else out.loss
-
-        # compute metrics
-        out_metrics = metrics(out.logits, batch[InputKeys.TARGET])
-
-        return {
-            OutputKeys.LOSS: loss,
-            OutputKeys.LOGITS: out.logits,
-            OutputKeys.METRICS: out_metrics,
-            SpecialKeys.ID: unique_ids,
-        }
-
     def train_step(
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
@@ -55,8 +30,8 @@ class SequenceClassificationMixin:
         batch: Dict,
         batch_idx: int,
         metrics: MetricCollection,
-    ) -> BATCH_OUTPUT:
-        return self.step(loss_fn, model, batch, metrics)
+    ) -> Dict:
+        return self.step(loss_fn, model, batch, batch_idx, metrics, RunningStage.TRAIN)
 
     def validation_step(
         self,
@@ -65,8 +40,8 @@ class SequenceClassificationMixin:
         batch: Dict,
         batch_idx: int,
         metrics: MetricCollection,
-    ) -> EVAL_BATCH_OUTPUT:
-        return self.step(loss_fn, model, batch, metrics)
+    ) -> Dict:
+        return self.step(loss_fn, model, batch, batch_idx, metrics, RunningStage.VALIDATION)
 
     def test_step(
         self,
@@ -75,29 +50,83 @@ class SequenceClassificationMixin:
         batch: Dict,
         batch_idx: int,
         metrics: MetricCollection,
-    ) -> EVAL_BATCH_OUTPUT:
-        return self.step(loss_fn, model, batch, metrics)
+    ) -> Dict:
+        return self.step(loss_fn, model, batch, batch_idx, metrics, RunningStage.TEST)
 
-    def epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC], stage: RunningStage) -> Dict:
-        """Aggregate."""
-        data = ld_to_dl(output)
-        return {
-            **move_to_cpu(metrics.compute()),
-            f"avg_{OutputKeys.LOSS}": round(np.mean(data[OutputKeys.LOSS]), 6),
-        }
-
-    def train_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
+    def train_epoch_end(self, output: List[Dict], metrics: MetricCollection) -> Dict:
         return self.epoch_end(output, metrics, RunningStage.TRAIN)
 
-    def validation_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
+    def validation_epoch_end(self, output: List[Dict], metrics: MetricCollection) -> Dict:
         return self.epoch_end(output, metrics, RunningStage.VALIDATION)
 
-    def test_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
+    def test_epoch_end(self, output: List[Dict], metrics: MetricCollection) -> Dict:
         return self.epoch_end(output, metrics, RunningStage.TEST)
 
-    def round_end(self, output: RoundOutput) -> ROUND_OUTPUT:
-        """Only keep test outputs."""
-        return output.test
+    """
+    Actual methods
+    """
+
+    def step(
+        self,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
+        model: AutoModelForSequenceClassification,
+        batch: Dict,
+        batch_idx: int,
+        metrics: MetricCollection,
+        stage: RunningStage,
+    ) -> Dict:
+        """This serves as train/validation/test step for transformers classifiers."""
+        unique_ids = batch.pop(InputKeys.ON_CPU)[SpecialKeys.ID]
+
+        # forward pass
+        out = model(**batch)
+
+        # compute weighted loss if provided otherwise use the
+        # unweighted loss automaticaly computed by transformers
+        loss = loss_fn(out.logits, batch[InputKeys.TARGET]) if loss_fn is not None else out.loss
+
+        # compute metrics
+        # NOTE: we do not return metrics since they can be aggregated using `metrics.compute()` later
+        out_metrics = metrics(out.logits, batch[InputKeys.TARGET])
+
+        # log batch-level metrics
+        if stage == RunningStage.TRAIN:
+            # NOTE: only log at the batch level training
+            logs = {OutputKeys.LOSS: loss, **out_metrics}
+            self.log_dict({f"{stage}/{k}": v for k, v in logs.items()}, step=self.progress_tracker.get_batch_num())
+
+        return {
+            OutputKeys.LOSS: loss,
+            OutputKeys.LOGITS: out.logits,
+            SpecialKeys.ID: unique_ids,
+        }
+
+    def epoch_end(self, output: Dict, metrics: MetricCollection, stage: RunningStage) -> Dict:
+        """Aggregate."""
+        data = ld_to_dl(output)
+
+        # aggregate and log epoch-level metrics
+        aggregated_metrics = move_to_cpu(metrics.compute())  # NOTE: metrics are still on device
+        aggregated_loss = round(np.mean(data[OutputKeys.LOSS]), 6)
+
+        logs = {f"avg_{OutputKeys.LOSS}": aggregated_loss, **aggregated_metrics}
+        logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
+        self.log_dict(logs, step=self.progress_tracker.get_epoch_num())
+
+        # aggregate instance-level metrics
+        logits = np.concatenate(data.pop(OutputKeys.LOGITS))
+        unique_ids = np.concatenate(data.pop(SpecialKeys.ID))
+
+        return {
+            OutputKeys.LOSS: aggregated_loss,
+            OutputKeys.METRICS: aggregated_metrics,
+            OutputKeys.LOGITS: logits,
+            SpecialKeys.ID: unique_ids,
+        }
+
+    def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:
+        logs = ld_to_dl([out.test[OutputKeys.METRICS] for out in output])
+        return {f"active_learning_end/test_{k}_auc": np.trapz(v) for k, v in logs.items()}
 
     """
     Changes
@@ -123,13 +152,22 @@ class SequenceClassificationMixin:
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[MetricCollection]:
         if stage == RunningStage.POOL:
             return
-        # you are in charge of moving it to the correct device
+        num_classes = self.model.num_labels
+        task = "multiclass" if num_classes > 2 else "binary"
         return MetricCollection(
             {
-                "accuracy": Accuracy("multiclass", num_classes=self.model.num_labels),
-                "f1_macro": F1Score("multiclass", num_classes=self.model.num_labels, average="macro"),
+                "accuracy": Accuracy(task, num_classes=num_classes),
+                "f1_macro": F1Score(task, num_classes=num_classes, average="macro"),
+                "precision_macro": Precision(task, num_classes=num_classes, average="macro"),
+                "recall_macro": Recall(task, num_classes=num_classes, average="macro"),
+                "f1_micro": F1Score(task, num_classes=num_classes, average="micro"),
+                "precision_micro": Precision(task, num_classes=num_classes, average="micro"),
+                "recall_micro": Recall(task, num_classes=num_classes, average="micro"),
+                # "brier_score": MeanSquaredError(),
             }
-        ).to(self.device)
+        ).to(
+            self.device
+        )  # NOTE: you are in charge of moving it to the correct device
 
 
 class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator):
@@ -143,7 +181,7 @@ class UncertaintyBasedStrategyForSequenceClassification(SequenceClassificationMi
         batch: Dict,
         batch_idx: int,
         metrics: Optional[MetricCollection] = None,
-    ) -> POOL_BATCH_OUTPUT:
+    ) -> Dict:
         _ = batch.pop(InputKeys.ON_CPU)  # this is already handled in the `eval_batch_loop`
 
         logits = model(**batch).logits

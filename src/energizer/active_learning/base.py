@@ -1,17 +1,39 @@
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
 from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule
+from numpy import ndarray
 from torch.utils.data import DataLoader
 
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.active_learning.progress_trackers import ActiveProgressTracker
-from src.energizer.containers import ActiveFitOutput, QueryOutput, RoundOutput
 from src.energizer.enums import RunningStage
-from src.energizer.estimator import Estimator
-from src.energizer.types import ROUND_OUTPUT
-from src.energizer.utilities import get_hparams
+from src.energizer.estimator import Estimator, FitEpochOutput
+from src.energizer.types import EPOCH_OUTPUT, ROUND_OUTPUT
+
+
+@dataclass
+class QueryOutput:
+    """Output of a run on an entire pool dataloader.
+
+    metrics: Metrics aggregated over the entire pool dataloader.
+    output: List of individual outputs at the batch level.
+    topk_scores: TopK scores for the pool instances.
+    indices: Indices corresponding to the topk instances to query.
+    """
+
+    topk_scores: ndarray = None
+    indices: List[int] = None
+    output: Optional[List] = None
+
+
+@dataclass
+class RoundOutput:
+    fit: List[FitEpochOutput] = None
+    test: EPOCH_OUTPUT = None
+    query: QueryOutput = None
 
 
 class ActiveEstimator(Estimator):
@@ -45,23 +67,19 @@ class ActiveEstimator(Estimator):
         scheduler: Optional[str] = None,
         scheduler_kwargs: Optional[Dict] = None,
         **kwargs,
-    ) -> ActiveFitOutput:
-        # get passed hyper-parameters
-        hparams = get_hparams()
-        outputs = ActiveFitOutput(hparams=hparams)
-        self._hparams.update(outputs.hparams)  # add fit hparams to global hparams
-
+    ) -> Any:
         if reinit_model:
             self.save_state_dict(model_cache_dir)
 
         # configure progress tracking
         self.progress_tracker.initialize_active_fit_progress(num_rounds, **kwargs)
 
-        # hook
-        self.fabric.call("on_active_fit_start", estimator=self, datamodule=active_datamodule, output=outputs)
+        # call hook
+        self.fabric.call("on_active_fit_start", estimator=self, datamodule=active_datamodule)
 
+        output = []
         while not self.progress_tracker.is_active_fit_done():
-            output = self.round_loop(
+            out = self.round_loop(
                 active_datamodule=active_datamodule,
                 query_size=query_size,
                 val_perc=val_perc,
@@ -77,7 +95,8 @@ class ActiveEstimator(Estimator):
                 **kwargs,
             )
 
-            outputs.append(output)
+            if out is not None:
+                output.append(out)
 
             if reinit_model:
                 self.load_state_dict(model_cache_dir)
@@ -85,10 +104,12 @@ class ActiveEstimator(Estimator):
             # update progress
             self.progress_tracker.increment_active_fit_progress()
 
-        # hook
-        self.fabric.call("on_active_fit_end", estimator=self, datamodule=active_datamodule, output=outputs)
+        output = self.active_fit_end(output)
 
-        return outputs
+        # call hook
+        self.fabric.call("on_active_fit_end", estimator=self, datamodule=active_datamodule, output=output)
+
+        return output
 
     def round_loop(
         self,
@@ -107,21 +128,21 @@ class ActiveEstimator(Estimator):
     ) -> ROUND_OUTPUT:
         output = RoundOutput()
 
-        # hook
-        self.fabric.call("on_round_start", estimator=self, datamodule=active_datamodule, output=output)
+        # call hook
+        self.fabric.call("on_round_start", estimator=self, datamodule=active_datamodule)
 
         # query indices to annotate, skip first round
         # do not annotate on the warm-up round
         if active_datamodule.pool_size > query_size and self.progress_tracker.num_rounds >= 0:
             output.query = self.query(active_datamodule=active_datamodule, query_size=query_size, **kwargs)
 
-            # hook
-            self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule, output=output)
+            # call hook
+            self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule)
             active_datamodule.label(
                 indices=output.query.indices, round_idx=self.progress_tracker.num_rounds, val_perc=val_perc
             )
-            # hook
-            self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule, output=output)
+            # call hook
+            self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)
 
         # fit model on the available data
         if active_datamodule.has_labelled_data:
@@ -148,11 +169,11 @@ class ActiveEstimator(Estimator):
                 **kwargs,
             )
 
-        # hook
-        self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=output)
-
         # method to possibly aggregate
-        output = self.round_end(output)
+        output = self.round_epoch_end(output)
+
+        # call hook
+        self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=output)
 
         return output
 
@@ -160,7 +181,10 @@ class ActiveEstimator(Estimator):
     Query loop
     """
 
-    def round_end(self, output: RoundOutput) -> ROUND_OUTPUT:
+    def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Any:
+        return output
+
+    def round_epoch_end(self, output: RoundOutput) -> ROUND_OUTPUT:
         return output
 
     def query(self, active_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
@@ -174,12 +198,12 @@ class ActiveEstimator(Estimator):
         # setup model with fabric
         model = self.fabric.setup(self.model)
 
-        # hook
+        # call hook
         self.fabric.call("on_query_start", estimator=self, model=model)
 
         output = self.query_loop(model, loader, query_size, **kwargs)
 
-        # hook
+        # call hook
         self.fabric.call("on_query_end", estimator=self, model=model, output=output)
 
         return output

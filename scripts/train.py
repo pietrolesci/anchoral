@@ -10,6 +10,7 @@ from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from src.datamodule import ClassificationDataModule
+from src.energizer.enums import OutputKeys
 from src.energizer.logging import set_ignore_warnings
 from src.energizer.utilities.model_summary import summarize
 from src.estimators import EstimatorForSequenceClassification
@@ -105,8 +106,8 @@ def main(cfg: DictConfig) -> None:
     # log hparams and test results to tensorboard
     if isinstance(estimator.fabric.logger, TensorBoardLogger):
         estimator.fabric.logger.log_hyperparams(
-            params={**datamodule.hparams, **estimator.hparams, **fit_out.hparams},
-            metrics=test_out.output,
+            params={**datamodule.hparams, **estimator.hparams, **OmegaConf.to_container(cfg.fit)},
+            metrics=test_out[OutputKeys.METRICS],
         )
 
     log.info(estimator.progress_tracker)

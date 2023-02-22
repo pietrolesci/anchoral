@@ -1,14 +1,13 @@
 import time
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, List, Optional, Union
 
 import numpy as np
 import torch
 from lightning.fabric.wrappers import _FabricModule
 
-from src.energizer.containers import FitOutput
 from src.energizer.enums import Interval, RunningStage
-from src.energizer.estimator import Estimator
+from src.energizer.estimator import Estimator, FitEpochOutput
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
 from src.energizer.utilities import move_to_cpu
 
@@ -20,72 +19,71 @@ class Callback:
     Subclass this class and override any of the relevant hooks
     """
 
-    def on_fit_start(self, estimator: Estimator, model: _FabricModule, output: FitOutput) -> None:
-        """Called when fit begins."""
+    """
+    Fit
+    """
 
-    def on_fit_end(self, estimator: Estimator, model: _FabricModule, output: FitOutput) -> None:
-        """Called when fit ends."""
+    def on_fit_start(self, estimator: Estimator, model: _FabricModule) -> None:
+        ...
 
-    def on_train_epoch_start(self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
-        """Called when the train epoch begins."""
+    def on_fit_end(self, estimator: Estimator, model: _FabricModule, output: List[FitEpochOutput]) -> None:
+        ...
+
+    """
+    Epoch
+    """
+
+    def on_train_epoch_start(self, estimator: Estimator, model: _FabricModule) -> None:
+        ...
+
+    def on_validation_epoch_start(self, estimator: Estimator, model: _FabricModule) -> None:
+        ...
+
+    def on_test_epoch_start(self, estimator: Estimator, model: _FabricModule) -> None:
+        ...
 
     def on_train_epoch_end(
-        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
+        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC
     ) -> None:
-        """Called when the train epoch ends.
-
-        To access all batch outputs at the end of the epoch, either:
-
-        1. Implement `training_epoch_end` in the `LightningModule` and access outputs via the module OR
-        2. Cache data across train batch hooks inside the callback implementation to post-process in this hook.
-        """
-
-    def on_validation_epoch_start(
-        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs
-    ) -> None:
-        """Called when the val epoch begins."""
+        ...
 
     def on_validation_epoch_end(
-        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
+        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC
     ) -> None:
-        """Called when the val epoch ends."""
-
-    def on_test_epoch_start(self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
-        """Called when the test epoch begins."""
+        ...
 
     def on_test_epoch_end(
-        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
+        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC
     ) -> None:
-        """Called when the test epoch ends."""
+        ...
+
+    """
+    Batch
+    """
 
     def on_train_batch_start(self, estimator: Estimator, model: _FabricModule, batch: Any, batch_idx: int) -> None:
-        """Called when the train batch begins."""
+        ...
 
     def on_train_batch_end(
         self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int
     ) -> None:
-        """Called when the train batch ends.
-
-        Note:
-            The value ``outputs["loss"]`` here will be the normalized value w.r.t ``accumulate_grad_batches`` of the
-            loss returned from ``train_step``.
-        """
+        ...
 
     def on_validation_batch_start(self, estimator: Estimator, model: _FabricModule, batch: Any, batch_idx: int) -> None:
-        """Called when the validation batch begins."""
+        ...
 
     def on_validation_batch_end(
         self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int
     ) -> None:
-        """Called when the validation batch ends."""
+        ...
 
     def on_test_batch_start(self, estimator: Estimator, model: _FabricModule, batch: Any, batch_idx: int) -> None:
-        """Called when the test batch begins."""
+        ...
 
     def on_test_batch_end(
         self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int
     ) -> None:
-        """Called when the test batch ends."""
+        ...
 
 
 class Timer(Callback):
@@ -95,7 +93,7 @@ class Timer(Callback):
     def epoch_end(self, estimator: Estimator, stage: RunningStage) -> None:
         setattr(self, f"{stage}_epoch_end_time", time.perf_counter())
         runtime = getattr(self, f"{stage}_epoch_end_time") - getattr(self, f"{stage}_epoch_start_time")
-        estimator.fabric.log(f"timer/{stage}_epoch_time", runtime, step=estimator.progress_tracker.get_epoch_num(stage))
+        estimator.log(f"timer/{stage}_epoch_time", runtime, step=estimator.progress_tracker.get_epoch_num())
 
     def batch_start(self, stage: RunningStage) -> None:
         setattr(self, f"{stage}_batch_start_time", time.perf_counter())
@@ -103,14 +101,14 @@ class Timer(Callback):
     def batch_end(self, estimator: Estimator, stage: RunningStage, batch_idx: int) -> None:
         setattr(self, f"{stage}_batch_end_time", time.perf_counter())
         runtime = getattr(self, f"{stage}_batch_end_time") - getattr(self, f"{stage}_batch_start_time")
-        estimator.fabric.log(f"timer/{stage}_batch_time", runtime, step=estimator.progress_tracker.get_batch_num(stage))
+        estimator.log(f"timer/{stage}_batch_time", runtime, step=estimator.progress_tracker.get_batch_num())
 
     def on_fit_start(self, *args, **kwargs) -> None:
         self.fit_start = time.perf_counter()
 
     def on_fit_end(self, estimator: Estimator, *args, **kwargs) -> None:
         self.fit_end = time.perf_counter()
-        estimator.fabric.log("timer/fit_time", self.fit_end - self.fit_start, step=0)
+        estimator.log("timer/fit_time", self.fit_end - self.fit_start, step=0)
 
     """
     Epoch start
@@ -181,17 +179,13 @@ class PytorchTensorboardProfiler(Callback):
             **kwargs,
         )
 
-    def on_train_epoch_start(self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, **kwargs) -> None:
+    def on_train_epoch_start(self, *args, **kwargs) -> None:
         self.prof.start()
 
-    def on_train_batch_end(
-        self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int
-    ) -> None:
+    def on_train_batch_end(self, *args, **kwargs) -> None:
         self.prof.step()
 
-    def on_train_epoch_end(
-        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
-    ) -> None:
+    def on_train_epoch_end(self, *args, **kwargs) -> None:
         self.prof.stop()
 
 
@@ -286,15 +280,15 @@ class EarlyStopping(Callback):
         self.check(estimator, output, RunningStage.VALIDATION, Interval.BATCH)
 
     def on_train_epoch_end(
-        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
+        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC
     ) -> None:
         self.check(estimator, output, RunningStage.TRAIN, Interval.EPOCH)
 
     def on_validation_epoch_end(
-        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC, **kwargs
+        self, estimator: Estimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC
     ) -> None:
         self.check(estimator, output, RunningStage.VALIDATION, Interval.EPOCH)
 
-    def on_fit_end(self, estimator: Estimator, model: _FabricModule, output: FitOutput) -> None:
+    def on_fit_end(self, estimator: Estimator, *args, **kwargs) -> None:
         if self._msg is not None:
             estimator.fabric.print(f"\nEarly Stopping {self._msg}\n")

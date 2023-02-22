@@ -1,7 +1,8 @@
 import inspect
 import os
+from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Union
 
 import torch
 from lightning.fabric import Fabric
@@ -15,12 +16,23 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
-from src.energizer.containers import EpochOutput, EvaluationOutput, FitEpochOutput, FitOutput
 from src.energizer.enums import OutputKeys, RunningStage
 from src.energizer.progress_trackers import ProgressTracker
 from src.energizer.registries import LOSS_FUNCTIONS_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
-from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, EVAL_BATCH_OUTPUT, FORWARD_OUTPUT, METRIC
-from src.energizer.utilities import get_hparams
+from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
+from src.energizer.utilities import move_to_cpu
+
+
+@dataclass
+class FitEpochOutput:
+    """Simple container for train and validation outputs for each epoch of fitting.
+
+    This deserves a separate container bacause during fit we obtain EpochOutput's
+    from both train and, possibly, validation.
+    """
+
+    train: EPOCH_OUTPUT = None
+    validation: EPOCH_OUTPUT = None
 
 
 class Estimator(HyperparametersMixin):
@@ -67,7 +79,7 @@ class Estimator(HyperparametersMixin):
         return self._progress_tracker
 
     """
-    Fit loop
+    Main methods
     """
 
     def fit(
@@ -84,14 +96,10 @@ class Estimator(HyperparametersMixin):
         scheduler: Optional[str] = None,
         scheduler_kwargs: Optional[Dict] = None,
         **kwargs,
-    ) -> FitOutput:
+    ) -> List[FitEpochOutput]:
         """Runs full training and validation.
         Kwargs: log_interval: int, limit_train_batches: int, limit_validation_batches: int
         """
-        # get passed hyper-parameters
-        hparams = get_hparams()
-        outputs = FitOutput(hparams=hparams)
-        self._hparams.update(outputs.hparams)  # add fit hparams to global hparams
 
         # configure progress tracking
         self.progress_tracker.initialize_fit_progress(num_epochs, min_steps, train_loader, validation_loader, **kwargs)
@@ -110,10 +118,12 @@ class Estimator(HyperparametersMixin):
         # setup model and optimizer with fabric
         model, optimizer = self.fabric.setup(self.model, optimizer)
 
-        self.fabric.call("on_fit_start", estimator=self, model=model, output=outputs)
+        # call hook
+        self.fabric.call("on_fit_start", estimator=self, model=model)
 
+        output = []
         while not self.progress_tracker.is_fit_done():
-            output = self.fit_epoch_loop(
+            out = self.fit_epoch_loop(
                 model=model,
                 train_loader=train_loader,
                 validation_loader=validation_loader,
@@ -122,14 +132,69 @@ class Estimator(HyperparametersMixin):
                 scheduler=scheduler,
             )
 
-            outputs.append(output)
+            output.append(out)
 
             # update progress
             self.progress_tracker.increment_fit_progress()
 
-        self.fabric.call("on_fit_end", estimator=self, model=model, output=outputs)
+        # call hook
+        self.fabric.call("on_fit_end", estimator=self, model=model, output=output)
 
-        return outputs
+        return output
+
+    def validate(
+        self,
+        validation_loader: DataLoader,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
+        loss_fn_kwargs: Optional[Dict] = None,
+        **kwargs,
+    ) -> EPOCH_OUTPUT:
+        """Runs validation.
+
+        Kwargs that can be passed:, log_interval: int, limit_batches: int, progress_bar: bool
+        """
+        return self._evaluate(validation_loader, loss_fn, loss_fn_kwargs, RunningStage.VALIDATION, **kwargs)
+
+    def test(
+        self,
+        test_loader: DataLoader,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
+        loss_fn_kwargs: Optional[Dict] = None,
+        **kwargs,
+    ) -> EPOCH_OUTPUT:
+        """Runs testing.
+
+        Kwargs that can be passed:, log_interval: int, limit_batches: int, progress_bar: bool
+        """
+        return self._evaluate(test_loader, loss_fn, loss_fn_kwargs, RunningStage.TEST, **kwargs)
+
+    def _evaluate(
+        self,
+        loader: DataLoader,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
+        loss_fn_kwargs: Optional[Dict],
+        stage: RunningStage,
+        **kwargs,
+    ) -> EPOCH_OUTPUT:
+        """This method is useful because validation can run in fit when model is already setup."""
+
+        # progress tracking
+        self.progress_tracker.initialize_evaluation_progress(stage, loader, **kwargs)
+
+        # configure dataloader
+        loader = self.configure_dataloader(loader)
+
+        # define loss function
+        loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.VALIDATION)
+
+        # configure model
+        model = self.fabric.setup(self.model)
+
+        return self.eval_epoch_loop(loss_fn, model, loader, stage)
+
+    """
+    Loops
+    """
 
     def fit_epoch_loop(
         self,
@@ -140,8 +205,7 @@ class Estimator(HyperparametersMixin):
         optimizer: _FabricOptimizer,
         scheduler: Optional[str],
     ) -> FitEpochOutput:
-        train_out = EpochOutput()
-        validation_out = EpochOutput()
+        """Runs a training epoch."""
 
         # configure progress tracking
         self.progress_tracker.initialize_epoch_progress(RunningStage.TRAIN)
@@ -152,25 +216,32 @@ class Estimator(HyperparametersMixin):
         # train mode
         model.train()
 
-        self.fabric.call("on_train_epoch_start", estimator=self, model=model, output=train_out)
+        # call hook
+        self.fabric.call("on_train_epoch_start", estimator=self, model=model)
 
+        train_out, validation_out = [], []
         for batch_idx, batch in enumerate(train_loader):
-            if self.progress_tracker.is_epoch_done(RunningStage.TRAIN):
+            # check stopping condition
+            if self.progress_tracker.is_epoch_done():
                 break
 
-            # validation
+            # validation loop
             if self.progress_tracker.should_validate():
                 out = self.eval_epoch_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION)
-                validation_out.append(out)
+                if out is not None:
+                    validation_out.append(out)
+                model.train()  # NOTE: put model in train mode again
 
             # put batch on correct device
             batch = self.transfer_to_device(batch)
 
+            # call hook
             self.fabric.call("on_train_batch_start", estimator=self, model=model, batch=batch, batch_idx=batch_idx)
 
             # run model on batch
             batch_out = self.train_batch_loop(loss_fn, model, batch, batch_idx, optimizer, scheduler, metrics)
 
+            # call hook
             self.fabric.call(
                 "on_train_batch_end",
                 estimator=self,
@@ -180,14 +251,16 @@ class Estimator(HyperparametersMixin):
                 batch_idx=batch_idx,
             )
 
-            batch_out = self.train_step_end(batch_out, batch, batch_idx)
-
             # record output
-            train_out.append(batch_out)
+            train_out.append(move_to_cpu(batch_out))
 
             # update progress tracker
-            self.progress_tracker.increment_epoch_progress(RunningStage.TRAIN)
+            self.progress_tracker.increment_epoch_progress()
 
+        # method to possibly aggregate
+        train_out = self.train_epoch_end(train_out, metrics)
+
+        # call hook
         self.fabric.call(
             "on_train_epoch_end",
             estimator=self,
@@ -196,13 +269,12 @@ class Estimator(HyperparametersMixin):
             metrics=metrics,
         )
 
-        # method to possibly aggregate
-        train_out = self.train_epoch_end(train_out, metrics)
-
-        # validation
+        # validation loop
         if self.progress_tracker.should_validate():
             out = self.eval_epoch_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION)
-            validation_out.append(out)
+            if out is not None:
+                validation_out.append(out)
+            model.train()  # NOTE: put model in train mode again
 
         return FitEpochOutput(train=train_out, validation=validation_out)
 
@@ -240,67 +312,6 @@ class Estimator(HyperparametersMixin):
 
         return output
 
-    """
-    Evaluation loops
-    """
-
-    def validate(
-        self,
-        validation_loader: DataLoader,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
-        **kwargs,
-    ) -> EvaluationOutput:
-        """Runs validation.
-
-        Kwargs that can be passed:, log_interval: int, limit_batches: int, progress_bar: bool
-        """
-        hparams = get_hparams()
-        output = self._evaluate(validation_loader, loss_fn, loss_fn_kwargs, RunningStage.VALIDATION, **kwargs)
-        output = EvaluationOutput(hparams=hparams, output=output)
-        self._hparams.update(output.hparams)
-
-    def test(
-        self,
-        test_loader: DataLoader,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
-        **kwargs,
-    ) -> EvaluationOutput:
-        """Runs testing.
-
-        Kwargs that can be passed:, log_interval: int, limit_batches: int, progress_bar: bool
-        """
-        hparams = get_hparams()
-        output = self._evaluate(test_loader, loss_fn, loss_fn_kwargs, RunningStage.TEST, **kwargs)
-        output = EvaluationOutput(hparams=hparams, output=output)
-        self._hparams.update(output.hparams)
-        return output
-
-    def _evaluate(
-        self,
-        loader: DataLoader,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
-        loss_fn_kwargs: Optional[Dict],
-        stage: RunningStage,
-        **kwargs,
-    ) -> EPOCH_OUTPUT:
-        """This method is useful because validation can run in fit when model is already setup."""
-
-        # progress tracking
-        self.progress_tracker.initialize_evaluation_progress(stage, loader, **kwargs)
-
-        # configure dataloader
-        loader = self.configure_dataloader(loader)
-
-        # define loss function
-        loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.VALIDATION)
-
-        # configure model
-        model = self.fabric.setup(self.model)
-
-        return self.eval_epoch_loop(loss_fn, model, loader, stage)
-
     def eval_epoch_loop(
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
@@ -309,8 +320,6 @@ class Estimator(HyperparametersMixin):
         stage: RunningStage,
     ) -> EPOCH_OUTPUT:
         """Runs over an entire evaluation dataloader."""
-
-        output = EpochOutput()
 
         # configure progress tracking
         self.progress_tracker.initialize_epoch_progress(stage)
@@ -321,22 +330,28 @@ class Estimator(HyperparametersMixin):
         # eval mode
         model.eval()
 
-        self.fabric.call(f"on_{stage}_epoch_start", estimator=self, model=model, output=output)
+        # call hook
+        self.fabric.call(f"on_{stage}_epoch_start", estimator=self, model=model)
 
+        output = []
         with torch.inference_mode():
             for batch_idx, batch in enumerate(loader):
-                if self.progress_tracker.is_epoch_done(stage):
+                # check stopping condition
+                if self.progress_tracker.is_epoch_done():
                     break
 
+                # put batch on correct device
                 batch = self.transfer_to_device(batch)
 
+                # call hook
                 self.fabric.call(
                     f"on_{stage}_batch_start", estimator=self, model=model, batch=batch, batch_idx=batch_idx
                 )
 
-                # run on batch
+                # run model on batch
                 batch_out = self.eval_batch_loop(loss_fn, model, batch, batch_idx, metrics, stage)
 
+                # call hook
                 self.fabric.call(
                     f"on_{stage}_batch_end",
                     estimator=self,
@@ -346,18 +361,18 @@ class Estimator(HyperparametersMixin):
                     batch_idx=batch_idx,
                 )
 
-                batch_out = getattr(self, f"{stage}_step_end")(batch_out, batch, batch_idx)
-
                 # record output
-                output.append(batch_out)
+                if batch_out is not None:
+                    output.append(move_to_cpu(batch_out))
 
                 # update progress tracker
-                self.progress_tracker.increment_epoch_progress(stage)
-
-        self.fabric.call(f"on_{stage}_epoch_end", estimator=self, model=model, output=output, metrics=metrics)
+                self.progress_tracker.increment_epoch_progress()
 
         # method to possibly aggregate
         output = getattr(self, f"{stage}_epoch_end")(output, metrics)
+
+        # call hook
+        self.fabric.call(f"on_{stage}_epoch_end", estimator=self, model=model, output=output, metrics=metrics)
 
         return output
 
@@ -369,7 +384,8 @@ class Estimator(HyperparametersMixin):
         batch_idx: int,
         metrics: Optional[METRIC],
         stage: RunningStage,
-    ) -> EVAL_BATCH_OUTPUT:
+    ) -> Optional[BATCH_OUTPUT]:
+        """Runs over a single batch of data."""
         # this might seems redundant but it's useful for active learning to hook in
         return getattr(self, f"{stage}_step")(loss_fn, model, batch, batch_idx, metrics)
 
@@ -482,7 +498,7 @@ class Estimator(HyperparametersMixin):
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[METRIC]:
         pass
 
-    def forward_pass(self, model: _FabricModule, batch: Any) -> FORWARD_OUTPUT:
+    def forward_pass(self, model: _FabricModule, batch: Any) -> Any:
         return model(batch)
 
     def compute_loss(
@@ -511,8 +527,8 @@ class Estimator(HyperparametersMixin):
         batch: Any,
         batch_idx: int,
         metrics: Optional[METRIC] = None,
-    ) -> EVAL_BATCH_OUTPUT:
-        pass
+    ) -> Optional[BATCH_OUTPUT]:
+        return self.compute_loss(loss_fn, model, batch)
 
     def test_step(
         self,
@@ -521,26 +537,27 @@ class Estimator(HyperparametersMixin):
         batch: Any,
         batch_idx: int,
         metrics: Optional[METRIC] = None,
-    ) -> EVAL_BATCH_OUTPUT:
-        pass
+    ) -> Optional[BATCH_OUTPUT]:
+        return self.compute_loss(loss_fn, model, batch)
 
-    def train_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> BATCH_OUTPUT:
+    def train_epoch_end(self, output: List[BATCH_OUTPUT], metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
         return output
 
-    def validation_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> BATCH_OUTPUT:
+    def validation_epoch_end(self, output: List, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
         return output
 
-    def test_step_end(self, output: BATCH_OUTPUT, batch: Any, batch_idx: int) -> BATCH_OUTPUT:
+    def test_epoch_end(self, output: List, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
         return output
 
-    def train_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
-        return output
+    def log(self, name: str, value: Any, step: int) -> None:
+        """Automatically moves to cpu and then logs value."""
+        if self.progress_tracker.should_log():
+            self.fabric.log(name, move_to_cpu(value), step)
 
-    def validation_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
-        return output
-
-    def test_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
-        return output
+    def log_dict(self, value_dict: Mapping[str, Any], step: int) -> None:
+        """Automatically moves to cpu and then logs mapping of values."""
+        if self.progress_tracker.should_log():
+            self.fabric.log_dict(value_dict, step)
 
     """
     Utilities

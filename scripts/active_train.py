@@ -11,6 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from src.datamodule import ClassificationActiveDataModule, ClassificationDataModule
+from src.energizer.enums import OutputKeys
 from src.energizer.logging import set_ignore_warnings
 from src.energizer.utilities import ld_to_dl
 from src.estimators import EstimatorForSequenceClassification
@@ -88,9 +89,9 @@ def main(cfg: DictConfig) -> None:
     datamodule_cls = ClassificationActiveDataModule if should_run_active_learning else ClassificationDataModule
     datamodule = datamodule_cls.from_dataset_dict(dataset_dict, tokenizer=tokenizer, **OmegaConf.to_container(cfg.data))
     if should_run_active_learning and cfg.initial_budget is not None:
-        log.info(f"Initial budget set: labelling {cfg.initial_budget} samples in a stratified way.")
         initial_ids = datamodule.get_stratified_sample(cfg.initial_budget)
         datamodule.label(initial_ids, round_idx=-1)
+        log.info(f"Initial budget set: labelling {cfg.initial_budget} samples in a stratified way.")
 
     if should_load_class_weights:
         cfg.fit.loss_fn_kwargs = {"weight": datamodule.class_weights}
@@ -124,19 +125,18 @@ def main(cfg: DictConfig) -> None:
         )
         log.info(f"\n{summarize(estimator)}")
 
-        # NOTE: in our src.huggingface.estimators.ActiveEstimatorForSequenceClassification we overwritten
-        # the round_end method and we return only the test metrics, so fit_out.output
-        # is a List[Dict]
-        fit_out = estimator.active_fit(
-            active_datamodule=datamodule, **OmegaConf.to_container(cfg.active_fit), **OmegaConf.to_container(cfg.fit)
-        )
-        metrics_hparams = ld_to_dl([out.output for out in fit_out.output])
-        metrics_hparams = {f"active_learning_end/test_{k}_auc": np.trapz(v) for k, v in metrics_hparams.items()}
+        # NOTE: `active_fit_end` is overridden to return only test metrics
         hparams = {
+            **OmegaConf.to_container(cfg.fit) ** OmegaConf.to_container(cfg.active_fit),
+            **OmegaConf.to_container(cfg.test),
+        }
+        metrics_hparams = estimator.active_fit(active_datamodule=datamodule, **hparams)
+        hparams = {
+            **hparams,
             **datamodule.hparams,
             **estimator.hparams,
-            **fit_out.hparams,
             "initial_budget": cfg.initial_budget or 0,
+            "limit_batches": cfg.limit_batches,
         }
         log.info(f"Labelled dataset size: {datamodule.train_size}")
 

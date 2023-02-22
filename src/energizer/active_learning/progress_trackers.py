@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from src.energizer.containers import RunningStage
+from src.energizer.enums import RunningStage
 from src.energizer.progress_trackers import EpochTracker, FitTracker, ProgressTracker, StageTracker, Tracker
 
 
@@ -44,12 +44,15 @@ class ActiveProgressTracker(ProgressTracker):
     def num_rounds(self) -> int:
         return self.round_tracker.total
 
+    def get_epoch_num(self) -> int:
+        return self.num_rounds if self.current_stage == RunningStage.TEST else self.fit_tracker.epoch_tracker.total
+
     def is_fit_done(self) -> bool:
         return self.fit_tracker.epoch_tracker.max_reached() or self.fit_tracker.stop_training
 
-    def is_epoch_done(self, stage: RunningStage) -> bool:
-        cond = self._get_active_tracker(stage).max_reached()
-        if stage == RunningStage.TRAIN and self.is_training:
+    def is_epoch_done(self) -> bool:
+        cond = self._get_active_tracker().max_reached()
+        if self.current_stage == RunningStage.TRAIN and self.is_training:
             cond = cond or self.fit_tracker.stop_training
         return cond
 
@@ -61,9 +64,6 @@ class ActiveProgressTracker(ProgressTracker):
             self.test_tracker.close_progress_bar()
             self.pool_tracker.close_progress_bar()
         return cond
-
-    def get_epoch_num(self, stage: RunningStage) -> int:
-        return self.num_rounds if stage == RunningStage.TEST else self.fit_tracker.epoch_tracker.total
 
     """
     Initializers
