@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from lightning.fabric.wrappers import _FabricModule
 
-from src.energizer.enums import Interval, RunningStage
+from src.energizer.enums import Interval, RunningStage, OutputKeys
 from src.energizer.estimator import Estimator, FitEpochOutput
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
 from src.energizer.utilities import move_to_cpu
@@ -98,7 +98,7 @@ class Timer(Callback):
     def batch_start(self, stage: RunningStage) -> None:
         setattr(self, f"{stage}_batch_start_time", time.perf_counter())
 
-    def batch_end(self, estimator: Estimator, stage: RunningStage, batch_idx: int) -> None:
+    def batch_end(self, estimator: Estimator, stage: RunningStage) -> None:
         setattr(self, f"{stage}_batch_end_time", time.perf_counter())
         runtime = getattr(self, f"{stage}_batch_end_time") - getattr(self, f"{stage}_batch_start_time")
         estimator.log(f"timer/{stage}_batch_time", runtime, step=estimator.progress_tracker.get_batch_num())
@@ -154,13 +154,13 @@ class Timer(Callback):
     """
 
     def on_train_batch_end(self, estimator: Estimator, batch_idx: int, *args, **kwargs) -> None:
-        self.batch_end(estimator, RunningStage.TRAIN, batch_idx)
+        self.batch_end(estimator, RunningStage.TRAIN)
 
     def on_validation_batch_end(self, estimator: Estimator, batch_idx: int, *args, **kwargs) -> None:
-        self.batch_end(estimator, RunningStage.VALIDATION, batch_idx)
+        self.batch_end(estimator, RunningStage.VALIDATION)
 
     def on_test_batch_end(self, estimator: Estimator, batch_idx: int, *args, **kwargs) -> None:
-        self.batch_end(estimator, RunningStage.TEST, batch_idx)
+        self.batch_end(estimator, RunningStage.TEST)
 
 
 class PytorchTensorboardProfiler(Callback):
@@ -204,6 +204,7 @@ class EarlyStopping(Callback):
         patience=3,
         stopping_threshold: Optional[float] = None,
         divergence_threshold: Optional[float] = None,
+        verbose: bool = True,
     ) -> None:
         super().__init__()
         self.monitor = monitor
@@ -214,6 +215,7 @@ class EarlyStopping(Callback):
         self.patience = patience
         self.stopping_threshold = stopping_threshold
         self.divergence_threshold = divergence_threshold
+        self.verbose = verbose
 
         self.wait_count = 0
         self.min_delta *= 1 if self.monitor_op == np.greater else -1
@@ -224,7 +226,12 @@ class EarlyStopping(Callback):
         return self.mode_dict[self.mode]
 
     def check_stopping_criteria(self, output: BATCH_OUTPUT):
-        current = move_to_cpu(output[self.monitor])
+        if self.monitor not in output:
+            current = output[OutputKeys.METRICS][self.monitor]
+        else:
+            current = output[self.monitor]
+        
+        current = move_to_cpu(current)
 
         should_stop = False
         reason = None
@@ -262,7 +269,7 @@ class EarlyStopping(Callback):
 
         return should_stop, reason
 
-    def check(self, estimator: Estimator, output: BATCH_OUTPUT, stage: RunningStage, interval: Interval) -> None:
+    def check(self, estimator: Estimator, output: Union[BATCH_OUTPUT, EPOCH_OUTPUT], stage: RunningStage, interval: Interval) -> None:
         if (self.stage == stage and self.interval == interval) and estimator.progress_tracker.is_training:
             should_stop, reason = self.check_stopping_criteria(output)
             if should_stop:
@@ -290,5 +297,5 @@ class EarlyStopping(Callback):
         self.check(estimator, output, RunningStage.VALIDATION, Interval.EPOCH)
 
     def on_fit_end(self, estimator: Estimator, *args, **kwargs) -> None:
-        if self._msg is not None:
+        if self._msg is not None and self.verbose:
             estimator.fabric.print(f"\nEarly Stopping {self._msg}\n")
