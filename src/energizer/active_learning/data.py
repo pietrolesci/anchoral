@@ -79,8 +79,8 @@ class ActiveDataModule(DataModule):
             "total_data_size": self.total_data_size,
             "train_size": self.train_size,
             "pool_size": self.pool_size,
-            "num_train_batches": len(self.train_dataloader()),
-            "num_pool_batches": len(self.pool_dataloader()),
+            "num_train_batches": len(self.train_loader()),
+            "num_pool_batches": len(self.pool_loader()),
         }
 
     """
@@ -198,7 +198,16 @@ class ActiveDataModule(DataModule):
         if subset_indices is not None:
             pool_df = pool_df.loc[pool_df[SpecialKeys.ID].isin(subset_indices)]
 
-        pool_dataset = Dataset.from_pandas(pool_df, preserve_index=False)
+        # for performance reasons
+        pool_dataset = Dataset.from_pandas(
+            df=(
+                pool_df
+                .assign(length=lambda df_: df_[InputKeys.INPUT_IDS].map(len))
+                .sort_values("length")
+                .drop(columns=["length"])
+            ),
+            preserve_index=False,
+        )
 
         return DataLoader(
             pool_dataset,
