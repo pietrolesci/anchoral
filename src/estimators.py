@@ -99,6 +99,7 @@ class SequenceClassificationMixin:
             OutputKeys.LOSS: loss,
             OutputKeys.LOGITS: out.logits,
             SpecialKeys.ID: unique_ids,
+            OutputKeys.METRICS: out_metrics,
         }
 
     def epoch_end(self, output: Dict, metrics: MetricCollection, stage: RunningStage) -> Dict:

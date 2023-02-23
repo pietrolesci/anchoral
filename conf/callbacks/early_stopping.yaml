@@ -1,11 +1,12 @@
 early_stopping:
   _target_: src.energizer.callbacks.EarlyStopping
-  monitor: loss
-  stage: train
-  interval: batch
-  mode: min
-  min_delta: 1
+  monitor: f1_macro
+  stage: validation
+  interval: epoch
+  mode: max
+  min_delta: 0.0001
   patience: 3
   stopping_threshold: null
-  divergence_threshold: null
+  divergence_threshold: 0.98
+  verbose: false
 
