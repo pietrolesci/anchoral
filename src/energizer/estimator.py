@@ -21,6 +21,7 @@ from src.energizer.progress_trackers import ProgressTracker
 from src.energizer.registries import LOSS_FUNCTIONS_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
 from src.energizer.utilities import move_to_cpu
+from src.energizer.utilities.model_summary import summarize
 
 
 @dataclass
@@ -77,6 +78,10 @@ class Estimator(HyperparametersMixin):
         if self._progress_tracker is None:
             self._progress_tracker = ProgressTracker()
         return self._progress_tracker
+    
+    @property
+    def model_summary(self) -> str:
+        return summarize(self)
 
     """
     Main methods
@@ -231,6 +236,7 @@ class Estimator(HyperparametersMixin):
                 if out is not None:
                     validation_out.append(out)
                 model.train()  # NOTE: put model in train mode again
+                self.progress_tracker.continue_epoch_progress(RunningStage.TRAIN)  # continue training tracking
 
             # put batch on correct device
             batch = self.transfer_to_device(batch)
@@ -275,6 +281,7 @@ class Estimator(HyperparametersMixin):
             if out is not None:
                 validation_out.append(out)
             model.train()  # NOTE: put model in train mode again
+            self.progress_tracker.continue_epoch_progress(RunningStage.TRAIN)  # continue training tracking
 
         return FitEpochOutput(train=train_out, validation=validation_out)
 
