@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from lightning.fabric.wrappers import _FabricModule
 
-from src.energizer.enums import Interval, RunningStage, OutputKeys
+from src.energizer.enums import Interval, OutputKeys, RunningStage
 from src.energizer.estimator import Estimator, FitEpochOutput
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
 from src.energizer.utilities import move_to_cpu
@@ -230,7 +230,7 @@ class EarlyStopping(Callback):
             current = output[OutputKeys.METRICS][self.monitor]
         else:
             current = output[self.monitor]
-        
+
         current = move_to_cpu(current)
 
         should_stop = False
@@ -269,7 +269,9 @@ class EarlyStopping(Callback):
 
         return should_stop, reason
 
-    def check(self, estimator: Estimator, output: Union[BATCH_OUTPUT, EPOCH_OUTPUT], stage: RunningStage, interval: Interval) -> None:
+    def check(
+        self, estimator: Estimator, output: Union[BATCH_OUTPUT, EPOCH_OUTPUT], stage: RunningStage, interval: Interval
+    ) -> None:
         if (self.stage == stage and self.interval == interval) and estimator.progress_tracker.is_training:
             should_stop, reason = self.check_stopping_criteria(output)
             if should_stop:

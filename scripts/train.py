@@ -22,11 +22,10 @@ sep_line = f"{'=' * 70}"
 
 @hydra.main(version_base=None, config_path="../conf", config_name="conf")
 def main(cfg: DictConfig) -> None:
-
     ###############################################################
     # ============ STEP 1: config and initialization ============ #
     ###############################################################
-    
+
     # resolve interpolation
     OmegaConf.resolve(cfg)
 
@@ -117,7 +116,7 @@ def main(cfg: DictConfig) -> None:
     ##################################################
     # ============ STEP 4: save outputs ============ #
     ##################################################
-    
+
     hparams = {
         **OmegaConf.to_container(cfg.fit),
         **OmegaConf.to_container(cfg.test),

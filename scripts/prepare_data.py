@@ -2,10 +2,8 @@ import argparse
 from pathlib import Path
 
 import srsly
-from datasets import load_from_disk, Dataset, DatasetDict
+from datasets import Dataset, DatasetDict, load_from_disk
 from transformers import AutoTokenizer
-
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -26,7 +24,7 @@ if __name__ == "__main__":
 
     # tokenize
     dataset_dict = dataset_dict.map(lambda ex: tokenizer(ex["text"]), batched=True)
-    
+
     # sort by length
     new_dataset_dict = {}
     for split, dataset in dataset_dict.items():
@@ -50,5 +48,3 @@ if __name__ == "__main__":
     output_dir = Path(args.output_dir) / f"{args.dataset_name}_{args.name_or_path_alias}"
     dataset_dict.save_to_disk(output_dir)
     srsly.write_yaml(output_dir / "metadata.yaml", meta)
-
-

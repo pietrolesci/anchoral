@@ -78,7 +78,7 @@ class Estimator(HyperparametersMixin):
         if self._progress_tracker is None:
             self._progress_tracker = ProgressTracker()
         return self._progress_tracker
-    
+
     @property
     def model_summary(self) -> str:
         return summarize(self)

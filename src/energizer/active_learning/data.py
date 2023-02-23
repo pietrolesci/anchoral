@@ -126,7 +126,7 @@ class ActiveDataModule(DataModule):
 
     def get_pool_embeddings(self) -> np.ndarray:
         return self.index.get_items(self.pool_indices)
-    
+
     def save_labelled_dataset(self, save_dir: str) -> None:
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -171,7 +171,6 @@ class ActiveDataModule(DataModule):
         indices = self._rng.choice(pool_df[SpecialKeys.ID], size=budget, replace=False).tolist()
         self.label(indices, round_idx=-1, val_perc=val_perc)
 
-
     """
     DataLoaders
     """
@@ -189,7 +188,7 @@ class ActiveDataModule(DataModule):
                 collate_fn=self.get_collate_fn(RunningStage.TRAIN),
             )
 
-    def validation_loader(self) -> Optional[DataLoader]:                
+    def validation_loader(self) -> Optional[DataLoader]:
         if self.should_val_split and self._df[SpecialKeys.IS_VALIDATION].sum() > 0:
             val_df = self._df.loc[
                 (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == True)
@@ -217,8 +216,7 @@ class ActiveDataModule(DataModule):
         # for performance reasons
         pool_dataset = Dataset.from_pandas(
             df=(
-                pool_df
-                .assign(length=lambda df_: df_[InputKeys.INPUT_IDS].map(len))
+                pool_df.assign(length=lambda df_: df_[InputKeys.INPUT_IDS].map(len))
                 .sort_values("length")
                 .drop(columns=["length"])
             ),
@@ -230,4 +228,3 @@ class ActiveDataModule(DataModule):
             sampler=self.get_sampler(pool_dataset, RunningStage.POOL),
             collate_fn=self.get_collate_fn(RunningStage.POOL),
         )
-

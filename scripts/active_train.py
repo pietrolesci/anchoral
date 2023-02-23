@@ -19,7 +19,6 @@ sep_line = f"{'=' * 70}"
 
 @hydra.main(version_base=None, config_path="../conf", config_name="conf")
 def main(cfg: DictConfig) -> None:
-    
     ###############################################################
     # ============ STEP 1: config and initialization ============ #
     ###############################################################
@@ -64,8 +63,10 @@ def main(cfg: DictConfig) -> None:
     tokenizer = AutoTokenizer.from_pretrained(cfg.model.name_or_path)
 
     # define datamodule
-    datamodule = ClassificationActiveDataModule.from_dataset_dict(dataset_dict, tokenizer=tokenizer, **OmegaConf.to_container(cfg.data))
-    
+    datamodule = ClassificationActiveDataModule.from_dataset_dict(
+        dataset_dict, tokenizer=tokenizer, **OmegaConf.to_container(cfg.data)
+    )
+
     # define initial budget
     datamodule.set_initial_budget(**OmegaConf.to_container(cfg.active_data))
     log.info(
@@ -73,7 +74,7 @@ def main(cfg: DictConfig) -> None:
         f"in a {cfg.active_data.sampling} way. Keeping {cfg.active_data.val_perc} as validation."
         f"\nData statistics:\n{datamodule.data_statistics}"
     )
-    
+
     # toggle class weights in loss function
     if should_load_class_weights:
         cfg.fit.loss_fn_kwargs = {"weight": datamodule.class_weights}

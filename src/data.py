@@ -76,7 +76,6 @@ class ClassificationDataModule(DataModule):
     def label2id(self) -> Dict[str, int]:
         return {v: k for k, v in self.id2label.items()}
 
-    
     """
     Initializers
     """
@@ -114,7 +113,7 @@ class ClassificationDataModule(DataModule):
         datamodule.columns_to_keep = list(set(columns_on_cpu))
 
         return datamodule
-    
+
     """
     Dataloading
     """
@@ -168,12 +167,10 @@ def collate_fn(
 
 
 class ClassificationActiveDataModule(ActiveDataModule, ClassificationDataModule):
-
     def set_initial_budget(self, budget: int, sampling: str, val_perc: float) -> None:
-
         if sampling == "random":
             super().set_initial_budget(budget, sampling, val_perc)
-        
+
         elif sampling == "stratified":
             pool_df = self._df.loc[(self._df[SpecialKeys.IS_LABELLED] == False), [SpecialKeys.ID, InputKeys.TARGET]]
             indices = resample(
@@ -184,6 +181,6 @@ class ClassificationActiveDataModule(ActiveDataModule, ClassificationDataModule)
                 random_state=self.seed,
             ).tolist()
             self.label(indices, round_idx=-1, val_perc=val_perc)
-        
+
         else:
             raise ValueError("Only `random` and `stratified` are supported by default.")
