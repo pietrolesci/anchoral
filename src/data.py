@@ -11,7 +11,7 @@ from torch import Tensor
 from transformers import PreTrainedTokenizerBase
 
 from src.energizer.active_learning.data import ActiveDataModule
-from src.energizer.datamodule import DataModule, _pad
+from src.energizer.data import DataModule, _pad
 from src.energizer.enums import InputKeys, RunningStage, SpecialKeys
 
 """
@@ -30,6 +30,10 @@ class ClassificationDataModule(DataModule):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
         self.max_source_length = max_source_length
         self._tokenizer = tokenizer
+
+    """
+    Classification-specific properties
+    """
 
     @property
     def hparams(self) -> Union[AttributeDict, MutableMapping]:
@@ -72,14 +76,10 @@ class ClassificationDataModule(DataModule):
     def label2id(self) -> Dict[str, int]:
         return {v: k for k, v in self.id2label.items()}
 
-    def get_collate_fn(self, stage: Optional[str] = None) -> Optional[Callable]:
-        return partial(
-            collate_fn,
-            columns_on_cpu=self.columns_on_cpu,
-            max_source_length=self.max_source_length,
-            pad_token_id=self.tokenizer.pad_token_id,
-            pad_fn=_pad,
-        )
+    
+    """
+    Initializers
+    """
 
     @classmethod
     def from_dataset_dict(
@@ -114,6 +114,19 @@ class ClassificationDataModule(DataModule):
         datamodule.columns_to_keep = list(set(columns_on_cpu))
 
         return datamodule
+    
+    """
+    Dataloading
+    """
+
+    def get_collate_fn(self, stage: Optional[str] = None) -> Optional[Callable]:
+        return partial(
+            collate_fn,
+            columns_on_cpu=self.columns_on_cpu,
+            max_source_length=self.max_source_length,
+            pad_token_id=self.tokenizer.pad_token_id,
+            pad_fn=_pad,
+        )
 
 
 def collate_fn(
@@ -155,13 +168,22 @@ def collate_fn(
 
 
 class ClassificationActiveDataModule(ActiveDataModule, ClassificationDataModule):
-    def get_stratified_sample(self, n_samples: int) -> List[int]:
-        pool_df = self._df.loc[(self._df[SpecialKeys.IS_LABELLED] == False), [SpecialKeys.ID, InputKeys.TARGET]]
 
-        return resample(
-            pool_df[SpecialKeys.ID].values,
-            replace=False,
-            stratify=pool_df[InputKeys.TARGET].values,
-            n_samples=n_samples,
-            random_state=self.seed,
-        ).tolist()
+    def set_initial_budget(self, budget: int, sampling: str, val_perc: float) -> None:
+
+        if sampling == "random":
+            super().set_initial_budget(budget, sampling, val_perc)
+        
+        elif sampling == "stratified":
+            pool_df = self._df.loc[(self._df[SpecialKeys.IS_LABELLED] == False), [SpecialKeys.ID, InputKeys.TARGET]]
+            indices = resample(
+                pool_df[SpecialKeys.ID].values,
+                replace=False,
+                stratify=pool_df[InputKeys.TARGET].values,
+                n_samples=budget,
+                random_state=self.seed,
+            ).tolist()
+            self.label(indices, round_idx=-1, val_perc=val_perc)
+        
+        else:
+            raise ValueError("Only `random` and `stratified` are supported by default.")

@@ -19,6 +19,8 @@ from torch.utils.data import BatchSampler, DataLoader, RandomSampler, Sequential
 
 from src.energizer.enums import RunningStage
 from src.energizer.types import DATASET
+from numpy.random import RandomState
+from sklearn.utils.validation import check_random_state
 
 
 class DataModule(HyperparametersMixin):
@@ -26,6 +28,7 @@ class DataModule(HyperparametersMixin):
 
     _hparams_ignore: List[str] = ["train_dataset", "validation_dataset", "test_dataset"]
     _index: hb.Index = None
+    _rng: RandomState
 
     def __init__(
         self,
@@ -56,6 +59,8 @@ class DataModule(HyperparametersMixin):
         self.shuffle = shuffle
         self.seed = seed
         self.replacement = replacement
+
+        self._rng = check_random_state(self.seed)
 
         self.save_hyperparameters(ignore=self._hparams_ignore)
         self.setup()
