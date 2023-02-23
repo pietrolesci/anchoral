@@ -161,6 +161,8 @@ class ProgressTracker:
     def get_epoch_num(self) -> int:
         if self.current_stage == RunningStage.TEST:
             return 0
+        elif self.current_stage == RunningStage.VALIDATION and self.is_training:
+            return self.get_batch_num()
         return self.fit_tracker.epoch_tracker.total
 
     def should_log(self) -> None:
@@ -230,7 +232,12 @@ class ProgressTracker:
     def initialize_epoch_progress(self, stage: RunningStage) -> None:
         """Resets the `current` counters in the tracker and optionally their progress bars."""
         self.current_stage = stage
+        # if not (stage == RunningStage.VALIDATION and self.is_training):
         self._get_active_tracker().reset()
+
+    def continue_epoch_progress(self, stage: RunningStage) -> None:
+        """Resets the `current` counters in the tracker and optionally their progress bars."""
+        self.current_stage = stage
 
     """
     Helpers
