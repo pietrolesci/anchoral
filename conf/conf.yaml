@@ -47,7 +47,7 @@ model:
   name_or_path: null
 
 data:
-  batch_size: 128
+  batch_size: 64
   eval_batch_size: 256
   num_workers: 32
   pin_memory: true
@@ -58,12 +58,18 @@ data:
   replacement: false
   max_source_length: 512
 
+# this is incremental to `data` above
+active_data:
+  budget: null
+  sampling: stratified
+  val_perc: ${active_fit.val_perc}
+
 fit:
   num_epochs: 3
   min_steps: null
   loss_fn: null
   loss_fn_kwargs: null
-  learning_rate: 0.001
+  learning_rate: 0.0002
   optimizer: adamw
   optimizer_kwargs: null
   scheduler: constant_schedule
@@ -72,12 +78,12 @@ fit:
   progress_bar: ${progress_bar}
   limit_train_batches: ${limit_batches}
   limit_validation_batches: ${limit_batches}
-  validation_interval: null
+  validation_interval: 5
 
 # this is incremental to `fit` above
 active_fit:
   num_rounds: 50
-  query_size: 50
+  query_size: 25
   val_perc: 0.3
   reinit_model: true
   limit_pool_batches: ${limit_batches}
@@ -97,7 +103,6 @@ test:
 log_interval: 1
 progress_bar: true
 limit_batches: null
-initial_budget: null
 
 dataset_name: '???'
 seed: 42
