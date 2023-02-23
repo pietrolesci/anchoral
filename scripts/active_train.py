@@ -20,9 +20,9 @@ sep_line = f"{'=' * 70}"
 @hydra.main(version_base=None, config_path="../conf", config_name="conf")
 def main(cfg: DictConfig) -> None:
     
-    #############################################################
-    # ============ STEP 1: config and initialization ========== #
-    #############################################################
+    ###############################################################
+    # ============ STEP 1: config and initialization ============ #
+    ###############################################################
 
     # resolve interpolation
     assert cfg.strategy is not None, "You must specify a strategy"
@@ -54,9 +54,9 @@ def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
     log.info(f"Seed enabled: {cfg.seed}")
 
-    ################################################
-    # ============ STEP 2: data loading ========== #
-    ################################################
+    ##################################################
+    # ============ STEP 2: data loading ============ #
+    ##################################################
     # load data
     dataset_dict = load_from_disk(data_path, keep_in_memory=True)
 
@@ -79,9 +79,9 @@ def main(cfg: DictConfig) -> None:
         cfg.fit.loss_fn_kwargs = {"weight": datamodule.class_weights}
         log.info(f"Class weights set to: {cfg.fit.loss_fn_kwargs['weight']}")
 
-    #################################################
-    # ============ STEP 3: model loading ========== #
-    #################################################
+    ###################################################
+    # ============ STEP 3: model loading ============ #
+    ###################################################
     # load model using data properties
     model = AutoModelForSequenceClassification.from_pretrained(
         cfg.model.name_or_path,
@@ -90,17 +90,17 @@ def main(cfg: DictConfig) -> None:
         num_labels=len(datamodule.labels),
     )
 
-    ################################################################
-    # ============ STEP 4: define callbacks and loggers ========== #
-    ################################################################
+    ##################################################################
+    # ============ STEP 4: define callbacks and loggers ============ #
+    ##################################################################
     loggers = instantiate(cfg.loggers) or {}
     callbacks = instantiate(cfg.callbacks) or {}
     log.info(f"Loggers: {loggers}")
     log.info(f"Callbacks: {callbacks}")
 
-    ###################################################
-    # ============ STEP 5: active learning ========== #
-    ###################################################
+    #####################################################
+    # ============ STEP 5: active learning ============ #
+    #####################################################
 
     # active learning
     estimator = instantiate(
@@ -122,9 +122,9 @@ def main(cfg: DictConfig) -> None:
     fit_out = estimator.active_fit(active_datamodule=datamodule, **hparams)
     log.info(f"Labelled dataset size: {datamodule.train_size}")
 
-    ################################################
-    # ============ STEP 6: save outputs ========== #
-    ################################################
+    ##################################################
+    # ============ STEP 6: save outputs ============ #
+    ##################################################
 
     hparams = {
         **hparams,

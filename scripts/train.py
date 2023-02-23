@@ -9,7 +9,7 @@ from lightning.fabric.loggers import TensorBoardLogger
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from src.datamodule import ClassificationDataModule
+from src.data import ClassificationDataModule
 from src.energizer.enums import OutputKeys
 from src.energizer.logging import set_ignore_warnings
 from src.energizer.utilities.model_summary import summarize
@@ -22,7 +22,11 @@ sep_line = f"{'=' * 70}"
 
 @hydra.main(version_base=None, config_path="../conf", config_name="conf")
 def main(cfg: DictConfig) -> None:
-    # ============ STEP 1: config and initialization ============
+
+    ###############################################################
+    # ============ STEP 1: config and initialization ============ #
+    ###############################################################
+    
     # resolve interpolation
     OmegaConf.resolve(cfg)
 
@@ -33,10 +37,6 @@ def main(cfg: DictConfig) -> None:
     if cfg.model.name_or_path is None:
         cfg.model.name_or_path = metadata.name_or_path
 
-    log.info(f"\n{OmegaConf.to_yaml(cfg)}\n{sep_line}")
-    if cfg.limit_batches is not None:
-        log.critical("!!! DEBUGGING !!!")
-
     # toggle balanced loss
     should_load_class_weights = (
         cfg.fit.loss_fn is not None
@@ -45,10 +45,17 @@ def main(cfg: DictConfig) -> None:
         and not isinstance(cfg.fit.loss_fn_kwargs.get("weight"), list)
     )
 
+    log.info(f"\n{OmegaConf.to_yaml(cfg)}\n{sep_line}")
+    if cfg.limit_batches is not None:
+        log.critical("!!! DEBUGGING !!!")
+
     # seed everything
     seed_everything(cfg.seed)
+    log.info(f"Seed enabled: {cfg.seed}")
 
-    # ============ STEP 2: data loading ============
+    ##################################################
+    # ============ STEP 2: data loading ============ #
+    ##################################################
     # load data
     dataset_dict = load_from_disk(data_path, keep_in_memory=True)
 
@@ -59,11 +66,15 @@ def main(cfg: DictConfig) -> None:
     datamodule = ClassificationDataModule.from_dataset_dict(
         dataset_dict, tokenizer=tokenizer, **OmegaConf.to_container(cfg.data)
     )
+
+    # toggle class weights in loss function
     if should_load_class_weights:
         cfg.fit.loss_fn_kwargs = {"weight": datamodule.class_weights}
         log.info(f"Class weights set to: {cfg.fit.loss_fn_kwargs['weight']}")
 
-    # ============ STEP 3: model loading ============
+    ###################################################
+    # ============ STEP 3: model loading ============ #
+    ###################################################
     # load model using data properties
     model = AutoModelForSequenceClassification.from_pretrained(
         cfg.model.name_or_path,
@@ -87,8 +98,11 @@ def main(cfg: DictConfig) -> None:
     )
     log.info(f"\n{summarize(estimator)}")
 
-    # fit
-    fit_out = estimator.fit(
+    ##############################################
+    # ============ STEP 4: training ============ #
+    ##############################################
+
+    _ = estimator.fit(
         train_loader=datamodule.train_loader(),
         # validation_loader=datamodule.validation_loader(),
         validation_loader=datamodule.test_loader(),
@@ -100,16 +114,24 @@ def main(cfg: DictConfig) -> None:
     # is a Dict
     test_out = estimator.test(datamodule.test_loader(), **OmegaConf.to_container(cfg.test))
 
-    # ============ STEP 4: save outputs ============
+    ##################################################
+    # ============ STEP 4: save outputs ============ #
+    ##################################################
+    
+    hparams = {
+        **OmegaConf.to_container(cfg.fit),
+        **OmegaConf.to_container(cfg.test),
+        **datamodule.hparams,
+        **estimator.hparams,
+    }
     OmegaConf.save(cfg, "./hparams.yaml")
 
     # log hparams and test results to tensorboard
     if isinstance(estimator.fabric.logger, TensorBoardLogger):
         estimator.fabric.logger.log_hyperparams(
-            params={**datamodule.hparams, **estimator.hparams, **OmegaConf.to_container(cfg.fit)},
-            metrics=test_out[OutputKeys.METRICS],
+            params=hparams,
+            metrics={f"test_end/{k}": v for k, v in test_out[OutputKeys.METRICS].items()},
         )
-
     log.info(estimator.progress_tracker)
 
 
