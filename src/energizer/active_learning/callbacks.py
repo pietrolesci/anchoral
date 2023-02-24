@@ -1,12 +1,12 @@
 import time
-from typing import Any, List, Union
+from typing import Any
 
 from lightning.fabric.wrappers import _FabricModule
 
 from src.energizer.active_learning.base import ActiveEstimator, QueryOutput
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.active_learning.progress_trackers import ActiveProgressTracker
-from src.energizer.callbacks import Timer
+from src.energizer.callbacks.timer import Timer
 from src.energizer.enums import RunningStage
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC, ROUND_OUTPUT
 

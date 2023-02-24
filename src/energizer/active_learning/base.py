@@ -228,14 +228,5 @@ class ActiveEstimator(Estimator):
 
         return batch
 
-    def save_state_dict(self, cache_dir: Union[str, Path]) -> None:
-        cache_dir = Path(cache_dir)
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        self.fabric.save(self.model.state_dict(), cache_dir / "state_dict.pt")
-
-    def load_state_dict(self, cache_dir: Union[str, Path]) -> None:
-        cache_dir = Path(cache_dir)
-        self.model.load_state_dict(self.fabric.load(cache_dir / "state_dict.pt"))
-
     def get_pool_loader(self, active_datamodule: ActiveDataModule) -> DataLoader:
         return active_datamodule.pool_loader()

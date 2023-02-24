@@ -9,8 +9,6 @@ from lightning.pytorch.utilities.model_summary.model_summary import (
 )
 from torch import nn
 
-from src.energizer.estimator import Estimator
-
 
 class LayerSummary:
     def __init__(self, module: nn.Module) -> None:
@@ -31,7 +29,7 @@ class LayerSummary:
 
 
 class Summary:
-    def __init__(self, estimator: Estimator, max_depth: int = 1) -> None:
+    def __init__(self, estimator, max_depth: int = 1) -> None:
         self._estimator = estimator
 
         if not isinstance(max_depth, int) or max_depth < -1:
@@ -131,7 +129,7 @@ class Summary:
         return str(self)
 
 
-def summarize(estimator: Estimator, max_depth: int = 1) -> None:
+def summarize(estimator, max_depth: int = 1) -> None:
     model_summary = Summary(estimator, max_depth)
     summary_data = model_summary._get_summary_data()
     total_parameters = model_summary.total_parameters

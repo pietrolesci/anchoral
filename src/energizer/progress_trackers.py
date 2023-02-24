@@ -37,6 +37,7 @@ class Tracker:
 
     def close_progress_bar(self) -> None:
         if self.progress_bar is not None:
+            self.progress_bar.set_postfix_str("Done!", refresh=True)
             self.progress_bar.refresh()
             self.progress_bar.clear()
             self.progress_bar.close()
@@ -154,6 +155,11 @@ class ProgressTracker:
         if not self.is_training:
             self._get_active_tracker().close_progress_bar()
         return cond
+
+    def is_last_epoch(self) -> bool:
+        if self.current_stage != RunningStage.TRAIN:
+            return False
+        return self.fit_tracker.epoch_tracker.max == self.fit_tracker.epoch_tracker.current
 
     def get_batch_num(self) -> int:
         return self._get_active_tracker().total

@@ -45,6 +45,7 @@ loggers: null
 
 model:
   name_or_path: null
+  seed: ${seed}
 
 data:
   batch_size: 64
@@ -78,7 +79,7 @@ fit:
   progress_bar: ${progress_bar}
   limit_train_batches: ${limit_batches}
   limit_validation_batches: ${limit_batches}
-  validation_interval: 5
+  validation_interval: 1
 
 # this is incremental to `fit` above
 active_fit:
@@ -103,6 +104,7 @@ test:
 log_interval: 1
 progress_bar: true
 limit_batches: null
+train_val_split: false
 
 dataset_name: '???'
 seed: 42

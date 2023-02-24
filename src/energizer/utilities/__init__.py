@@ -1,6 +1,11 @@
 # import inspect
-from typing import Any, Dict, List, Union
+import contextlib
+import random
+from typing import Any, Dict, Generator, List, Union
 
+import numpy as np
+import torch
+from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 from lightning_utilities.core.apply_func import apply_to_collection
 from numpy import ndarray
 from torch import Tensor
@@ -23,6 +28,30 @@ def move_to_cpu(output: Any) -> Any:
 
 def ld_to_dl(ld: List[Dict]) -> Dict[str, List]:
     return {k: [dic[k] for dic in ld] for k in ld[0]}
+
+
+@contextlib.contextmanager
+def local_seed(seed: int) -> Generator[None, None, None]:
+    """A context manager that allows to locally change the seed.
+
+    Upon exit from the context manager it resets the random number generator state
+    so that the operations that happen in the context do not affect randomness outside
+    of it.
+    """
+    # collect current states
+    states = _collect_rng_states()
+
+    # set seed in the context
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # run code in context
+    yield
+
+    # reset states when exiting the context
+    _set_rng_states(states)
 
 
 # def get_hparams() -> Dict:

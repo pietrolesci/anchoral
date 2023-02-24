@@ -110,7 +110,7 @@ class SequenceClassificationMixin:
         aggregated_metrics = move_to_cpu(metrics.compute())  # NOTE: metrics are still on device
         aggregated_loss = round(np.mean(data[OutputKeys.LOSS]), 6)
 
-        logs = {f"avg_{OutputKeys.LOSS}": aggregated_loss, **aggregated_metrics}
+        logs = {OutputKeys.LOSS: aggregated_loss, **aggregated_metrics}
         logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
         self.log_dict(logs, step=self.progress_tracker.get_epoch_num())
 
@@ -155,6 +155,8 @@ class SequenceClassificationMixin:
             return
         num_classes = self.model.num_labels
         task = "multiclass" if num_classes > 2 else "binary"
+
+        # NOTE: you are in charge of moving it to the correct device
         return MetricCollection(
             {
                 "accuracy": Accuracy(task, num_classes=num_classes),
@@ -166,9 +168,7 @@ class SequenceClassificationMixin:
                 "recall_micro": Recall(task, num_classes=num_classes, average="micro"),
                 # "brier_score": MeanSquaredError(),
             }
-        ).to(
-            self.device
-        )  # NOTE: you are in charge of moving it to the correct device
+        ).to(self.device)
 
 
 class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator):

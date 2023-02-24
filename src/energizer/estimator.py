@@ -2,6 +2,7 @@ import inspect
 import os
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Union
 
 import torch
@@ -222,7 +223,7 @@ class Estimator(HyperparametersMixin):
         model.train()
 
         # call hook
-        self.fabric.call("on_train_epoch_start", estimator=self, model=model)
+        self.fabric.call("on_train_epoch_start", estimator=self, model=model, optimizer=optimizer)
 
         train_out, validation_out = [], []
         for batch_idx, batch in enumerate(train_loader):
@@ -242,7 +243,14 @@ class Estimator(HyperparametersMixin):
             batch = self.transfer_to_device(batch)
 
             # call hook
-            self.fabric.call("on_train_batch_start", estimator=self, model=model, batch=batch, batch_idx=batch_idx)
+            self.fabric.call(
+                "on_train_batch_start",
+                estimator=self,
+                model=model,
+                optimizer=optimizer,
+                batch=batch,
+                batch_idx=batch_idx,
+            )
 
             # run model on batch
             batch_out = self.train_batch_loop(loss_fn, model, batch, batch_idx, optimizer, scheduler, metrics)
@@ -565,6 +573,15 @@ class Estimator(HyperparametersMixin):
         """Automatically moves to cpu and then logs mapping of values."""
         if self.progress_tracker.should_log():
             self.fabric.log_dict(value_dict, step)
+
+    def save_state_dict(self, cache_dir: Union[str, Path], name: str = "state_dict.pt") -> None:
+        cache_dir = Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        self.fabric.save(self.model.state_dict(), cache_dir / name)
+
+    def load_state_dict(self, cache_dir: Union[str, Path], name: str = "state_dict.pt") -> None:
+        cache_dir = Path(cache_dir)
+        self.model.load_state_dict(self.fabric.load(cache_dir / name))
 
     """
     Utilities

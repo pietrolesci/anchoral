@@ -1,4 +1,3 @@
-import time
 from pathlib import Path
 from typing import Dict, List, Union
 
@@ -9,7 +8,7 @@ from lightning.fabric.wrappers import _FabricModule
 from src.energizer.active_learning.base import ActiveEstimator
 from src.energizer.active_learning.callbacks import ActiveLearningCallbackMixin
 from src.energizer.active_learning.data import ActiveDataModule
-from src.energizer.callbacks import Callback
+from src.energizer.callbacks.base import Callback
 from src.energizer.enums import OutputKeys, RunningStage, SpecialKeys
 from src.energizer.estimator import Estimator
 from src.energizer.types import EPOCH_OUTPUT, METRIC, ROUND_OUTPUT
