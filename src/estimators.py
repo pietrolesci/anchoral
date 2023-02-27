@@ -15,6 +15,8 @@ from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.energizer.estimator import Estimator
 from src.energizer.types import ROUND_OUTPUT, Dict
 from src.energizer.utilities import ld_to_dl, move_to_cpu
+from src.energizer.active_learning.base import RoundOutput
+from src.energizer.active_learning.data import ActiveDataModule
 
 
 class SequenceClassificationMixin:
@@ -128,6 +130,19 @@ class SequenceClassificationMixin:
     def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:
         logs = ld_to_dl([out.test[OutputKeys.METRICS] for out in output])
         return {f"active_learning_end/test_{k}_auc": np.trapz(v) for k, v in logs.items()}
+    
+    def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
+        logs = {
+            "num_epochs": self.progress_tracker.fit_tracker.epoch_tracker.max,
+            "num_train_batches": self.progress_tracker.fit_tracker.train_tracker.max,
+            "num_validation_batches": self.progress_tracker.fit_tracker.validation_tracker.max,
+            "global_train_steps": self.progress_tracker.fit_tracker.step_tracker.total,
+            **datamodule.data_statistics,
+        }
+        logs = {f"round_stats/{k}": v for k, v in logs.items()}
+        self.log_dict(logs, step=self.progress_tracker.num_rounds)
+
+        return output
 
     """
     Changes
