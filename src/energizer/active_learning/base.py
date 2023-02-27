@@ -176,7 +176,7 @@ class ActiveEstimator(Estimator):
             )
 
         # method to possibly aggregate
-        output = self.round_epoch_end(output)
+        output = self.round_epoch_end(output, active_datamodule)
 
         # call hook
         self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=output)
@@ -190,7 +190,7 @@ class ActiveEstimator(Estimator):
     def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Any:
         return output
 
-    def round_epoch_end(self, output: RoundOutput) -> ROUND_OUTPUT:
+    def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
         return output
 
     def query(self, active_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:

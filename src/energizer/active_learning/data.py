@@ -90,7 +90,7 @@ class ActiveDataModule(DataModule):
         return {
             "total_data_size": self.total_data_size,
             "train_size": self.train_size,
-            "validation_size": self.train_size,
+            "validation_size": self.validation_size,
             "test_size": self.test_size,
             "pool_size": self.pool_size,
         }
@@ -190,9 +190,6 @@ class ActiveDataModule(DataModule):
                 self.index.mark_deleted(idx)
 
     def set_initial_budget(self, budget: int, val_perc: Optional[float] = None, sampling: Optional[str] = None) -> None:
-        assert (
-            sampling == "random" or sampling is None
-        ), "Only `random` is supported by default. Write your own sampling."
         pool_df = self._df.loc[(self._df[SpecialKeys.IS_LABELLED] == False), [SpecialKeys.ID, InputKeys.TARGET]]
         # sample from the pool
         indices = self.sample(
@@ -203,14 +200,13 @@ class ActiveDataModule(DataModule):
         )
 
         # actually label
-        labels = pool_df.loc[pool_df[SpecialKeys.ID].isin(indices), [InputKeys.TARGET]].tolist()
-        self.label(indices=indices, round_idx=-1, val_perc=val_perc, labels=labels, sampling=sampling)
+        self.label(indices=indices, round_idx=-1, val_perc=val_perc, val_sampling=sampling)
 
     def sample(
         self, indices: List[int], size: int, labels: Optional[List[int]], sampling: Optional[str] = None
     ) -> List[int]:
         if sampling is None or sampling == "random":
-            return self._rng.choice(indices, size=size, replace=False).tolist()
+            return self._rng.choice(indices, size=size, replace=False)
         elif sampling == "stratified" and labels is not None:
             return resample(
                 indices,
@@ -218,7 +214,7 @@ class ActiveDataModule(DataModule):
                 stratify=labels,
                 n_samples=size,
                 random_state=self.seed,
-            ).tolist()
+            )
         else:
             raise ValueError("Only `random` and `stratified` are supported by default.")
 
