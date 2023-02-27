@@ -68,12 +68,13 @@ def main(cfg: DictConfig) -> None:
     )
 
     # define initial budget
-    datamodule.set_initial_budget(**OmegaConf.to_container(cfg.active_data))
+    if cfg.active_data.budget is not None and cfg.active_data.budget > 0:
+        datamodule.set_initial_budget(**OmegaConf.to_container(cfg.active_data))
     log.info(
-        f"Initial budget set: labelling {cfg.active_data.budget} samples "
+        f"Initial budget set: labelling {cfg.active_data.budget or 0} samples "
         f"in a {cfg.active_data.sampling} way. Keeping {cfg.active_data.val_perc} as validation."
-        f"\nData statistics:\n{datamodule.data_statistics}"
     )
+    log.info(f"Data statistics: {datamodule.data_statistics}")
 
     # toggle class weights in loss function
     if should_load_class_weights:

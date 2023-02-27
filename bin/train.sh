@@ -1,3 +1,25 @@
+# check variability due to data ordering and model initialization
+poetry run python ./scripts/train.py \
+    experiment_group=seed_variability \
+    dataset_name=agnews_bert_tiny \
+    train_val_split=0.05 \
+    fit.num_epochs=3 \
+    fit.validation_interval=5 \
+    fit.learning_rate=0.0002 \
+    model.seed=0,42,1994,6006,2023 \
+    data.seed=0,42,1994,6006,2023 \
+    -m
+
+
+poetry run python scripts/active_train.py \
+    dataset_name=agnews_bert_tiny \
+    strategy=random \
+    fit.validation_interval=5 \
+    active_fit.num_rounds=2 \
+    limit_batches=10
+
+
+
 # ===========
 # Experiments
 # ===========
@@ -22,20 +44,25 @@ poetry run python scripts/train.py \
     dataset_name=ag_news
 
 
-# ===== Active learning =====
+#############################
+# ======== TESTING ======== #
+#############################
+poetry run python scripts/train.py \
+    dataset_name=agnews_bert_tiny \
+    limit_batches=10 \
+    fit.validation_interval=1 \
+    +callbacks=model_checkpoint \
+    train_val_split=0.05
+
 poetry run python scripts/active_train.py \
-    dataset_name=ag_news \
-    strategy=uncertainty_based \
-    strategy.score_fn=margin
+    dataset_name=agnews_bert_tiny \
+    strategy=random \
+    fit.validation_interval=5 \
+    fit.min_steps=50 \
+    active_fit.num_rounds=50 \
+    active_fit.val_perc=0.1 \
+    active_fit.query_size=25 \
+    +callbacks=model_checkpoint \
+    active_data.budget=100 \
+    active_data.val_perc=0.5
 
-
-## TESTING
-poetry run python scripts/train.py dataset_name=ag_news limit_batches=50
-
-
-
-
-# low budget
-poetry run python scripts/active_train.py dataset_name=ag_news strategy=random active_fit.num_rounds=50
-
-poetry run python scripts/active_train.py dataset_name=ag_news strategy=uncertainty strategy.score_fn=entropy active_fit.num_rounds=50
