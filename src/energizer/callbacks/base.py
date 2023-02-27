@@ -1,4 +1,4 @@
-from typing import Any, Callable, List, Union
+from typing import Any, Callable, List, Optional, Union
 
 import numpy as np
 from lightning.fabric.wrappers import _FabricModule
@@ -89,6 +89,7 @@ class Callback:
 class CallbackWithMonitor(Callback):
     mode_dict = {"min": np.less, "max": np.greater}
     optim_dict = {"min": min, "max": max}
+    reverse_optim_dict = {"min": max, "max": min}
 
     @property
     def monitor_op(self) -> Callable:
@@ -100,15 +101,15 @@ class CallbackWithMonitor(Callback):
 
     @property
     def reverse_optim_op(self) -> Callable:
-        k = [k for k in self.optim_dict if k != self.mode][0]
-        return self.optim_dict[k]
+        return self.reverse_optim_dict[self.mode]
 
-    def _get_monitor(self, output: Union[BATCH_OUTPUT, EPOCH_OUTPUT]) -> float:
-        if self.monitor in output:
-            monitor = output[self.monitor]
-        elif self.monitor in output[OutputKeys.METRICS]:
-            monitor = output[OutputKeys.METRICS][self.monitor]
-        else:
+    def _get_monitor(self, output: Union[BATCH_OUTPUT, EPOCH_OUTPUT]) -> Optional[float]:
+        if self.monitor is None:
+            return
+
+        # look for monitored metric in output or in metrics
+        monitor = output.get(self.monitor) or output[OutputKeys.METRICS].get(self.monitor)
+        if monitor is None:
             raise ValueError(f"`{self.monitor}` is not logged.")
 
         return move_to_cpu(monitor)
