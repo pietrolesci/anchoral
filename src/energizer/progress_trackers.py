@@ -283,7 +283,11 @@ class ProgressTracker:
             validation_loader, kwargs.get("limit_validation_batches", None)
         )
         validation_interval = kwargs.get("validation_interval", True)
-        if max_validation_batches is not None and validation_interval is not None and max_train_batches > validation_interval:
+        if (
+            max_validation_batches is not None
+            and validation_interval is not None
+            and max_train_batches > validation_interval
+        ):
             validation_interval = np.linspace(
                 max_train_batches / validation_interval, max_train_batches, validation_interval, dtype=int
             ).tolist()[:-1]
