@@ -154,7 +154,7 @@ class SequenceClassificationMixin:
         if stage == RunningStage.POOL:
             return
         num_classes = self.model.num_labels
-        task = "multiclass" if num_classes > 2 else "binary"
+        task = "multiclass"  # if num_classes > 2 else "binary"
 
         # NOTE: you are in charge of moving it to the correct device
         return MetricCollection(
