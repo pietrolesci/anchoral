@@ -55,6 +55,7 @@ class ActiveEstimator(Estimator):
         num_rounds: int,
         query_size: int,
         val_perc: float,
+        val_sampling: Optional[str] = None,
         reinit_model: bool = True,
         model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
         num_epochs: Optional[int] = 3,
@@ -83,6 +84,7 @@ class ActiveEstimator(Estimator):
                 active_datamodule=active_datamodule,
                 query_size=query_size,
                 val_perc=val_perc,
+                val_sampling=val_sampling,
                 num_epochs=num_epochs,
                 min_steps=min_steps,
                 loss_fn=loss_fn,
@@ -116,6 +118,7 @@ class ActiveEstimator(Estimator):
         active_datamodule: ActiveDataModule,
         query_size: int,
         val_perc: float,
+        val_sampling: Optional[str],
         num_epochs: Optional[int] = 3,
         loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
@@ -139,7 +142,10 @@ class ActiveEstimator(Estimator):
             # call hook
             self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule)
             active_datamodule.label(
-                indices=output.query.indices, round_idx=self.progress_tracker.num_rounds, val_perc=val_perc
+                indices=output.query.indices,
+                round_idx=self.progress_tracker.num_rounds,
+                val_perc=val_perc,
+                val_sampling=val_sampling,
             )
             # call hook
             self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)

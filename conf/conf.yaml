@@ -64,6 +64,7 @@ active_data:
   budget: null
   sampling: stratified
   val_perc: ${active_fit.val_perc}
+  val_sampling: ${active_fit.val_sampling}
 
 fit:
   num_epochs: 3
@@ -86,6 +87,7 @@ active_fit:
   num_rounds: 50
   query_size: 25
   val_perc: 0.3
+  val_sampling: stratified
   reinit_model: true
   limit_pool_batches: ${limit_batches}
   limit_test_batches: ${limit_batches}
@@ -104,7 +106,7 @@ test:
 log_interval: 1
 progress_bar: true
 limit_batches: null
-train_val_split: false
+train_val_split: null
 
 dataset_name: '???'
 seed: 42

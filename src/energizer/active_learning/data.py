@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 from datasets import Dataset
+from sklearn.utils import resample
 from torch.utils.data import DataLoader
 
 from src.energizer.data import DataModule
@@ -37,7 +38,18 @@ class ActiveDataModule(DataModule):
 
     @property
     def train_size(self) -> int:
-        return self._df[SpecialKeys.IS_LABELLED].sum()
+        return ((self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == False)).sum()
+
+    @property
+    def validation_size(self) -> int:
+        if self.should_val_split:
+            return ((self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == True)).sum()
+        return len(self.validation_dataset)
+
+    @property
+    def test_size(self) -> Optional[int]:
+        if self.test_dataset is not None:
+            return len(self.test_dataset)
 
     @property
     def pool_size(self) -> int:
@@ -78,9 +90,9 @@ class ActiveDataModule(DataModule):
         return {
             "total_data_size": self.total_data_size,
             "train_size": self.train_size,
+            "validation_size": self.train_size,
+            "test_size": self.test_size,
             "pool_size": self.pool_size,
-            "num_train_batches": len(self.train_loader()),
-            "num_pool_batches": len(self.pool_loader()),
         }
 
     """
@@ -140,7 +152,13 @@ class ActiveDataModule(DataModule):
     Main methods
     """
 
-    def label(self, indices: List[int], round_idx: Optional[int] = None, val_perc: Optional[float] = None) -> None:
+    def label(
+        self,
+        indices: List[int],
+        round_idx: Optional[int] = None,
+        val_perc: Optional[float] = None,
+        val_sampling: Optional[str] = None,
+    ) -> None:
         """Moves instances at index `pool_idx` from the `pool_fold` to the `train_fold`.
 
         Args:
@@ -156,8 +174,14 @@ class ActiveDataModule(DataModule):
         self._df.loc[mask, SpecialKeys.LABELLING_ROUND] = round_idx
 
         if self.should_val_split and val_perc is not None:
-            n_val = round(val_perc * len(indices)) or 1
-            val_indices = self._rng.choice(indices, size=n_val, replace=False)
+            n_val = round(val_perc * len(indices)) or 1  # at least add one
+            current_df = self._df.loc[mask, [SpecialKeys.ID, InputKeys.TARGET]]
+            val_indices = self.sample(
+                indices=current_df[SpecialKeys.ID].tolist(),
+                size=n_val,
+                labels=current_df[InputKeys.TARGET],
+                sampling=val_sampling,
+            )
             self._df.loc[self._df[SpecialKeys.ID].isin(val_indices), SpecialKeys.IS_VALIDATION] = True
 
         # remove instance from the index
@@ -165,11 +189,38 @@ class ActiveDataModule(DataModule):
             for idx in indices:
                 self.index.mark_deleted(idx)
 
-    def set_initial_budget(self, budget: int, sampling: str = "random", val_perc: Optional[float] = None) -> None:
-        assert sampling == "random", "Only `random` is supported by default. Write your own sampling."
+    def set_initial_budget(self, budget: int, val_perc: Optional[float] = None, sampling: Optional[str] = None) -> None:
+        assert (
+            sampling == "random" or sampling is None
+        ), "Only `random` is supported by default. Write your own sampling."
         pool_df = self._df.loc[(self._df[SpecialKeys.IS_LABELLED] == False), [SpecialKeys.ID, InputKeys.TARGET]]
-        indices = self._rng.choice(pool_df[SpecialKeys.ID], size=budget, replace=False).tolist()
-        self.label(indices, round_idx=-1, val_perc=val_perc)
+        # sample from the pool
+        indices = self.sample(
+            indices=pool_df[SpecialKeys.ID].tolist(),
+            size=budget,
+            labels=pool_df[InputKeys.TARGET].tolist(),
+            sampling=sampling,
+        )
+
+        # actually label
+        labels = pool_df.loc[pool_df[SpecialKeys.ID].isin(indices), [InputKeys.TARGET]].tolist()
+        self.label(indices=indices, round_idx=-1, val_perc=val_perc, labels=labels, sampling=sampling)
+
+    def sample(
+        self, indices: List[int], size: int, labels: Optional[List[int]], sampling: Optional[str] = None
+    ) -> List[int]:
+        if sampling is None or sampling == "random":
+            return self._rng.choice(indices, size=size, replace=False).tolist()
+        elif sampling == "stratified" and labels is not None:
+            return resample(
+                indices,
+                replace=False,
+                stratify=labels,
+                n_samples=size,
+                random_state=self.seed,
+            ).tolist()
+        else:
+            raise ValueError("Only `random` and `stratified` are supported by default.")
 
     """
     DataLoaders
