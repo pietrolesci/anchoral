@@ -6,7 +6,9 @@
 set -e
 
 
-# AG-News
+################################
+# ========== AGNEWS ========== #
+################################
 echo 'Processing AG-News'
 
 poetry run python ./scripts/process_agnews.py \
@@ -18,7 +20,9 @@ poetry run python ./scripts/embed_data.py \
     --model_name='all-mpnet-base-v2'
 
 
-# Civil Comments
+########################################
+# ========== Civil Comments ========== #
+########################################
 echo 'Processing Civil Comments'
 
 poetry run python ./scripts/process_civil_comments.py \
@@ -31,4 +35,18 @@ poetry run python ./scripts/process_civil_comments.py \
 
 poetry run python ./scripts/embed_data.py \
     --data_path='./data/processed/civil_comments' \
+    --model_name='all-mpnet-base-v2'
+
+
+##############################
+# ========== IMDB ========== #
+##############################
+echo 'Processing IMDB'
+
+poetry run python ./scripts/process_imdb.py \
+    --output_dir='./data/processed/imdb' \
+    --seed=1994
+
+poetry run python ./scripts/embed_data.py \
+    --data_path='./data/processed/imdb' \
     --model_name='all-mpnet-base-v2'
