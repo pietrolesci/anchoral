@@ -62,9 +62,8 @@ data:
 # this is incremental to `data` above
 active_data:
   budget: null
-  sampling: stratified
   val_perc: ${active_fit.val_perc}
-  val_sampling: ${active_fit.val_sampling}
+  sampling: ${active_fit.val_sampling}
 
 fit:
   num_epochs: 3
