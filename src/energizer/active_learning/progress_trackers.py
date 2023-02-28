@@ -45,7 +45,11 @@ class ActiveProgressTracker(ProgressTracker):
         return self.round_tracker.total
 
     def get_epoch_num(self) -> int:
-        return self.num_rounds if self.current_stage == RunningStage.TEST else self.fit_tracker.epoch_tracker.total
+        return (
+            self.num_rounds
+            if self.current_stage in (RunningStage.TEST, RunningStage.POOL)
+            else self.fit_tracker.epoch_tracker.total
+        )
 
     def is_fit_done(self) -> bool:
         return self.fit_tracker.epoch_tracker.max_reached() or self.fit_tracker.stop_training
