@@ -64,6 +64,9 @@ class SequenceClassificationMixin:
     def test_epoch_end(self, output: List[Dict], metrics: MetricCollection) -> Dict:
         return self.epoch_end(output, metrics, RunningStage.TEST)
 
+    def pool_epoch_end(self, output: List[Dict], metrics: MetricCollection) -> Dict:
+        return self.epoch_end(output, metrics, RunningStage.POOL)
+
     """
     Actual methods
     """
@@ -108,23 +111,25 @@ class SequenceClassificationMixin:
         """Aggregate."""
         data = ld_to_dl(output)
 
+        # aggregate instance-level metrics
+        logits = np.concatenate(data.pop(OutputKeys.LOGITS))
+        unique_ids = np.concatenate(data.pop(SpecialKeys.ID))
+        out = {OutputKeys.LOGITS: logits, SpecialKeys.ID: unique_ids}
+        if stage == RunningStage.POOL:
+            out[OutputKeys.SCORES] = unique_ids = np.concatenate(data.pop(OutputKeys.SCORES))
+            return out
+
         # aggregate and log epoch-level metrics
         aggregated_metrics = move_to_cpu(metrics.compute())  # NOTE: metrics are still on device
         aggregated_loss = round(np.mean(data[OutputKeys.LOSS]), 6)
-
         logs = {OutputKeys.LOSS: aggregated_loss, **aggregated_metrics}
         logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
         self.log_dict(logs, step=self.progress_tracker.get_epoch_num())
 
-        # aggregate instance-level metrics
-        logits = np.concatenate(data.pop(OutputKeys.LOGITS))
-        unique_ids = np.concatenate(data.pop(SpecialKeys.ID))
-
         return {
             OutputKeys.LOSS: aggregated_loss,
             OutputKeys.METRICS: aggregated_metrics,
-            OutputKeys.LOGITS: logits,
-            SpecialKeys.ID: unique_ids,
+            **out,
         }
 
     def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:

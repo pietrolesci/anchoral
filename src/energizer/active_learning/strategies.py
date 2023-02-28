@@ -12,7 +12,7 @@ from src.energizer.active_learning.base import ActiveEstimator, QueryOutput
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.energizer.registries import SCORING_FUNCTIONS
-from src.energizer.types import EPOCH_OUTPUT, METRIC, Dict
+from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
 
 
 class RandomStrategy(ActiveEstimator):
@@ -63,7 +63,7 @@ class UncertaintyBasedStrategy(ActiveEstimator):
         batch_idx: int,
         metrics: Optional[METRIC],
         stage: RunningStage,
-    ) -> Dict:
+    ) -> BATCH_OUTPUT:
         if stage != RunningStage.POOL:
             return super().eval_batch_loop(loss_fn, model, batch, batch_idx, metrics, stage)
 
@@ -93,11 +93,8 @@ class UncertaintyBasedStrategy(ActiveEstimator):
         batch: Any,
         batch_idx: int,
         metrics: Optional[METRIC] = None,
-    ) -> Dict:
+    ) -> BATCH_OUTPUT:
         raise NotImplementedError
-
-    def pool_step_end(self, output: Dict, batch: Any, batch_idx: int) -> Dict:
-        return output
 
     def pool_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
         return output
@@ -108,9 +105,11 @@ class UncertaintyBasedStrategy(ActiveEstimator):
 
     def _topk(self, output: EPOCH_OUTPUT, query_size: int) -> Tuple[np.ndarray, List[int]]:
         # get all scores
-        all_scores, all_ids = zip(*((out["scores"], out[SpecialKeys.ID]) for out in output))
-        all_scores = np.concatenate(all_scores)
-        all_ids = np.concatenate(all_ids)
+        # all_scores, all_ids = zip(*((out["scores"], out[SpecialKeys.ID]) for out in output))
+        # all_scores = np.concatenate(all_scores)
+        # all_ids = np.concatenate(all_ids)
+        all_scores = output[OutputKeys.SCORES]
+        all_ids = output[SpecialKeys.ID]
 
         # compute topk
         topk_ids = all_scores.argsort()[-query_size:][::-1]
