@@ -59,7 +59,13 @@ class ModelCheckpoint(CallbackWithMonitor):
     def on_fit_end(self, estimator: Estimator, *args, **kwargs) -> None:
         if self.monitor is not None:
             estimator.load_state_dict(self.dirpath, self.best_model_path)
-            srsly.write_jsonl(self.dirpath / "checkpoint_logs.json", [{"selected": self.best_model_path}], append=True)
+
+            logs = {
+                "selected": self.best_model_path,
+                "step": estimator.progress_tracker.get_epoch_num(),
+                "round": getattr(estimator.progress_tracker, "num_rounds"),
+            }
+            srsly.write_jsonl(self.dirpath / "checkpoint_logs.jsonl", [logs], append=True)
             # print(self.best_model_path)
 
     """
@@ -75,7 +81,13 @@ class ModelCheckpoint(CallbackWithMonitor):
 
             self._update_best_models(name, current)
 
-            srsly.write_jsonl(self.dirpath / "checkpoint_logs.json", [self._best_k_models], append=True)
+            logs = {
+                "stage": stage,
+                "step": estimator.progress_tracker.get_epoch_num(),
+                "round": getattr(estimator.progress_tracker, "num_rounds"),
+                **self._best_k_models,
+            }
+            srsly.write_jsonl(self.dirpath / "checkpoint_logs.jsonl", [logs], append=True)
 
         # print(sorted(list(self._best_k_models.values())))
 
@@ -102,9 +114,6 @@ class ModelCheckpoint(CallbackWithMonitor):
         # build filename
         step = "step" if stage == RunningStage.VALIDATION else "epoch"
         name = f"{stage}_{step}={estimator.progress_tracker.get_epoch_num()}"
-        num_rounds = getattr(estimator.progress_tracker, "num_rounds")
-        if num_rounds is not None:
-            name += f"_round={num_rounds}"
         if current is not None:
             name += f"_{self.monitor}={current}"
         name += ".pt"
