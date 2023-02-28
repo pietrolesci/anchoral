@@ -58,6 +58,11 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
     ) -> None:
         self.on_epoch_end(estimator, output, RunningStage.TEST)
 
+    def on_pool_epoch_end(
+        self, estimator: ActiveEstimator, model: _FabricModule, output: EPOCH_OUTPUT, metrics: METRIC
+    ) -> None:
+        self.on_epoch_end(estimator, output, RunningStage.POOL)
+
     """
     Actual methods
     """
@@ -71,21 +76,28 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
         # instance-level output
         if self.instance_level:
             # check that file exists
-            instance_level_path = path / "instance_level.csv"
+            epoch = estimator.progress_tracker.get_epoch_num()
+            step = "round" if stage in (RunningStage.TEST, RunningStage.POOL) else "epoch"
+            instance_level_path = path / f"instance_level_{step}={epoch}.csv"
             if not instance_level_path.exists():
-                columns = [f"logit_{i}" for i in range(estimator.model.num_labels)] + [SpecialKeys.ID, "epoch"]
+                columns = [f"logit_{i}" for i in range(estimator.model.num_labels)] + [SpecialKeys.ID, step]
                 pd.DataFrame(columns=columns).to_csv(instance_level_path, index=False)
-
             # append data
             (
                 pd.DataFrame(output[OutputKeys.LOGITS])
-                .assign(unique_id=output[SpecialKeys.ID], epoch=estimator.progress_tracker.get_epoch_num())
+                .assign(unique_id=output[SpecialKeys.ID], epoch=epoch)
                 .to_csv(instance_level_path, mode="a", index=False, header=False)
             )
 
-        if self.epoch_level:
-            data = {"epoch": estimator.progress_tracker.get_epoch_num(), **output[OutputKeys.METRICS]}
-            srsly.write_jsonl(path / "epoch_level.json", [data], append=True)
+        if self.epoch_level and stage != RunningStage.POOL:
+            data = {
+                "stage": stage,
+                "epoch": estimator.progress_tracker.get_epoch_num(),
+                "round": getattr(estimator.progress_tracker, "num_rounds"),
+                "loss": output[OutputKeys.LOSS],
+                **output[OutputKeys.METRICS],
+            }
+            srsly.write_jsonl(path / "epoch_level.jsonl", [data], append=True)
 
     def on_round_end(self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: ROUND_OUTPUT) -> None:
         test_out = output.test
