@@ -1,8 +1,8 @@
 model_checkpoint:
   _target_: src.energizer.callbacks.ModelCheckpoint
   dirpath: .checkpoints
-  monitor: loss
+  monitor: f1_macro
   stage: validation
-  mode: min
+  mode: max
   save_last: true
   save_top_k: 1

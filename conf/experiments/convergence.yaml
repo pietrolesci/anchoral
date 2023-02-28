@@ -1,7 +1,6 @@
 # @package _global_
-
 fit:
-  min_steps: 10
+  min_steps: 100
   validation_interval: 5
 
 active_fit:
@@ -12,3 +11,6 @@ active_fit:
 active_data:
   budget: 100
   val_perc: 0.5
+
+dataset_name: imdb_bert_tiny
+experiment_group: small_budget

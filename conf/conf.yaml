@@ -4,6 +4,8 @@ defaults:
     # - pytorch_profiler
     - save_outputs
     - timer
+    - model_checkpoint
+    - early_stopping
   - loggers:
     - tensorboard
   - optional strategy: null
