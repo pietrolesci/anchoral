@@ -1,13 +1,14 @@
-from typing import Any, Optional, Union
+from pathlib import Path
+from typing import Any, Optional, Tuple, Union
 
 import numpy as np
+import srsly
 from lightning.fabric.wrappers import _FabricModule
 
 from src.energizer.callbacks.base import CallbackWithMonitor
-from src.energizer.enums import Interval, OutputKeys, RunningStage
+from src.energizer.enums import Interval, RunningStage
 from src.energizer.estimator import Estimator
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
-from src.energizer.utilities import move_to_cpu
 
 
 class EarlyStopping(CallbackWithMonitor):
@@ -37,11 +38,9 @@ class EarlyStopping(CallbackWithMonitor):
         self.divergence_threshold = divergence_threshold
         self.verbose = verbose
 
-        self.wait_count = 0
-        self.min_delta *= 1 if self.monitor_op == np.greater else -1
-        self.best_score = np.Inf if self.monitor_op == np.less else -np.Inf
+        self.dirpath = Path("./.early_stopping.jsonl")
 
-    def check_stopping_criteria(self, output: BATCH_OUTPUT):
+    def check_stopping_criteria(self, output: Union[BATCH_OUTPUT, EPOCH_OUTPUT]) -> Tuple[bool, str]:
         current = self._get_monitor(output)
 
         should_stop = False
@@ -50,7 +49,7 @@ class EarlyStopping(CallbackWithMonitor):
             should_stop = True
             reason = (
                 f"Monitored metric {self.monitor} = {current} is not finite."
-                f" Previous best value was {self.best_score:.3f}."
+                f" Previous best value was {self.best_score:.6f}."
             )
         elif self.stopping_threshold is not None and self.monitor_op(current, self.stopping_threshold):
             should_stop = True
@@ -75,20 +74,10 @@ class EarlyStopping(CallbackWithMonitor):
                 reason = (
                     f"Monitored metric `{self.monitor}` did not improve in the last {self.wait_count} {self.interval}"
                     f"{'es' if self.interval == Interval.BATCH else 's'}. "
-                    f"Best score: {self.best_score:.3f}."
+                    f"Best score: {self.best_score:.6f}."
                 )
 
         return should_stop, reason
-
-    def _get_monitor(self, output: EPOCH_OUTPUT) -> float:
-        if self.monitor in output:
-            monitor = output[self.monitor]
-        elif self.monitor in output[OutputKeys.METRICS]:
-            monitor = output[OutputKeys.METRICS][self.monitor]
-        else:
-            raise ValueError(f"`{self.monitor}` is not logged.")
-
-        return move_to_cpu(monitor)
 
     def check(
         self, estimator: Estimator, output: Union[BATCH_OUTPUT, EPOCH_OUTPUT], stage: RunningStage, interval: Interval
@@ -97,7 +86,25 @@ class EarlyStopping(CallbackWithMonitor):
             should_stop, reason = self.check_stopping_criteria(output)
             if should_stop:
                 estimator.progress_tracker.set_stop_training(True)
-                self._msg = f"({stage}) -- {reason}"
+                self._msg = f"stage={stage}_interval={interval}_reason={reason}"
+                out = {
+                    "reason": reason,
+                    "stage": stage,
+                    "interval": interval,
+                    "step": estimator.progress_tracker.get_epoch_num()
+                    if interval == Interval.EPOCH
+                    else estimator.progress_tracker.get_batch_num(),
+                    # **estimator.progress_tracker.to_dict()
+                }
+                srsly.write_jsonl(self.dirpath, [out], append=True)
+
+    def reset(self) -> None:
+        self.wait_count = 0
+        self.min_delta *= 1 if self.monitor_op == np.greater else -1
+        self.best_score = np.Inf if self.monitor_op == np.less else -np.Inf
+
+    def on_fit_start(self, *args, **kwargs) -> None:
+        self.reset()
 
     def on_train_batch_end(
         self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int
