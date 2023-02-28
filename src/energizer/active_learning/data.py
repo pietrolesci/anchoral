@@ -142,8 +142,9 @@ class ActiveDataModule(DataModule):
     def save_labelled_dataset(self, save_dir: str) -> None:
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
+        cols = [i for i in SpecialKeys] + [InputKeys.TARGET]
         (
-            self._df.loc[self._df[SpecialKeys.IS_LABELLED] == True].to_parquet(
+            self._df.loc[self._df[SpecialKeys.IS_LABELLED] == True, cols].to_parquet(
                 save_dir / "labelled_dataset.parquet", index=False
             )
         )
