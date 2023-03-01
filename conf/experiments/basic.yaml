@@ -4,8 +4,8 @@ fit:
   validation_interval: 5
 
 active_fit:
-  num_rounds: 50
-  val_perc: 0.1
+  num_rounds: 100
+  val_perc: 0.4
   query_size: 25
 
 active_data:
