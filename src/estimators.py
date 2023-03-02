@@ -116,7 +116,7 @@ class SequenceClassificationMixin:
         unique_ids = np.concatenate(data.pop(SpecialKeys.ID))
         out = {OutputKeys.LOGITS: logits, SpecialKeys.ID: unique_ids}
         if stage == RunningStage.POOL:
-            out[OutputKeys.SCORES] = unique_ids = np.concatenate(data.pop(OutputKeys.SCORES))
+            out[OutputKeys.SCORES] = np.concatenate(data.pop(OutputKeys.SCORES))
             return out
 
         # aggregate and log epoch-level metrics

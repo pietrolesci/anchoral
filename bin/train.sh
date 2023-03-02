@@ -54,10 +54,11 @@ poetry run python scripts/train.py \
     +callbacks=model_checkpoint \
     train_val_split=0.05
 
+
 poetry run python scripts/active_train.py \
-    dataset_name=agnews_bert_tiny \
+    dataset_name=imdb_bert_tiny \
     strategy=random \
-    fit.validation_interval=5 \
+    fit.validation_interval=3 \
     fit.min_steps=50 \
     active_fit.num_rounds=50 \
     active_fit.val_perc=0.1 \

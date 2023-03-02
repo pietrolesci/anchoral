@@ -1651,6 +1651,24 @@ files = [
 ]
 
 [[package]]
+name = "joypy"
+version = "0.2.6"
+description = "Joyplots in python"
+category = "main"
+optional = false
+python-versions = ">=3.5"
+files = [
+    {file = "joypy-0.2.6-py2.py3-none-any.whl", hash = "sha256:fffe882e8281e56e08b374a3148436cb448562ba39e4d566204c7e8ee2caddab"},
+    {file = "joypy-0.2.6.tar.gz", hash = "sha256:099da2d6c7d81b5eccc957bd9446831f565ba42d5abbab0fa92b81892449522e"},
+]
+
+[package.dependencies]
+matplotlib = "*"
+numpy = ">=1.16.5"
+pandas = ">=0.20.0"
+scipy = ">=0.11.0"
+
+[[package]]
 name = "jsonpointer"
 version = "2.3"
 description = "Identify specific nodes in a JSON document (RFC 6901)"
@@ -5425,4 +5443,4 @@ testing = ["flake8 (<5)", "func-timeout", "jaraco.functools", "jaraco.itertools"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "6f1fa5eeb9ddb589830fd558b329b76c061ecf36f0e433eaa691a4da45cef918"
+content-hash = "1016796fc3d150171b6c84258b4b52a9c25aee779f2d4c887406904a24d9820b"
