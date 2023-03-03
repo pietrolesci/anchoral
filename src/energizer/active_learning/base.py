@@ -134,22 +134,6 @@ class ActiveEstimator(Estimator):
         # call hook
         self.fabric.call("on_round_start", estimator=self, datamodule=active_datamodule)
 
-        # query indices to annotate, skip first round
-        # do not annotate on the warm-up round
-        if active_datamodule.pool_size > query_size and self.progress_tracker.num_rounds >= 0:
-            output.query = self.query(active_datamodule=active_datamodule, query_size=query_size, **kwargs)
-
-            # call hook
-            self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule)
-            active_datamodule.label(
-                indices=output.query.indices,
-                round_idx=self.progress_tracker.num_rounds,
-                val_perc=val_perc,
-                val_sampling=val_sampling,
-            )
-            # call hook
-            self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)
-
         # fit model on the available data
         if active_datamodule.has_labelled_data:
             output.fit = self.fit(
@@ -174,6 +158,22 @@ class ActiveEstimator(Estimator):
                 loss_fn_kwargs=loss_fn_kwargs,
                 **kwargs,
             )
+
+        # query indices to annotate, skip first round
+        # do not annotate on the warm-up round
+        if active_datamodule.pool_size > query_size and self.progress_tracker.num_rounds >= 0:
+            output.query = self.query(active_datamodule=active_datamodule, query_size=query_size, **kwargs)
+
+            # call hook
+            self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule)
+            active_datamodule.label(
+                indices=output.query.indices,
+                round_idx=self.progress_tracker.num_rounds,
+                val_perc=val_perc,
+                val_sampling=val_sampling,
+            )
+            # call hook
+            self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)
 
         # method to possibly aggregate
         output = self.round_epoch_end(output, active_datamodule)

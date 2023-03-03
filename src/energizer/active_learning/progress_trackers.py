@@ -9,11 +9,11 @@ from src.energizer.progress_trackers import EpochTracker, FitTracker, ProgressTr
 
 @dataclass
 class RoundTracker(Tracker):
-    current: int = -1
-    total: int = -1
+    current: int = 0
+    total: int = 0
 
-    def reset_current(self) -> None:
-        self.current = -1
+    # def reset_current(self) -> None:
+    #     self.current = -1
 
     def make_progress_bar(self) -> None:
         self.progress_bar = tqdm(
@@ -93,16 +93,19 @@ class ActiveProgressTracker(ProgressTracker):
         self.is_training = True
         self.log_interval = kwargs.get("log_interval", 1)
 
+        # NOTE: here we update (not re-create) the fit_tracker
+        # also we do not re-create the progress bar
         self.fit_tracker.update_from_hparams(**self._solve_hparams(*args, **kwargs))
-        self.fit_tracker.reset()
+        self.fit_tracker.reset()  # <- reset current counts and progress bar line
 
     def initialize_evaluation_progress(self, stage: RunningStage, loader: DataLoader, **kwargs) -> None:
         self.is_training = False
         self.log_interval = kwargs.get("log_interval", 1)
 
+        # NOTE: we do not reset the tracker nor the progress bar
         tracker = getattr(self, f"{stage}_tracker")
         tracker.max = self._solve_num_batches(loader, kwargs.get("limit_batches", None))
-        tracker.reset()
+        tracker.reset()  # <- reset current counts and progress bar line
 
     """
     Operations
