@@ -20,7 +20,7 @@ from src.energizer.utilities import ld_to_dl, move_to_cpu
 
 
 def resolve_strategy_name(s: str) -> str:
-    if s["_target_"] == "UncertaintyBasedStrategyForSequenceClassification":
+    if "UncertaintyBasedStrategyForSequenceClassification" in s["_target_"]:
         return s["score_fn"]
     return "random"
 
