@@ -1,8 +1,8 @@
 # @package _global_
 hydra:
   sweep:
-    dir: ./outputs/multirun/${experiment_group}/${dataset_name}/${get_name:${strategy}}    
-    subdir: job_${hydra.job.num}
+    dir: ./outputs/multirun/${experiment_group}/${dataset_name}/${get_name:${strategy}}/reinit=${active_fit.reinit_model}
+    subdir: data=${data.seed}_model=${model.seed}_${now:%Y-%m-%d}T${now:%H-%M-%S}
 
 fit:
   min_steps: 100
@@ -18,5 +18,4 @@ active_data:
   val_perc: 0.5
 
 dataset_name: imdb_bert_tiny
-experiment_group: small_budget/${get_name:${strategy._target_}}
-
+experiment_group: small_budget

@@ -80,14 +80,18 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
             step = "round" if stage in (RunningStage.TEST, RunningStage.POOL) else "epoch"
             instance_level_path = path / f"instance_level_{step}={epoch}.csv"
             if not instance_level_path.exists():
+                
+                # write columns
                 columns = [f"logit_{i}" for i in range(estimator.model.num_labels)] + [SpecialKeys.ID, step]
+                if stage == RunningStage.POOL:
+                    columns.append("scores")
                 pd.DataFrame(columns=columns).to_csv(instance_level_path, index=False)
+            
             # append data
-            (
-                pd.DataFrame(output[OutputKeys.LOGITS])
-                .assign(unique_id=output[SpecialKeys.ID], epoch=epoch)
-                .to_csv(instance_level_path, mode="a", index=False, header=False)
-            )
+            data = pd.DataFrame(output[OutputKeys.LOGITS]).assign(unique_id=output[SpecialKeys.ID], epoch=epoch)
+            if stage == RunningStage.POOL:
+                data = data.assign(scores=output[OutputKeys.SCORES])
+            data.to_csv(instance_level_path, mode="a", index=False, header=False)
 
         if self.epoch_level and stage != RunningStage.POOL:
             data = {
