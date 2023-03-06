@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from datasets import Dataset
 from sklearn.utils import resample
+from sklearn.utils.validation import check_random_state
 from torch.utils.data import DataLoader
 
 from src.energizer.data import DataModule
@@ -116,6 +117,9 @@ class ActiveDataModule(DataModule):
             )
         )
 
+        # check consistency of the index
+        assert self._df[SpecialKeys.ID].nunique() == len(self._df)
+
     def mask_train_from_index(self) -> None:
         if self.index is None:
             return
@@ -190,7 +194,9 @@ class ActiveDataModule(DataModule):
             for idx in indices:
                 self.index.mark_deleted(idx)
 
-    def set_initial_budget(self, budget: int, val_perc: Optional[float] = None, sampling: Optional[str] = None) -> None:
+    def set_initial_budget(
+        self, budget: int, val_perc: Optional[float] = None, sampling: Optional[str] = None, seed: Optional[int] = None
+    ) -> None:
         pool_df = self._df.loc[(self._df[SpecialKeys.IS_LABELLED] == False), [SpecialKeys.ID, InputKeys.TARGET]]
         # sample from the pool
         indices = self.sample(
@@ -198,26 +204,41 @@ class ActiveDataModule(DataModule):
             size=budget,
             labels=pool_df[InputKeys.TARGET].tolist(),
             sampling=sampling,
+            seed=seed,
         )
 
         # actually label
         self.label(indices=indices, round_idx=-1, val_perc=val_perc, val_sampling=sampling)
 
     def sample(
-        self, indices: List[int], size: int, labels: Optional[List[int]], sampling: Optional[str] = None
+        self,
+        indices: List[int],
+        size: int,
+        labels: Optional[List[int]],
+        sampling: Optional[str] = None,
+        seed: Optional[int] = None,
     ) -> List[int]:
+        """Makes sure to seed everything consistently."""
+        _rng = check_random_state(seed)
+
         if sampling is None or sampling == "random":
-            return self._rng.choice(indices, size=size, replace=False)
+            sample = _rng.choice(indices, size=size, replace=False)
+
         elif sampling == "stratified" and labels is not None:
-            return resample(
+            sample = resample(
                 indices,
                 replace=False,
                 stratify=labels,
                 n_samples=size,
-                random_state=self.seed,
+                random_state=_rng,
             )
+
         else:
             raise ValueError("Only `random` and `stratified` are supported by default.")
+
+        assert len(set(sample)) == size
+
+        return sample
 
     """
     DataLoaders
