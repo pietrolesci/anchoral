@@ -6,8 +6,8 @@ test: format lint unittest
 format:
 	isort $(sources)
 	black $(sources)
-	# nbqa isort docs/examples
-	# nbqa black docs/examples --line-length 85
+	nbqa isort notebooks
+	nbqa black notebooks --line-length 85
 
 lint:
 	ruff $(sources)

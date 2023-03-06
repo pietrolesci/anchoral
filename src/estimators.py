@@ -1,6 +1,6 @@
 # NOTE: type annotation is in line with what it is actually returned by
 # the overridden methods
-from typing import Any, Callable, Dict, List, MutableMapping, Optional, Union
+from typing import Callable, Dict, List, MutableMapping, Optional, Union
 
 import numpy as np
 import torch
@@ -107,7 +107,7 @@ class SequenceClassificationMixin:
             OutputKeys.METRICS: out_metrics,
         }
 
-    def epoch_end(self, output: Dict, metrics: MetricCollection, stage: RunningStage) -> Dict:
+    def epoch_end(self, output: List[Dict], metrics: MetricCollection, stage: RunningStage) -> Dict:
         """Aggregate."""
         data = ld_to_dl(output)
 
@@ -134,7 +134,7 @@ class SequenceClassificationMixin:
 
     def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:
         logs = ld_to_dl([out.test[OutputKeys.METRICS] for out in output])
-        return {f"active_learning_end/test_{k}_auc": np.trapz(v) for k, v in logs.items()}
+        return {f"hparams/test_{k}_auc": np.trapz(v) for k, v in logs.items()}
 
     def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
         logs = {

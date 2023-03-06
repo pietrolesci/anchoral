@@ -93,7 +93,6 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
             data = {
                 "stage": stage,
                 "epoch": estimator.progress_tracker.get_epoch_num(),
-                "round": getattr(estimator.progress_tracker, "num_rounds"),
                 "loss": output[OutputKeys.LOSS],
                 **output[OutputKeys.METRICS],
             }

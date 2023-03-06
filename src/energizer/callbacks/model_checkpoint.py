@@ -63,8 +63,9 @@ class ModelCheckpoint(CallbackWithMonitor):
             logs = {
                 "selected": self.best_model_path,
                 "step": estimator.progress_tracker.get_epoch_num(),
-                "round": getattr(estimator.progress_tracker, "num_rounds"),
             }
+            if hasattr(estimator.progress_tracker, "num_rounds"):
+                logs["round"] = getattr(estimator.progress_tracker, "num_rounds")
             srsly.write_jsonl(self.dirpath / "checkpoint_logs.jsonl", [logs], append=True)
             # print(self.best_model_path)
 
@@ -84,9 +85,11 @@ class ModelCheckpoint(CallbackWithMonitor):
             logs = {
                 "stage": stage,
                 "step": estimator.progress_tracker.get_epoch_num(),
-                "round": getattr(estimator.progress_tracker, "num_rounds"),
                 **self._best_k_models,
             }
+
+            if hasattr(estimator.progress_tracker, "num_rounds"):
+                logs["round"] = getattr(estimator.progress_tracker, "num_rounds")
             srsly.write_jsonl(self.dirpath / "checkpoint_logs.jsonl", [logs], append=True)
 
         # print(sorted(list(self._best_k_models.values())))
