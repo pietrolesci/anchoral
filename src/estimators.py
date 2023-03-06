@@ -19,6 +19,12 @@ from src.energizer.types import ROUND_OUTPUT, Dict
 from src.energizer.utilities import ld_to_dl, move_to_cpu
 
 
+def resolve_strategy_name(s: str) -> str:
+    if s["_target_"] == "UncertaintyBasedStrategyForSequenceClassification":
+        return s["score_fn"]
+    return "random"
+
+
 class SequenceClassificationMixin:
 
     """
@@ -108,7 +114,7 @@ class SequenceClassificationMixin:
         }
 
     def epoch_end(self, output: List[Dict], metrics: MetricCollection, stage: RunningStage) -> Dict:
-        """Aggregate."""
+        """Aggregate and log metrics after each train/validation/test/pool epoch."""
         data = ld_to_dl(output)
 
         # aggregate instance-level metrics
@@ -116,6 +122,10 @@ class SequenceClassificationMixin:
         unique_ids = np.concatenate(data.pop(SpecialKeys.ID))
         out = {OutputKeys.LOGITS: logits, SpecialKeys.ID: unique_ids}
         if stage == RunningStage.POOL:
+            if any(i is None for i in data[OutputKeys.SCORES]):
+                print(f"\n\nERROR: {self.progress_tracker.get_epoch_num()}\n")
+                print(f"\n\nERROR: {stage}\n")
+                print(f"\n\nERROR: {data[OutputKeys.SCORES]}\n")
             out[OutputKeys.SCORES] = np.concatenate(data.pop(OutputKeys.SCORES))
             return out
 
@@ -133,10 +143,12 @@ class SequenceClassificationMixin:
         }
 
     def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:
+        """Log metrics at the end of training."""
         logs = ld_to_dl([out.test[OutputKeys.METRICS] for out in output])
         return {f"hparams/test_{k}_auc": np.trapz(v) for k, v in logs.items()}
 
     def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
+        """Log round-level statistics."""
         logs = {
             "num_epochs": self.progress_tracker.fit_tracker.epoch_tracker.max,
             "num_train_batches": self.progress_tracker.fit_tracker.train_tracker.max,

@@ -9,9 +9,14 @@ from lightning.fabric.loggers import TensorBoardLogger
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from src.data import ClassificationActiveDataModule, ClassificationDataModule
+from src.data import ClassificationActiveDataModule
 from src.energizer.logging import set_ignore_warnings
+from src.estimators import resolve_strategy_name
 
+# add resolver for the strategy name
+OmegaConf.register_new_resolver("get_name", lambda x: resolve_strategy_name(x))
+
+# set logging
 set_ignore_warnings()
 log = logging.getLogger("hydra")
 sep_line = f"{'=' * 70}"
@@ -72,7 +77,8 @@ def main(cfg: DictConfig) -> None:
         datamodule.set_initial_budget(**OmegaConf.to_container(cfg.active_data))
     log.info(
         f"Initial budget set: labelling {cfg.active_data.budget or 0} samples "
-        f"in a {cfg.active_data.sampling} way. Keeping {cfg.active_data.val_perc} as validation."
+        f"in a {cfg.active_data.sampling} way using seed {cfg.active_data.seed}. "
+        f"Keeping {cfg.active_data.val_perc} as validation."
     )
     log.info(f"Data statistics: {datamodule.data_statistics}")
 

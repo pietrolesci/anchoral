@@ -1,4 +1,9 @@
 # @package _global_
+hydra:
+  sweep:
+    dir: ./outputs/multirun/${experiment_group}/${dataset_name}/${get_name:${strategy}}    
+    subdir: job_${hydra.job.num}
+
 fit:
   min_steps: 100
   validation_interval: 5
@@ -13,4 +18,5 @@ active_data:
   val_perc: 0.5
 
 dataset_name: imdb_bert_tiny
-experiment_group: small_budget
+experiment_group: small_budget/${get_name:${strategy._target_}}
+

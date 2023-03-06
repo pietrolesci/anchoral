@@ -66,6 +66,7 @@ active_data:
   budget: null
   val_perc: ${active_fit.val_perc}
   sampling: ${active_fit.val_sampling}
+  seed: ${seed}
 
 fit:
   num_epochs: 3
