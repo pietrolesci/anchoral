@@ -44,6 +44,7 @@ class Tracker:
     progress_bar: Optional[tqdm] = None
 
     def max_reached(self) -> bool:
+        """If a max is not set, it will never stop."""
         return self.max is not None and self.current >= self.max
 
     def reset_current(self) -> None:

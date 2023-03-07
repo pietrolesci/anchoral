@@ -10,6 +10,7 @@ from src.energizer.callbacks.base import CallbackWithMonitor
 from src.energizer.enums import RunningStage
 from src.energizer.estimator import Estimator
 from src.energizer.types import EPOCH_OUTPUT, METRIC
+from src.energizer.utilities import make_dict_json_serializable
 
 
 class ModelCheckpoint(CallbackWithMonitor):
@@ -66,7 +67,8 @@ class ModelCheckpoint(CallbackWithMonitor):
             }
             if hasattr(estimator.progress_tracker, "num_rounds"):
                 logs["round"] = getattr(estimator.progress_tracker, "num_rounds")
-            srsly.write_jsonl(self.dirpath / "checkpoint_logs.jsonl", [logs], append=True)
+            
+            srsly.write_jsonl(self.dirpath / "checkpoint_logs.jsonl", [make_dict_json_serializable(logs)], append=True, append_new_line=False)
             # print(self.best_model_path)
 
     """
@@ -90,7 +92,8 @@ class ModelCheckpoint(CallbackWithMonitor):
 
             if hasattr(estimator.progress_tracker, "num_rounds"):
                 logs["round"] = getattr(estimator.progress_tracker, "num_rounds")
-            srsly.write_jsonl(self.dirpath / "checkpoint_logs.jsonl", [logs], append=True)
+
+            srsly.write_jsonl(self.dirpath / "checkpoint_logs.jsonl", [make_dict_json_serializable(logs)], append=True, append_new_line=False)
 
         # print(sorted(list(self._best_k_models.values())))
 

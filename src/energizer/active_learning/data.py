@@ -34,10 +34,6 @@ class ActiveDataModule(DataModule):
         return self.validation_dataset is None
 
     @property
-    def total_data_size(self) -> int:
-        return self.train_size + self.pool_size
-
-    @property
     def train_size(self) -> int:
         return ((self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == False)).sum()
 
@@ -46,6 +42,10 @@ class ActiveDataModule(DataModule):
         if self.should_val_split:
             return ((self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == True)).sum()
         return len(self.validation_dataset)
+
+    @property
+    def total_labelled_size(self) -> int:
+        return self.train_size + self.validation_size
 
     @property
     def test_size(self) -> Optional[int]:
@@ -89,11 +89,11 @@ class ActiveDataModule(DataModule):
     @property
     def data_statistics(self) -> Dict[str, int]:
         return {
-            "total_data_size": self.total_data_size,
             "train_size": self.train_size,
             "validation_size": self.validation_size,
             "test_size": self.test_size,
             "pool_size": self.pool_size,
+            "total_labelled_size": self.total_labelled_size,
         }
 
     """

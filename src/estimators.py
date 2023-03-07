@@ -122,10 +122,6 @@ class SequenceClassificationMixin:
         unique_ids = np.concatenate(data.pop(SpecialKeys.ID))
         out = {OutputKeys.LOGITS: logits, SpecialKeys.ID: unique_ids}
         if stage == RunningStage.POOL:
-            if any(i is None for i in data[OutputKeys.SCORES]):
-                print(f"\n\nERROR: {self.progress_tracker.get_epoch_num()}\n")
-                print(f"\n\nERROR: {stage}\n")
-                print(f"\n\nERROR: {data[OutputKeys.SCORES]}\n")
             out[OutputKeys.SCORES] = np.concatenate(data.pop(OutputKeys.SCORES))
             return out
 
@@ -133,19 +129,19 @@ class SequenceClassificationMixin:
         aggregated_metrics = move_to_cpu(metrics.compute())  # NOTE: metrics are still on device
         aggregated_loss = round(np.mean(data[OutputKeys.LOSS]), 6)
         logs = {OutputKeys.LOSS: aggregated_loss, **aggregated_metrics}
+        
         logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
         self.log_dict(logs, step=self.progress_tracker.get_epoch_num())
+        
+        if stage == RunningStage.TEST:
+            logs = {f"{k}_vs_budget": v for k, v in logs.items()}
+            self.log_dict(logs, step=self.progress_tracker.budget)
 
         return {
             OutputKeys.LOSS: aggregated_loss,
             OutputKeys.METRICS: aggregated_metrics,
             **out,
         }
-
-    def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:
-        """Log metrics at the end of training."""
-        logs = ld_to_dl([out.test[OutputKeys.METRICS] for out in output])
-        return {f"hparams/test_{k}_auc": np.trapz(v) for k, v in logs.items()}
 
     def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
         """Log round-level statistics."""
@@ -154,12 +150,23 @@ class SequenceClassificationMixin:
             "num_train_batches": self.progress_tracker.fit_tracker.train_tracker.max,
             "num_validation_batches": self.progress_tracker.fit_tracker.validation_tracker.max,
             "global_train_steps": self.progress_tracker.fit_tracker.step_tracker.total,
-            **datamodule.data_statistics,
         }
         logs = {f"round_stats/{k}": v for k, v in logs.items()}
         self.log_dict(logs, step=self.progress_tracker.num_rounds)
 
+        # # log using labelled size as the x-axis since here you have access to datamodule
+        # # which you do not have in test_epoch_end
+        # test_out = output.test
+        # test_out = {OutputKeys.LOSS: test_out[OutputKeys.LOSS], **test_out[OutputKeys.METRICS]}
+        # logs = {f"test_end/{k}_vs_budget": v for k, v in test_out.items()}
+        # self.log_dict(logs, step=datamodule.train_size)
+
         return output
+    
+    def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:
+        """Log metrics at the end of training."""
+        logs = ld_to_dl([out.test[OutputKeys.METRICS] for out in output])
+        return {f"hparams/test_{k}_auc": np.trapz(v) for k, v in logs.items()}
 
     """
     Changes

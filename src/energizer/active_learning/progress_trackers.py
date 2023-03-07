@@ -32,6 +32,18 @@ class RoundTracker(Tracker):
 
 
 @dataclass
+class BudgetTracker(Tracker):
+    query_size: int = None
+
+    def increment(self) -> None:
+        self.current += self.query_size
+        self.total += self.query_size
+
+    def set_initial_budget(self, initial_budget: int) -> None:
+        self.current = initial_budget
+        self.total = initial_budget
+
+@dataclass
 class ActiveProgressTracker(ProgressTracker):
     round_tracker: RoundTracker = None
     pool_tracker: StageTracker = None
@@ -43,6 +55,10 @@ class ActiveProgressTracker(ProgressTracker):
     @property
     def num_rounds(self) -> int:
         return self.round_tracker.total
+
+    @property
+    def budget(self) -> int:
+        return self.budget_tracker.total
 
     def get_epoch_num(self) -> int:
         return (
@@ -61,7 +77,7 @@ class ActiveProgressTracker(ProgressTracker):
         return cond
 
     def is_active_fit_done(self) -> bool:
-        cond = self.round_tracker.max_reached()
+        cond = self.round_tracker.max_reached() or self.budget_tracker.max_reached()
         if cond:
             self.round_tracker.close_progress_bar()
             self.fit_tracker.close_progress_bars()
@@ -73,8 +89,10 @@ class ActiveProgressTracker(ProgressTracker):
     Initializers
     """
 
-    def initialize_active_fit_progress(self, num_rounds: int, **kwargs) -> None:
+    def initialize_active_fit_progress(self, num_rounds: int, max_budget: int, query_size: int, initial_budget: int, **kwargs) -> None:
         self.round_tracker = RoundTracker(max=num_rounds)
+        self.budget_tracker = BudgetTracker(max=max_budget, query_size=query_size)
+        self.budget_tracker.set_initial_budget(initial_budget)
         self.fit_tracker = FitTracker(
             epoch_tracker=EpochTracker(),
             train_tracker=StageTracker(stage=RunningStage.TRAIN),
@@ -113,3 +131,4 @@ class ActiveProgressTracker(ProgressTracker):
 
     def increment_active_fit_progress(self) -> None:
         self.round_tracker.increment()
+        self.budget_tracker.increment()

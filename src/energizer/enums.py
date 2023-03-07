@@ -4,6 +4,7 @@ from lightning.pytorch.utilities.enums import LightningEnum
 class Interval(LightningEnum):
     BATCH: str = "batch"
     EPOCH: str = "epoch"
+    ROUND: str = "round"
 
 
 class RunningStage(LightningEnum):

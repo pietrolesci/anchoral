@@ -9,6 +9,7 @@ from src.energizer.callbacks.base import CallbackWithMonitor
 from src.energizer.enums import Interval, RunningStage
 from src.energizer.estimator import Estimator
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
+from src.energizer.utilities import make_dict_json_serializable
 
 
 class EarlyStopping(CallbackWithMonitor):
@@ -96,7 +97,7 @@ class EarlyStopping(CallbackWithMonitor):
                     else estimator.progress_tracker.get_batch_num(),
                     # **estimator.progress_tracker.to_dict()
                 }
-                srsly.write_jsonl(self.dirpath, [out], append=True)
+                srsly.write_jsonl(self.dirpath, [make_dict_json_serializable(out)], append=True, append_new_line=False)
 
     def reset(self) -> None:
         self.wait_count = 0

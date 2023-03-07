@@ -9,9 +9,10 @@ from src.energizer.active_learning.base import ActiveEstimator
 from src.energizer.active_learning.callbacks import ActiveLearningCallbackMixin
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.callbacks.base import Callback
-from src.energizer.enums import OutputKeys, RunningStage, SpecialKeys
+from src.energizer.enums import OutputKeys, RunningStage, SpecialKeys, Interval
 from src.energizer.estimator import Estimator
 from src.energizer.types import EPOCH_OUTPUT, METRIC, ROUND_OUTPUT
+from src.energizer.utilities import make_dict_json_serializable
 
 
 class SaveOutputs(ActiveLearningCallbackMixin, Callback):
@@ -75,42 +76,37 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
 
         # instance-level output
         if self.instance_level:
-            # check that file exists
-            epoch = estimator.progress_tracker.get_epoch_num()
-            step = "round" if stage in (RunningStage.TEST, RunningStage.POOL) else "epoch"
-            instance_level_path = path / f"instance_level_{step}={epoch}.csv"
-            if not instance_level_path.exists():
-                
-                # write columns
-                columns = [f"logit_{i}" for i in range(estimator.model.num_labels)] + [SpecialKeys.ID, step]
-                if stage == RunningStage.POOL:
-                    columns.append("scores")
-                pd.DataFrame(columns=columns).to_csv(instance_level_path, index=False)
+                    
+            data = pd.DataFrame(columns=[f"logit_{i}" for i in range(estimator.model.num_labels)], data=output[OutputKeys.LOGITS])
+            data[SpecialKeys.ID] = output[SpecialKeys.ID]
+            data[Interval.EPOCH] = estimator.progress_tracker.get_epoch_num()
+        
+            # if we are active learning
+            if hasattr(estimator.progress_tracker, "num_rounds"):
+                data[Interval.ROUND] = estimator.progress_tracker.num_rounds
+                if OutputKeys.SCORES in output:
+                    data[OutputKeys.SCORES] = output[OutputKeys.SCORES]
             
-            # append data
-            data = pd.DataFrame(output[OutputKeys.LOGITS]).assign(unique_id=output[SpecialKeys.ID], epoch=epoch)
-            if stage == RunningStage.POOL:
-                data = data.assign(scores=output[OutputKeys.SCORES])
-            data.to_csv(instance_level_path, mode="a", index=False, header=False)
-
+            instance_level_path = path / "instance_level.csv"
+            data.to_csv(instance_level_path, index=False, header=not instance_level_path.exists(), mode="a" if instance_level_path.exists() else "w")
+                
+        # epoch-level output
         if self.epoch_level and stage != RunningStage.POOL:
             data = {
                 "stage": stage,
-                "epoch": estimator.progress_tracker.get_epoch_num(),
-                "loss": output[OutputKeys.LOSS],
+                Interval.EPOCH: estimator.progress_tracker.get_epoch_num(),
+                OutputKeys.LOSS: output[OutputKeys.LOSS],
                 **output[OutputKeys.METRICS],
             }
-            srsly.write_jsonl(path / "epoch_level.jsonl", [data], append=True)
+            if hasattr(estimator.progress_tracker, "num_rounds"):
+                data[Interval.ROUND] = estimator.progress_tracker.num_rounds
+
+            # sanitize inputs for JSON serialization
+            srsly.write_jsonl(path / "epoch_level.jsonl", [make_dict_json_serializable(data)], append=True, append_new_line=False)
 
     def on_round_end(self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: ROUND_OUTPUT) -> None:
-        test_out = output.test
-
-        # flatten logs (metrics)
-        test_out = {OutputKeys.LOSS: test_out[OutputKeys.LOSS], **test_out[OutputKeys.METRICS]}
-
-        # log using labelled size as the x-axis
-        logs = {f"test_end/{k}_vs_budget": v for k, v in test_out.items()}
-        estimator.log_dict(logs, step=datamodule.train_size)
+        # save partial results
+        datamodule.save_labelled_dataset(self.dirpath)
 
     def on_active_fit_end(
         self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: List[ROUND_OUTPUT]

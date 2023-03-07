@@ -18,4 +18,4 @@ active_data:
   val_perc: 0.5
 
 dataset_name: imdb_bert_tiny
-experiment_group: small_budget
+experiment_group: dry_run
