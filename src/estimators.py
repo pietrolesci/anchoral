@@ -129,10 +129,10 @@ class SequenceClassificationMixin:
         aggregated_metrics = move_to_cpu(metrics.compute())  # NOTE: metrics are still on device
         aggregated_loss = round(np.mean(data[OutputKeys.LOSS]), 6)
         logs = {OutputKeys.LOSS: aggregated_loss, **aggregated_metrics}
-        
+
         logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
         self.log_dict(logs, step=self.progress_tracker.get_epoch_num())
-        
+
         if stage == RunningStage.TEST:
             logs = {f"{k}_vs_budget": v for k, v in logs.items()}
             self.log_dict(logs, step=self.progress_tracker.budget)
@@ -162,7 +162,7 @@ class SequenceClassificationMixin:
         # self.log_dict(logs, step=datamodule.train_size)
 
         return output
-    
+
     def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:
         """Log metrics at the end of training."""
         logs = ld_to_dl([out.test[OutputKeys.METRICS] for out in output])

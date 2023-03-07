@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 from lightning_utilities.core.apply_func import apply_to_collection
-from numpy import ndarray, generic
+from numpy import generic, ndarray
 from torch import Tensor
 
 # from torch.utils.data import BatchSampler, SequentialSampler

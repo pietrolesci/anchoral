@@ -43,6 +43,7 @@ class BudgetTracker(Tracker):
         self.current = initial_budget
         self.total = initial_budget
 
+
 @dataclass
 class ActiveProgressTracker(ProgressTracker):
     round_tracker: RoundTracker = None
@@ -89,7 +90,9 @@ class ActiveProgressTracker(ProgressTracker):
     Initializers
     """
 
-    def initialize_active_fit_progress(self, num_rounds: int, max_budget: int, query_size: int, initial_budget: int, **kwargs) -> None:
+    def initialize_active_fit_progress(
+        self, num_rounds: int, max_budget: int, query_size: int, initial_budget: int, **kwargs
+    ) -> None:
         self.round_tracker = RoundTracker(max=num_rounds)
         self.budget_tracker = BudgetTracker(max=max_budget, query_size=query_size)
         self.budget_tracker.set_initial_budget(initial_budget)

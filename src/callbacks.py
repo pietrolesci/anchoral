@@ -9,7 +9,7 @@ from src.energizer.active_learning.base import ActiveEstimator
 from src.energizer.active_learning.callbacks import ActiveLearningCallbackMixin
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.callbacks.base import Callback
-from src.energizer.enums import OutputKeys, RunningStage, SpecialKeys, Interval
+from src.energizer.enums import Interval, OutputKeys, RunningStage, SpecialKeys
 from src.energizer.estimator import Estimator
 from src.energizer.types import EPOCH_OUTPUT, METRIC, ROUND_OUTPUT
 from src.energizer.utilities import make_dict_json_serializable
@@ -76,20 +76,26 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
 
         # instance-level output
         if self.instance_level:
-                    
-            data = pd.DataFrame(columns=[f"logit_{i}" for i in range(estimator.model.num_labels)], data=output[OutputKeys.LOGITS])
+            data = pd.DataFrame(
+                columns=[f"logit_{i}" for i in range(estimator.model.num_labels)], data=output[OutputKeys.LOGITS]
+            )
             data[SpecialKeys.ID] = output[SpecialKeys.ID]
             data[Interval.EPOCH] = estimator.progress_tracker.get_epoch_num()
-        
+
             # if we are active learning
             if hasattr(estimator.progress_tracker, "num_rounds"):
                 data[Interval.ROUND] = estimator.progress_tracker.num_rounds
                 if OutputKeys.SCORES in output:
                     data[OutputKeys.SCORES] = output[OutputKeys.SCORES]
-            
+
             instance_level_path = path / "instance_level.csv"
-            data.to_csv(instance_level_path, index=False, header=not instance_level_path.exists(), mode="a" if instance_level_path.exists() else "w")
-                
+            data.to_csv(
+                instance_level_path,
+                index=False,
+                header=not instance_level_path.exists(),
+                mode="a" if instance_level_path.exists() else "w",
+            )
+
         # epoch-level output
         if self.epoch_level and stage != RunningStage.POOL:
             data = {
@@ -102,7 +108,9 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
                 data[Interval.ROUND] = estimator.progress_tracker.num_rounds
 
             # sanitize inputs for JSON serialization
-            srsly.write_jsonl(path / "epoch_level.jsonl", [make_dict_json_serializable(data)], append=True, append_new_line=False)
+            srsly.write_jsonl(
+                path / "epoch_level.jsonl", [make_dict_json_serializable(data)], append=True, append_new_line=False
+            )
 
     def on_round_end(self, estimator: ActiveEstimator, datamodule: ActiveDataModule, output: ROUND_OUTPUT) -> None:
         # save partial results
