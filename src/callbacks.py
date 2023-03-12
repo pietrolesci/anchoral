@@ -5,7 +5,7 @@ import pandas as pd
 import srsly
 from lightning.fabric.wrappers import _FabricModule
 
-from src.energizer.active_learning.base import ActiveEstimator
+from src.energizer.active_learning.active_estimator import ActiveEstimator
 from src.energizer.active_learning.callbacks import ActiveLearningCallbackMixin
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.callbacks.base import Callback

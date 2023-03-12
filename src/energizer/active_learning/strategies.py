@@ -8,7 +8,7 @@ from sklearn.utils.validation import (
 )
 from torch.utils.data import DataLoader
 
-from src.energizer.active_learning.base import ActiveEstimator, QueryOutput
+from src.energizer.active_learning.active_estimator import ActiveEstimator, QueryOutput
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.energizer.registries import SCORING_FUNCTIONS

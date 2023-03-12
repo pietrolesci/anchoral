@@ -3,7 +3,7 @@ from typing import Any
 
 from lightning.fabric.wrappers import _FabricModule
 
-from src.energizer.active_learning.base import ActiveEstimator, QueryOutput
+from src.energizer.active_learning.active_estimator import ActiveEstimator, QueryOutput
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.active_learning.progress_trackers import ActiveProgressTracker
 from src.energizer.callbacks.timer import Timer

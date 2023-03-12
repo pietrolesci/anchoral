@@ -10,7 +10,7 @@ from torchmetrics import MetricCollection
 from torchmetrics.classification import Accuracy, F1Score, Precision, Recall
 from transformers import AutoModelForSequenceClassification
 
-from src.energizer.active_learning.base import RoundOutput
+from src.energizer.active_learning.active_estimator import RoundOutput
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.active_learning.strategies import RandomStrategy, UncertaintyBasedStrategy
 from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
