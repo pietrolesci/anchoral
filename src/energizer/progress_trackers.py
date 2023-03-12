@@ -1,5 +1,4 @@
-import copy
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 import numpy as np
@@ -7,33 +6,6 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from src.energizer.enums import RunningStage
-
-
-def asdict(obj, *, dict_factory=dict):
-    if not is_dataclass(obj):
-        raise TypeError("asdict() should be called on dataclass instances")
-    return _asdict_inner(obj, dict_factory)
-
-
-def _asdict_inner(obj, dict_factory):
-    if is_dataclass(obj):
-        result = []
-        for f in fields(obj):
-            value = _asdict_inner(getattr(obj, f.name), dict_factory)
-            result.append((f.name, value))
-        return dict_factory(result)
-    elif isinstance(obj, tuple) and hasattr(obj, "_fields"):
-        return type(obj)(*[_asdict_inner(v, dict_factory) for v in obj])
-    elif isinstance(obj, (list, tuple)):
-        # Assume we can create an object of this type by passing in a
-        # generator (which is not true for namedtuples, handled
-        # above).
-        return type(obj)(_asdict_inner(v, dict_factory) for v in obj)
-    elif isinstance(obj, dict):
-        return type(obj)((_asdict_inner(k, dict_factory), _asdict_inner(v, dict_factory)) for k, v in obj.items())
-    else:
-        if not isinstance(obj, tqdm):
-            return copy.deepcopy(obj)
 
 
 @dataclass
@@ -106,9 +78,6 @@ class FitTracker:
     validation_interval: Optional[List[int]] = None
     stop_training: bool = False
 
-    def to_dict(self) -> Dict:
-        return asdict(self)
-
     def make_progress_bars(self) -> None:
         self.epoch_tracker.make_progress_bar()
         self.train_tracker.make_progress_bar()
@@ -168,9 +137,6 @@ class ProgressTracker:
     log_interval: int = 1
 
     current_stage: RunningStage = None
-
-    def to_dict(self) -> Dict:
-        return asdict(self)
 
     """
     Status

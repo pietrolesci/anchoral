@@ -95,7 +95,6 @@ class EarlyStopping(CallbackWithMonitor):
                     "step": estimator.progress_tracker.get_epoch_num()
                     if interval == Interval.EPOCH
                     else estimator.progress_tracker.get_batch_num(),
-                    # **estimator.progress_tracker.to_dict()
                 }
                 srsly.write_jsonl(self.dirpath, [make_dict_json_serializable(out)], append=True, append_new_line=False)
 
