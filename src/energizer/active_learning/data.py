@@ -249,13 +249,10 @@ class ActiveDataModule(DataModule):
             train_df = self._df.loc[
                 (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == False)
             ]
-            train_dataset = Dataset.from_pandas(train_df, preserve_index=False)
+            
+            self.train_dataset = Dataset.from_pandas(train_df, preserve_index=False)
 
-            return DataLoader(
-                train_dataset,
-                sampler=self.get_sampler(train_dataset, RunningStage.TRAIN),
-                collate_fn=self.get_collate_fn(RunningStage.TRAIN),
-            )
+            return self.get_loader(RunningStage.TRAIN)
 
     def validation_loader(self) -> Optional[DataLoader]:
         if self.should_val_split and self._df[SpecialKeys.IS_VALIDATION].sum() > 0:
@@ -267,11 +264,8 @@ class ActiveDataModule(DataModule):
             val_dataset = self.validation_dataset
 
         if val_dataset is not None and len(val_dataset) > 0:
-            return DataLoader(
-                val_dataset,
-                sampler=self.get_sampler(val_dataset, RunningStage.VALIDATION),
-                collate_fn=self.get_collate_fn(RunningStage.VALIDATION),
-            )
+            self.validation_dataset = val_dataset
+            return self.get_loader(RunningStage.VALIDATION)
 
     def pool_loader(self, subset_indices: Optional[List[int]] = None) -> DataLoader:
         pool_df = self._df.loc[
@@ -283,7 +277,7 @@ class ActiveDataModule(DataModule):
             pool_df = pool_df.loc[pool_df[SpecialKeys.ID].isin(subset_indices)]
 
         # for performance reasons
-        pool_dataset = Dataset.from_pandas(
+        self.pool_dataset = Dataset.from_pandas(
             df=(
                 pool_df.assign(length=lambda df_: df_[InputKeys.INPUT_IDS].map(len))
                 .sort_values("length")
@@ -292,8 +286,4 @@ class ActiveDataModule(DataModule):
             preserve_index=False,
         )
 
-        return DataLoader(
-            pool_dataset,
-            sampler=self.get_sampler(pool_dataset, RunningStage.POOL),
-            collate_fn=self.get_collate_fn(RunningStage.POOL),
-        )
+        return self.get_loader(RunningStage.POOL)

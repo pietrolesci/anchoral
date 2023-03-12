@@ -69,23 +69,8 @@ class ActiveProgressTracker(ProgressTracker):
             else self.fit_tracker.epoch_tracker.total
         )
 
-    def is_fit_done(self) -> bool:
-        return self.fit_tracker.epoch_tracker.max_reached() or self.fit_tracker.stop_training
-
-    def is_epoch_done(self) -> bool:
-        cond = self._get_stage_tracker().max_reached()
-        if self.current_stage == RunningStage.TRAIN and self.is_training:
-            cond = cond or self.fit_tracker.stop_training
-        return cond
-
     def is_active_fit_done(self) -> bool:
-        cond = self.round_tracker.max_reached() or self.budget_tracker.max_reached() or self.stop_active_training
-        if cond:
-            self.round_tracker.close_progress_bar()
-            self.fit_tracker.close_progress_bars()
-            self.test_tracker.close_progress_bar()
-            self.pool_tracker.close_progress_bar()
-        return cond
+        return self.round_tracker.max_reached() or self.budget_tracker.max_reached() or self.stop_active_training
 
     """
     Initializers
@@ -128,6 +113,15 @@ class ActiveProgressTracker(ProgressTracker):
         tracker = getattr(self, f"{stage}_tracker")
         tracker.max = self._solve_num_batches(loader, kwargs.get("limit_batches", None))
         tracker.reset()  # <- reset current counts and progress bar line
+
+    def finalize_active_fit_progress(self) -> None:
+        self.round_tracker.close_progress_bar()
+        self.fit_tracker.close_progress_bars()
+        self.test_tracker.close_progress_bar()
+        self.pool_tracker.close_progress_bar()
+
+    def finalize_fit_progress(self) -> None:
+        self.fit_tracker.terminate_progress_bars()
 
     """
     Operations

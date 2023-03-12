@@ -4,6 +4,9 @@ import os
 import random
 from typing import Any, Dict, Generator, List, Union
 
+from torch import Tensor
+from torch.nn.utils.rnn import pad_sequence
+
 import numpy as np
 import torch
 from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
@@ -59,28 +62,6 @@ def local_seed(seed: int) -> Generator[None, None, None]:
     _set_rng_states(states)
 
 
-# def get_hparams() -> Dict:
-#     frame = inspect.currentframe().f_back
-#     args, _, _, values = inspect.getargvalues(frame)
-#     return {arg: values[arg] for arg in args}
-
-
-# def parse_hparams(hparams: Dict, stage: RunningStage) -> Dict:
-#     # filter hparams
-#     hparams = {k: v for k, v in hparams.items() if not any([x in k for x in ["self", "loader"]])}
-
-#     # get dataloader hparams
-#     loader = hparams.get(f"{stage}_loader", None)
-#     if loader is not None:
-#         loader = loader.sampler if isinstance(loader.sampler, BatchSampler) else loader
-#         loader_hparams = {
-#             "batch_size": loader.batch_size,
-#             "drop_last": loader.drop_last,
-#             "shuffle": not isinstance(loader.sampler, SequentialSampler),
-#         }
-#         hparams = {**hparams, **loader_hparams}
-
-#     return hparams
 
 
 def init_deterministic(deterministic: bool) -> None:
@@ -93,3 +74,13 @@ def init_deterministic(deterministic: bool) -> None:
 
         # https://docs.nvidia.com/cuda/cublas/index.html#cublasApi_reproducibility
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
+
+def _pad(inputs: List[int], padding_value: float, max_length: int) -> Tensor:
+    # truncate -> convert to tensor -> pad
+    return pad_sequence(
+        [torch.tensor(t[:max_length]) for t in inputs],
+        batch_first=True,
+        padding_value=padding_value,
+    )
+

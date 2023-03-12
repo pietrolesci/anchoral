@@ -92,6 +92,11 @@ class FitTracker:
         self.train_tracker.close_progress_bar()
         self.validation_tracker.close_progress_bar()
 
+    def terminate_progress_bars(self) -> None:
+        self.epoch_tracker.terminate_progress_bar()
+        self.train_tracker.terminate_progress_bar()
+        self.validation_tracker.terminate_progress_bar()
+
     def reset(self) -> None:
         self.stop_training = False
         self.epoch_tracker.reset()
@@ -153,7 +158,6 @@ class ProgressTracker:
         cond = self._get_stage_tracker().max_reached()
         if self.current_stage == RunningStage.TRAIN and self.is_training:
             cond = cond or self.fit_tracker.stop_training
-
         return cond
 
     def get_batch_num(self) -> int:

@@ -118,6 +118,8 @@ class ActiveEstimator(Estimator):
 
         if not self.progress_tracker.num_rounds > 0:
             raise ValueError("You did not run any labellng. Perhaps change your `max_budget` or `num_rounds`.")
+        
+        self.progress_tracker.finalize_active_fit_progress()
 
         output = self.active_fit_end(output)
 
