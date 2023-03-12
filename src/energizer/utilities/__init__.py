@@ -1,5 +1,6 @@
 # import inspect
 import contextlib
+import os
 import random
 from typing import Any, Dict, Generator, List, Union
 
@@ -9,7 +10,6 @@ from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 from lightning_utilities.core.apply_func import apply_to_collection
 from numpy import generic, ndarray
 from torch import Tensor
-import os
 
 # from torch.utils.data import BatchSampler, SequentialSampler
 # from src.energizer.enums import RunningStage
@@ -81,7 +81,6 @@ def local_seed(seed: int) -> Generator[None, None, None]:
 #         hparams = {**hparams, **loader_hparams}
 
 #     return hparams
-
 
 
 def init_deterministic(deterministic: bool) -> None:

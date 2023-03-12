@@ -17,11 +17,12 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
+from src.energizer.callbacks import Callback
 from src.energizer.enums import OutputKeys, RunningStage
 from src.energizer.progress_trackers import ProgressTracker
 from src.energizer.registries import LOSS_FUNCTIONS_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
-from src.energizer.utilities import move_to_cpu, init_deterministic
+from src.energizer.utilities import init_deterministic, move_to_cpu
 from src.energizer.utilities.model_summary import summarize
 
 
@@ -51,7 +52,7 @@ class Estimator(HyperparametersMixin):
         num_nodes: int = 1,
         precision: _PRECISION_INPUT = 32,
         plugins: Optional[Union[_PLUGIN_INPUT, List[_PLUGIN_INPUT]]] = None,
-        callbacks: Optional[Union[List[Any], Any]] = None,
+        callbacks: Optional[Union[List[Callback], Callback]] = None,
         loggers: Optional[Union[Logger, List[Logger]]] = None,
         deterministic: bool = True,
     ) -> None:
