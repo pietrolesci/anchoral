@@ -16,7 +16,6 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
-from src.energizer.callbacks import Callback
 from src.energizer.enums import OutputKeys, RunningStage
 from src.energizer.progress_trackers import ProgressTracker
 from src.energizer.registries import LOSS_FUNCTIONS_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
@@ -51,7 +50,7 @@ class Estimator(HyperparametersMixin):
         num_nodes: int = 1,
         precision: _PRECISION_INPUT = 32,
         plugins: Optional[Union[_PLUGIN_INPUT, List[_PLUGIN_INPUT]]] = None,
-        callbacks: Optional[Union[List[Callback], Callback]] = None,
+        callbacks: Optional[Union[List[Any], Any]] = None,
         loggers: Optional[Union[Logger, List[Logger]]] = None,
         deterministic: bool = True,
     ) -> None:
@@ -142,6 +141,8 @@ class Estimator(HyperparametersMixin):
 
             # update progress
             self.progress_tracker.increment_fit_progress()
+
+        self.progress_tracker.finalize_fit_progress()
 
         # call hook
         self.fabric.call("on_fit_end", estimator=self, model=model, output=output)
@@ -270,6 +271,8 @@ class Estimator(HyperparametersMixin):
 
             # update progress tracker
             self.progress_tracker.increment_epoch_progress()
+        
+        self.progress_tracker.finalize_epoch_progress()
 
         # method to possibly aggregate
         train_out = self.train_epoch_end(train_out, metrics)
@@ -348,6 +351,8 @@ class Estimator(HyperparametersMixin):
 
                 # update progress tracker
                 self.progress_tracker.increment_epoch_progress()
+        
+        self.progress_tracker.finalize_epoch_progress()
 
         # method to possibly aggregate
         output = getattr(self, f"{stage}_epoch_end")(output, metrics)

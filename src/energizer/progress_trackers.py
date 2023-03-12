@@ -37,11 +37,15 @@ class Tracker:
         pass
 
     def close_progress_bar(self) -> None:
+        self.terminate_progress_bar()
+        if self.progress_bar is not None:
+            self.progress_bar.clear()
+            self.progress_bar.close()
+
+    def terminate_progress_bar(self) -> None:
         if self.progress_bar is not None:
             self.progress_bar.set_postfix_str("Done!", refresh=True)
             self.progress_bar.refresh()
-            self.progress_bar.clear()
-            self.progress_bar.close()
 
 
 @dataclass
@@ -143,27 +147,17 @@ class ProgressTracker:
     """
 
     def is_fit_done(self) -> bool:
-        cond = self.fit_tracker.epoch_tracker.max_reached() or self.fit_tracker.stop_training
-        if cond:
-            self.fit_tracker.close_progress_bars()
-        return cond
+        return self.fit_tracker.epoch_tracker.max_reached() or self.fit_tracker.stop_training
 
     def is_epoch_done(self) -> bool:
-        cond = self._get_active_tracker().max_reached()
+        cond = self._get_stage_tracker().max_reached()
         if self.current_stage == RunningStage.TRAIN and self.is_training:
             cond = cond or self.fit_tracker.stop_training
 
-        if not self.is_training:
-            self._get_active_tracker().close_progress_bar()
         return cond
 
-    # def is_last_epoch(self) -> bool:
-    #     if self.current_stage != RunningStage.TRAIN:
-    #         return False
-    #     return self.fit_tracker.epoch_tracker.max == self.fit_tracker.epoch_tracker.current
-
     def get_batch_num(self) -> int:
-        return self._get_active_tracker().total
+        return self._get_stage_tracker().total
 
     def get_epoch_num(self) -> int:
         if self.current_stage == RunningStage.TEST:
@@ -198,10 +192,21 @@ class ProgressTracker:
             pbar.set_description(f"Epoch {self.fit_tracker.epoch_tracker.current}")
 
     def increment_epoch_progress(self) -> None:
-        self._get_active_tracker().increment()
+        self._get_stage_tracker().increment()
 
     def increment_step_progress(self) -> None:
         self.fit_tracker.step_tracker.increment()
+    
+    def finalize_epoch_progress(self) -> None:
+        tracker = self._get_stage_tracker()
+        if self.is_training:
+            tracker.terminate_progress_bar()
+        else:
+            tracker.close_progress_bar()
+     
+    def finalize_fit_progress(self) -> None:
+        self.fit_tracker.close_progress_bars()
+
 
     """
     Initializers
@@ -238,7 +243,7 @@ class ProgressTracker:
     def initialize_epoch_progress(self, stage: RunningStage) -> None:
         """Resets the `current` counters in the tracker and optionally their progress bars."""
         self.current_stage = stage
-        self._get_active_tracker().reset()  # <- reset current counts and progress bar line
+        self._get_stage_tracker().reset()  # <- reset current counts and progress bar line
 
     def continue_epoch_progress(self, stage: RunningStage) -> None:
         """Resets the `current` counters in the tracker and optionally their progress bars."""
@@ -248,7 +253,7 @@ class ProgressTracker:
     Helpers
     """
 
-    def _get_active_tracker(self) -> StageTracker:
+    def _get_stage_tracker(self) -> StageTracker:
         tracker = self.fit_tracker if self.is_training else self
         return getattr(tracker, f"{self.current_stage}_tracker")
 
