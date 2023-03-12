@@ -222,7 +222,7 @@ class UncertaintyBasedStrategyForSequenceClassification(SequenceClassificationMi
         batch_idx: int,
         metrics: Optional[MetricCollection] = None,
     ) -> Dict:
-        _ = batch.pop(InputKeys.ON_CPU)  # this is already handled in the `eval_batch_loop`
+        _ = batch.pop(InputKeys.ON_CPU)  # this is already handled in the `evaluation_step`
 
         logits = model(**batch).logits
         scores = self.score_fn(logits)

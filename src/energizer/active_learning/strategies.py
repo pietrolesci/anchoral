@@ -34,7 +34,7 @@ class UncertaintyBasedStrategy(ActiveEstimator):
         self.score_fn = score_fn if isinstance(score_fn, Callable) else self._scoring_fn_registry[score_fn]
 
     def query_loop(self, model: _FabricModule, loader: _FabricDataLoader, query_size: int, **kwargs) -> QueryOutput:
-        """Note that since this relies on the `eval_epoch_loop` method it automatically calls some hooks.
+        """Note that since this relies on the `eval_loop` method it automatically calls some hooks.
 
         In particular:
             - configure_metrics
@@ -44,7 +44,7 @@ class UncertaintyBasedStrategy(ActiveEstimator):
             - on_pool_batch_end
             - pool_epoch_end
         """
-        output = self.eval_epoch_loop(None, model, loader, RunningStage.POOL)
+        output = self.eval_loop(None, model, loader, RunningStage.POOL)
         topk_scores, indices = self._topk(output, query_size)
 
         output = QueryOutput(
@@ -55,7 +55,7 @@ class UncertaintyBasedStrategy(ActiveEstimator):
 
         return output
 
-    def eval_batch_loop(
+    def evaluation_step(
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
@@ -65,7 +65,7 @@ class UncertaintyBasedStrategy(ActiveEstimator):
         stage: RunningStage,
     ) -> BATCH_OUTPUT:
         if stage != RunningStage.POOL:
-            return super().eval_batch_loop(loss_fn, model, batch, batch_idx, metrics, stage)
+            return super().evaluation_step(loss_fn, model, batch, batch_idx, metrics, stage)
 
         ids = batch[InputKeys.ON_CPU][SpecialKeys.ID]
 

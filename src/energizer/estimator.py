@@ -197,7 +197,7 @@ class Estimator(HyperparametersMixin):
         # configure model
         model = self.fabric.setup(self.model)
 
-        return self.eval_epoch_loop(loss_fn, model, loader, stage)
+        return self.eval_loop(loss_fn, model, loader, stage)
 
     """
     Loops
@@ -234,10 +234,9 @@ class Estimator(HyperparametersMixin):
 
             # validation loop
             if self.progress_tracker.should_validate():
-                out = self.eval_epoch_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION)
+                out = self.eval_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION)
                 if out is not None:
                     validation_out.append(out)
-                model.train()  # NOTE: put model in train mode again
                 self.progress_tracker.continue_epoch_progress(RunningStage.TRAIN)  # continue training tracking
 
             # put batch on correct device
@@ -254,7 +253,7 @@ class Estimator(HyperparametersMixin):
             )
 
             # run model on batch
-            batch_out = self.train_batch_loop(loss_fn, model, batch, batch_idx, optimizer, scheduler, metrics)
+            batch_out = self.training_step(loss_fn, model, batch, batch_idx, optimizer, scheduler, metrics)
 
             # call hook
             self.fabric.call(
@@ -286,15 +285,14 @@ class Estimator(HyperparametersMixin):
 
         # validation loop
         if self.progress_tracker.should_validate():
-            out = self.eval_epoch_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION)
+            out = self.eval_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION)
             if out is not None:
                 validation_out.append(out)
-            model.train()  # NOTE: put model in train mode again
             self.progress_tracker.continue_epoch_progress(RunningStage.TRAIN)  # continue training tracking
 
         return FitEpochOutput(train=train_out, validation=validation_out)
 
-    def train_batch_loop(
+    def training_step(
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
@@ -328,7 +326,7 @@ class Estimator(HyperparametersMixin):
 
         return output
 
-    def eval_epoch_loop(
+    def eval_loop(
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
@@ -344,6 +342,7 @@ class Estimator(HyperparametersMixin):
         metrics = self.configure_metrics(stage)
 
         # eval mode
+        is_training = model.training
         model.eval()
 
         # call hook
@@ -365,7 +364,7 @@ class Estimator(HyperparametersMixin):
                 )
 
                 # run model on batch
-                batch_out = self.eval_batch_loop(loss_fn, model, batch, batch_idx, metrics, stage)
+                batch_out = self.evaluation_step(loss_fn, model, batch, batch_idx, metrics, stage)
 
                 # call hook
                 self.fabric.call(
@@ -390,9 +389,12 @@ class Estimator(HyperparametersMixin):
         # call hook
         self.fabric.call(f"on_{stage}_epoch_end", estimator=self, model=model, output=output, metrics=metrics)
 
+        # resets model training status
+        model.train(is_training)
+
         return output
 
-    def eval_batch_loop(
+    def evaluation_step(
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
@@ -583,18 +585,3 @@ class Estimator(HyperparametersMixin):
     def load_state_dict(self, cache_dir: Union[str, Path], name: str = "state_dict.pt") -> None:
         cache_dir = Path(cache_dir)
         self.model.load_state_dict(self.fabric.load(cache_dir / name))
-
-    """
-    Utilities
-    """
-
-    def _init_deterministic(self, deterministic: bool) -> None:
-        # NOTE: taken from the lightning Trainer
-        torch.use_deterministic_algorithms(deterministic)
-        if deterministic:
-            # fixing non-deterministic part of horovod
-            # https://github.com/Lightning-AI/lightning/pull/1572/files#r420279383
-            os.environ["HOROVOD_FUSION_THRESHOLD"] = "0"
-
-            # https://docs.nvidia.com/cuda/cublas/index.html#cublasApi_reproducibility
-            os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
