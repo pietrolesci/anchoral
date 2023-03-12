@@ -10,9 +10,9 @@ from torch import Tensor
 from transformers import PreTrainedTokenizerBase
 
 from src.energizer.active_learning.data import ActiveDataModule
-from src.energizer.data import DataModule, _pad
+from src.energizer.data import DataModule
 from src.energizer.enums import InputKeys, RunningStage, SpecialKeys
-from src.energizer.utilities import ld_to_dl
+from src.energizer.utilities import ld_to_dl, _pad
 
 
 """

@@ -15,8 +15,6 @@ import torch
 from lightning.pytorch.core.mixins.hparams_mixin import HyperparametersMixin
 from numpy.random import RandomState
 from sklearn.utils.validation import check_random_state
-from torch import Tensor
-from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Sampler
 
 from src.energizer.enums import RunningStage
@@ -131,15 +129,6 @@ class DataModule(HyperparametersMixin):
 """
 Define as globals otherwise pickle complains when running in multi-gpu
 """
-
-
-def _pad(inputs: List[int], padding_value: float, max_length: int) -> Tensor:
-    # truncate -> convert to tensor -> pad
-    return pad_sequence(
-        [torch.tensor(t[:max_length]) for t in inputs],
-        batch_first=True,
-        padding_value=padding_value,
-    )
 
 
 def _get_sampler(
