@@ -157,10 +157,10 @@ class ProgressTracker:
             self._get_active_tracker().close_progress_bar()
         return cond
 
-    def is_last_epoch(self) -> bool:
-        if self.current_stage != RunningStage.TRAIN:
-            return False
-        return self.fit_tracker.epoch_tracker.max == self.fit_tracker.epoch_tracker.current
+    # def is_last_epoch(self) -> bool:
+    #     if self.current_stage != RunningStage.TRAIN:
+    #         return False
+    #     return self.fit_tracker.epoch_tracker.max == self.fit_tracker.epoch_tracker.current
 
     def get_batch_num(self) -> int:
         return self._get_active_tracker().total

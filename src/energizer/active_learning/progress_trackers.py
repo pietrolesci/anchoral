@@ -48,6 +48,7 @@ class BudgetTracker(Tracker):
 class ActiveProgressTracker(ProgressTracker):
     round_tracker: RoundTracker = None
     pool_tracker: StageTracker = None
+    stop_active_training: bool = False
 
     """
     Status
@@ -78,7 +79,7 @@ class ActiveProgressTracker(ProgressTracker):
         return cond
 
     def is_active_fit_done(self) -> bool:
-        cond = self.round_tracker.max_reached() or self.budget_tracker.max_reached()
+        cond = self.round_tracker.max_reached() or self.budget_tracker.max_reached() or self.stop_active_training
         if cond:
             self.round_tracker.close_progress_bar()
             self.fit_tracker.close_progress_bars()
@@ -135,3 +136,6 @@ class ActiveProgressTracker(ProgressTracker):
     def increment_active_fit_progress(self) -> None:
         self.round_tracker.increment()
         self.budget_tracker.increment()
+
+    def set_stop_active_training(self, value: bool) -> None:
+        self.stop_active_training = value

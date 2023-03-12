@@ -174,7 +174,7 @@ class ActiveEstimator(Estimator):
 
         # query indices to annotate, skip first round
         # do not annotate on the warm-up round
-        if active_datamodule.pool_size > query_size and self.progress_tracker.num_rounds >= 0:
+        if active_datamodule.pool_size > query_size:
             output.query = self.query(active_datamodule=active_datamodule, query_size=query_size, **kwargs)
 
             # call hook
@@ -187,6 +187,9 @@ class ActiveEstimator(Estimator):
             )
             # call hook
             self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)
+        else:
+            # no more pool instances
+            self.progress_tracker.set_stop_active_training(True)
 
         # method to possibly aggregate
         output = self.round_epoch_end(output, active_datamodule)
