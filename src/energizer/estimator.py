@@ -21,7 +21,7 @@ from src.energizer.enums import OutputKeys, RunningStage
 from src.energizer.progress_trackers import ProgressTracker
 from src.energizer.registries import LOSS_FUNCTIONS_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
-from src.energizer.utilities import move_to_cpu
+from src.energizer.utilities import move_to_cpu, init_deterministic
 from src.energizer.utilities.model_summary import summarize
 
 
@@ -67,7 +67,7 @@ class Estimator(HyperparametersMixin):
             loggers=loggers,
         )
         self.model = model
-        self._init_deterministic(deterministic)
+        init_deterministic(deterministic)
         self.save_hyperparameters(ignore=self._hparams_ignore)
 
     @property

@@ -9,6 +9,7 @@ from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 from lightning_utilities.core.apply_func import apply_to_collection
 from numpy import generic, ndarray
 from torch import Tensor
+import os
 
 # from torch.utils.data import BatchSampler, SequentialSampler
 # from src.energizer.enums import RunningStage
@@ -80,3 +81,16 @@ def local_seed(seed: int) -> Generator[None, None, None]:
 #         hparams = {**hparams, **loader_hparams}
 
 #     return hparams
+
+
+
+def init_deterministic(deterministic: bool) -> None:
+    # NOTE: taken from the lightning Trainer
+    torch.use_deterministic_algorithms(deterministic)
+    if deterministic:
+        # fixing non-deterministic part of horovod
+        # https://github.com/Lightning-AI/lightning/pull/1572/files#r420279383
+        os.environ["HOROVOD_FUSION_THRESHOLD"] = "0"
+
+        # https://docs.nvidia.com/cuda/cublas/index.html#cublasApi_reproducibility
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
