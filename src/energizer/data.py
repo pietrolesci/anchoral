@@ -17,7 +17,7 @@ from numpy.random import RandomState
 from sklearn.utils.validation import check_random_state
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Sampler
 
 from src.energizer.enums import RunningStage
 from src.energizer.types import DATASET
@@ -93,42 +93,32 @@ class DataModule(HyperparametersMixin):
         return indices, distances
 
     def train_loader(self) -> DataLoader:
-        return DataLoader(
-            self.train_dataset,
-            sampler=self.get_sampler(self.train_dataset, RunningStage.TRAIN),
-            collate_fn=self.get_collate_fn(RunningStage.TRAIN),
-        )
+        return self.get_loader(RunningStage.TRAIN)
 
     def validation_loader(self) -> Optional[DataLoader]:
-        if self.validation_dataset:
-            return DataLoader(
-                self.validation_dataset,
-                sampler=self.get_sampler(self.validation_dataset, RunningStage.VALIDATION),
-                collate_fn=self.get_collate_fn(RunningStage.VALIDATION),
-            )
+        return self.get_loader(RunningStage.VALIDATION)
 
     def test_loader(self) -> Optional[DataLoader]:
-        if self.test_dataset:
-            return DataLoader(
-                self.test_dataset,
-                sampler=self.get_sampler(self.test_dataset, RunningStage.TEST),
-                collate_fn=self.get_collate_fn(RunningStage.TEST),
-            )
-
+        return self.get_loader(RunningStage.TEST)
+           
     def get_collate_fn(self, stage: Optional[str] = None) -> Optional[Callable]:
         return None
 
-    def get_sampler(self, dataset: DATASET, stage: str) -> BatchSampler:
+    def get_loader(self, stage: str) -> Optional[DataLoader]:
+        dataset = getattr(self, f"{stage}_dataset", None)
+        if dataset is None:
+            return
+        
         batch_size = self.batch_size if stage == RunningStage.TRAIN else self.eval_batch_size
-        # NOTE: when the batch_size is bigger than the number of available instances in the dataset
-        # we get an `IndexError` for Arrow. Here we avoid this
         batch_size = min(batch_size, len(dataset))
-        return _get_sampler(
+
+        sampler = _get_sampler(dataset, shuffle=self.shuffle if stage == RunningStage.TRAIN else False, replacement=self.replacement, seed=self.seed)
+
+        return DataLoader(
             dataset=dataset,
             batch_size=batch_size,
-            shuffle=self.shuffle if stage == RunningStage.TRAIN else False,
-            replacement=self.replacement,
-            seed=self.seed,
+            sampler=sampler,
+            collate_fn=self.get_collate_fn(stage),
             drop_last=self.drop_last,
         )
 
@@ -154,26 +144,18 @@ def _pad(inputs: List[int], padding_value: float, max_length: int) -> Tensor:
 
 def _get_sampler(
     dataset: DATASET,
-    batch_size: int,
     shuffle: bool,
     replacement: bool,
     seed: int,
-    drop_last: bool,
-) -> BatchSampler:
+) -> Sampler:
     """Get a sampler optimizer to work with `datasets.Dataset`.
 
     ref: https://huggingface.co/docs/datasets/use_with_pytorch
     """
 
     if not shuffle:
-        sampler = SequentialSampler(dataset)
-    else:
-        g = torch.Generator()
-        g.manual_seed(seed)
-        sampler = RandomSampler(dataset, generator=g, replacement=replacement)
+        return SequentialSampler(dataset)
 
-    return BatchSampler(
-        sampler,
-        batch_size=batch_size,
-        drop_last=drop_last,
-    )
+    g = torch.Generator()
+    g.manual_seed(seed)
+    return RandomSampler(dataset, generator=g, replacement=replacement)

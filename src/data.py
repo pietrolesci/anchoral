@@ -12,6 +12,8 @@ from transformers import PreTrainedTokenizerBase
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.data import DataModule, _pad
 from src.energizer.enums import InputKeys, RunningStage, SpecialKeys
+from src.energizer.utilities import ld_to_dl
+
 
 """
 A very tailored datamodule for HuggingFace datasets
@@ -134,10 +136,8 @@ def collate_fn(
     pad_token_id: int,
     pad_fn: Callable,
 ) -> Dict[str, Union[List[str], Tensor]]:
-    # NOTE: beacuse of the batch_sampler we already obtain dict of lists
-    # however the dataloader will try to create a list, so we have to unpack it
-    assert len(batch) == 1, "Look at the data collator"
-    batch = batch[0]
+    
+    batch = ld_to_dl(batch)
 
     # remove string columns that cannot be transfered on gpu
     columns_on_cpu = {col: batch.pop(col) for col in columns_on_cpu if col in batch}
