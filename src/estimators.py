@@ -133,7 +133,7 @@ class SequenceClassificationMixin:
         logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
         self.log_dict(logs, step=self.progress_tracker.get_epoch_num())
 
-        if stage == RunningStage.TEST:
+        if stage == RunningStage.TEST and hasattr(self.progress_tracker, "budget"):
             logs = {f"{k}_vs_budget": v for k, v in logs.items()}
             self.log_dict(logs, step=self.progress_tracker.budget)
 

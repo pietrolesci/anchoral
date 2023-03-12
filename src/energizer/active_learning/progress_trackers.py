@@ -73,7 +73,7 @@ class ActiveProgressTracker(ProgressTracker):
         return self.fit_tracker.epoch_tracker.max_reached() or self.fit_tracker.stop_training
 
     def is_epoch_done(self) -> bool:
-        cond = self._get_active_tracker().max_reached()
+        cond = self._get_stage_tracker().max_reached()
         if self.current_stage == RunningStage.TRAIN and self.is_training:
             cond = cond or self.fit_tracker.stop_training
         return cond
