@@ -227,7 +227,7 @@ class Estimator(HyperparametersMixin):
 
         train_out, validation_out = [], []
         for batch_idx, batch in enumerate(train_loader):
-            
+
             # check stopping condition
             if self.progress_tracker.is_epoch_done():
                 break
@@ -359,7 +359,7 @@ class Estimator(HyperparametersMixin):
         model.train(is_training)
 
         return output
-    
+
     def training_step(
         self,
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
@@ -512,7 +512,7 @@ class Estimator(HyperparametersMixin):
             return
 
         return self.fabric.setup_dataloaders(loader, replace_sampler=False, move_to_device=False)
-    
+
     """
     Hooks
     """
