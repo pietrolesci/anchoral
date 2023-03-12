@@ -1,5 +1,4 @@
 import inspect
-import os
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -228,6 +227,7 @@ class Estimator(HyperparametersMixin):
 
         train_out, validation_out = [], []
         for batch_idx, batch in enumerate(train_loader):
+            
             # check stopping condition
             if self.progress_tracker.is_epoch_done():
                 break
@@ -291,40 +291,6 @@ class Estimator(HyperparametersMixin):
             self.progress_tracker.continue_epoch_progress(RunningStage.TRAIN)  # continue training tracking
 
         return FitEpochOutput(train=train_out, validation=validation_out)
-
-    def training_step(
-        self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
-        model: _FabricModule,
-        batch: Any,
-        batch_idx: int,
-        optimizer: _FabricOptimizer,
-        scheduler: _LRScheduler,
-        metrics: Optional[METRIC],
-    ) -> BATCH_OUTPUT:
-        """Runs over a single batch of data."""
-
-        # zero_grad
-        optimizer.zero_grad()
-
-        # compute loss
-        output = self.train_step(loss_fn, model, batch, batch_idx, metrics)
-        loss = output if isinstance(output, torch.Tensor) else output[OutputKeys.LOSS]
-
-        # compute gradients
-        self.fabric.backward(loss)  # instead of loss.backward()
-
-        # update parameters
-        optimizer.step()
-
-        # update scheduler
-        if scheduler is not None:
-            scheduler.step()
-
-        # update progress_tracker
-        self.progress_tracker.increment_step_progress()
-
-        return output
 
     def eval_loop(
         self,
@@ -391,6 +357,40 @@ class Estimator(HyperparametersMixin):
 
         # resets model training status
         model.train(is_training)
+
+        return output
+    
+    def training_step(
+        self,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
+        model: _FabricModule,
+        batch: Any,
+        batch_idx: int,
+        optimizer: _FabricOptimizer,
+        scheduler: _LRScheduler,
+        metrics: Optional[METRIC],
+    ) -> BATCH_OUTPUT:
+        """Runs over a single batch of data."""
+
+        # zero_grad
+        optimizer.zero_grad()
+
+        # compute loss
+        output = self.train_step(loss_fn, model, batch, batch_idx, metrics)
+        loss = output if isinstance(output, torch.Tensor) else output[OutputKeys.LOSS]
+
+        # compute gradients
+        self.fabric.backward(loss)  # instead of loss.backward()
+
+        # update parameters
+        optimizer.step()
+
+        # update scheduler
+        if scheduler is not None:
+            scheduler.step()
+
+        # update progress_tracker
+        self.progress_tracker.increment_step_progress()
 
         return output
 
@@ -512,6 +512,10 @@ class Estimator(HyperparametersMixin):
             return
 
         return self.fabric.setup_dataloaders(loader, replace_sampler=False, move_to_device=False)
+    
+    """
+    Hooks
+    """
 
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[METRIC]:
         pass
