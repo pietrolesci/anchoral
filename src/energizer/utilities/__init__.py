@@ -4,15 +4,13 @@ import os
 import random
 from typing import Any, Dict, Generator, List, Union
 
-from torch import Tensor
-from torch.nn.utils.rnn import pad_sequence
-
 import numpy as np
 import torch
 from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 from lightning_utilities.core.apply_func import apply_to_collection
 from numpy import generic, ndarray
 from torch import Tensor
+from torch.nn.utils.rnn import pad_sequence
 
 # from torch.utils.data import BatchSampler, SequentialSampler
 # from src.energizer.enums import RunningStage
@@ -62,8 +60,6 @@ def local_seed(seed: int) -> Generator[None, None, None]:
     _set_rng_states(states)
 
 
-
-
 def init_deterministic(deterministic: bool) -> None:
     # NOTE: taken from the lightning Trainer
     torch.use_deterministic_algorithms(deterministic)
@@ -83,4 +79,3 @@ def _pad(inputs: List[int], padding_value: float, max_length: int) -> Tensor:
         batch_first=True,
         padding_value=padding_value,
     )
-

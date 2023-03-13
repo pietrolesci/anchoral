@@ -249,7 +249,7 @@ class ActiveDataModule(DataModule):
             train_df = self._df.loc[
                 (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == False)
             ]
-            
+
             self.train_dataset = Dataset.from_pandas(train_df, preserve_index=False)
 
             return self.get_loader(RunningStage.TRAIN)
