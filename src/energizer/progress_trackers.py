@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import List, Optional
 
 import numpy as np
 from torch.utils.data import DataLoader
@@ -10,6 +10,7 @@ from src.energizer.enums import RunningStage
 
 @dataclass
 class Tracker:
+    min: Optional[int] = None
     max: Optional[int] = None
     total: int = 0
     current: int = 0
@@ -26,6 +27,7 @@ class Tracker:
         self.reset_current()
         if self.progress_bar is not None:
             self.progress_bar.reset(total=self.max)
+            self.progress_bar.set_postfix_str()
 
     def increment(self) -> None:
         self.current += 1
@@ -75,17 +77,21 @@ class StageTracker(Tracker):
 
 @dataclass
 class FitTracker:
-    epoch_tracker: EpochTracker
-    step_tracker: Tracker
-    train_tracker: StageTracker
-    validation_tracker: StageTracker
-    validation_interval: Optional[List[int]] = None
+    epoch_tracker: EpochTracker = EpochTracker()
+    step_tracker: Tracker = Tracker()
+    train_tracker: StageTracker = StageTracker(stage=RunningStage.TRAIN)
+    validation_tracker: StageTracker = StageTracker(stage=RunningStage.VALIDATION)
+
     stop_training: bool = False
+    has_validation: bool = False
+    validate_every_n_batches: Optional[List[int]] = None
+    validate_every_n_epochs: Optional[List[int]] = None
 
     def make_progress_bars(self) -> None:
         self.epoch_tracker.make_progress_bar()
         self.train_tracker.make_progress_bar()
-        self.validation_tracker.make_progress_bar()
+        if self.has_validation:
+            self.validation_tracker.make_progress_bar()
 
     def close_progress_bars(self) -> None:
         self.epoch_tracker.close_progress_bar()
@@ -99,53 +105,89 @@ class FitTracker:
 
     def reset(self) -> None:
         self.stop_training = False
+        self.has_validation = False
+        self.validate_every_n_batches = None
+        self.validate_every_n_epochs = None
         self.epoch_tracker.reset()
         self.step_tracker.reset()
         self.train_tracker.reset()
         self.validation_tracker.reset()
 
-    @classmethod
-    def from_hparams(
-        cls,
-        num_epochs: int,
-        min_steps: int,
-        max_train_batches: int,
-        max_validation_batches: int,
-        validation_interval: int,
-    ):
-        return cls(
-            epoch_tracker=EpochTracker(max=num_epochs),
-            step_tracker=Tracker(max=min_steps),
-            train_tracker=StageTracker(max=max_train_batches, stage=RunningStage.TRAIN),
-            validation_tracker=StageTracker(max=max_validation_batches, stage=RunningStage.VALIDATION),
-            validation_interval=validation_interval,
-        )
-
     def update_from_hparams(
         self,
-        num_epochs: int,
-        min_steps: int,
-        max_train_batches: int,
-        max_validation_batches: int,
-        validation_interval: int,
+        num_train_batches: int,
+        max_epochs: Optional[int],
+        min_epochs: Optional[int],
+        max_steps: Optional[int],
+        min_steps: Optional[int],
+        has_validation: Optional[bool],
     ) -> None:
-        self.epoch_tracker.max = num_epochs
-        self.step_tracker.max = min_steps
-        self.train_tracker.max = max_train_batches
-        self.validation_tracker.max = max_validation_batches
-        self.validation_interval = validation_interval
+        """Set epoch and step trackers."""
+        assert max_epochs is not None or min_steps is not None, "`max_epochs` or `min_steps` must be passed."
+
+        max_epochs_for_num_steps = 0
+        if min_steps is not None:
+            max_epochs_for_num_steps = int(np.ceil(min_steps / num_train_batches))
+
+        max_epochs = max_epochs or -1
+        if max_epochs < max_epochs_for_num_steps:
+            # if we do not have enough batches across epochs, adjust epoch number
+            max_epochs = max_epochs_for_num_steps
+        else:
+            # if we have enough batches to cover the num steps, do nothing
+            min_steps = None
+
+        self.epoch_tracker.max = max_epochs
+        self.epoch_tracker.min = min_epochs
+        self.step_tracker.max = max_steps
+        self.step_tracker.min = min_steps
+        if has_validation:
+            self.has_validation = has_validation
+
+    def initialize_epoch_progress(self, loader: DataLoader, stage: RunningStage, **kwargs) -> None:
+        max_batches = min(len(loader), kwargs.get(f"limit_{stage}_batches", float("Inf")))
+
+        getattr(self, f"{stage}_tracker").max = max_batches
+        getattr(self, f"{stage}_tracker").reset()  # <- reset current counts and progress bar line
+
+        if stage == RunningStage.TRAIN and self.train_tracker.progress_bar is not None:
+            self.train_tracker.progress_bar.set_description(f"Epoch {self.epoch_tracker.current}")
+
+        validation_frequency = kwargs.get("validation_frequency", None)
+        if validation_frequency and stage == RunningStage.TRAIN:
+            if validation_frequency < 1:
+                self.validate_every_n_batches = int(max_batches * validation_frequency)
+            elif validation_frequency > 1:
+                self.validate_every_n_epochs = int(validation_frequency)
 
 
 @dataclass
 class ProgressTracker:
-    fit_tracker: FitTracker = None
+    """Tracks epochs and stages."""
+
+    fit_tracker: FitTracker = FitTracker()
     validation_tracker: StageTracker = None
     test_tracker: StageTracker = None
 
-    is_training: bool = False
+    is_fitting: bool = False
     log_interval: int = 1
 
     current_stage: RunningStage = None
+
+    @property
+    def global_step(self) -> int:
+        return self.fit_tracker.step_tracker.total
+
+    @property
+    def global_batch(self) -> int:
+        "automatically infers the active stage"
+        return self._get_stage_tracker().total
+
+    @property
+    def global_epoch(self) -> int:
+        if self.is_fitting:
+            return self.fit_tracker.epoch_tracker.total
+        return 0
 
     """
     Status
@@ -155,164 +197,97 @@ class ProgressTracker:
         return self.fit_tracker.epoch_tracker.max_reached() or self.fit_tracker.stop_training
 
     def is_epoch_done(self) -> bool:
-        cond = self._get_stage_tracker().max_reached()
-        if self.current_stage == RunningStage.TRAIN and self.is_training:
-            cond = cond or self.fit_tracker.stop_training
-        return cond
+        return self._get_stage_tracker().max_reached() or (
+            self.current_stage == RunningStage.TRAIN and self.is_fitting and self.fit_tracker.stop_training
+        )
 
-    def get_batch_num(self) -> int:
-        return self._get_stage_tracker().total
-
-    def get_epoch_num(self) -> int:
-        if self.current_stage == RunningStage.TEST:
-            return 0
-        elif self.current_stage == RunningStage.VALIDATION and self.is_training:
-            return self.get_batch_num()
-        return self.fit_tracker.epoch_tracker.total
-
-    def should_log(self) -> None:
-        # return batch_idx is None or (batch_idx == 0) or ((batch_idx + 1) % self.log_interval == 0)
-        return self.get_batch_num() % self.log_interval == 0
+    def should_log(self) -> bool:
+        return self.global_batch % self.log_interval == 0
 
     def should_validate(self) -> bool:
-        if self.fit_tracker.validation_tracker.max is None:
+        # no validation
+        if not self.fit_tracker.has_validation:
             return False
-        if self.is_epoch_done():
+
+        # we are fitting and training has finished
+        if self.current_stage == RunningStage.TRAIN and self.is_epoch_done():
+            if self.fit_tracker.validate_every_n_epochs is not None:
+                return (self.global_epoch + 1) % self.fit_tracker.validate_every_n_epochs == 0
+            else:
+                return True
+
+        # we can validate mid-epoch
+        if (
+            self.fit_tracker.validate_every_n_batches is not None
+            and (self.fit_tracker.train_tracker.current + 1) % self.fit_tracker.validate_every_n_batches == 0
+        ):
             return True
-        if self.fit_tracker.validation_interval is not None:
-            return self.fit_tracker.train_tracker.current in self.fit_tracker.validation_interval
+
+        return False
+
+    def set_stop_training(self, value: bool) -> None:
+        self.fit_tracker.stop_training = value
 
     """
     Operations
     """
 
-    def set_stop_training(self, value: bool) -> None:
-        self.fit_tracker.stop_training = value
+    def initialize_fit_progress(self, **kwargs) -> None:
+        """Set states, progress bars, and epoch/step trackers."""
+        self.is_fitting = True
+        enable_prog_bar = kwargs.pop("progress_bar", True)
+
+        self.fit_tracker.reset()  # <- reset current counts and progress bar line
+        self.fit_tracker.update_from_hparams(**kwargs)
+
+        if enable_prog_bar:
+            self.fit_tracker.make_progress_bars()
 
     def increment_fit_progress(self) -> None:
         self.fit_tracker.epoch_tracker.increment()
-        pbar = self.fit_tracker.train_tracker.progress_bar
-        if pbar is not None:
-            pbar.set_description(f"Epoch {self.fit_tracker.epoch_tracker.current}")
+
+    def finalize_fit_progress(self) -> None:
+        self.fit_tracker.close_progress_bars()
+        self.is_fitting = False
+
+    def initialize_epoch_progress(self, loader: DataLoader, stage: RunningStage, **kwargs) -> None:
+        """Resets the `current` counters in the tracker and optionally their progress bars."""
+        self.current_stage = stage
+        self.log_interval = kwargs.get("log_interval", 1)
+
+        if self.is_fitting:
+            self.fit_tracker.initialize_epoch_progress(loader, stage, **kwargs)
+            return
+
+        name = f"{stage}_tracker"
+        max_batches = min(len(loader), kwargs.get("limit_batches", float("Inf")))
+        if getattr(self, name) is None:
+            tracker = StageTracker(stage=stage)
+            if kwargs.get("progress_bar", True):
+                tracker.make_progress_bar()
+            
+            setattr(self, name, tracker)
+
+        getattr(self, name).max = max_batches
+        getattr(self, name).reset()  # <- reset current counts and progress bar line
 
     def increment_epoch_progress(self) -> None:
         self._get_stage_tracker().increment()
 
-    def increment_step_progress(self) -> None:
-        self.fit_tracker.step_tracker.increment()
-    
     def finalize_epoch_progress(self) -> None:
         tracker = self._get_stage_tracker()
-        if self.is_training:
+        if self.is_fitting:
             tracker.terminate_progress_bar()
         else:
             tracker.close_progress_bar()
-     
-    def finalize_fit_progress(self) -> None:
-        self.fit_tracker.close_progress_bars()
 
-
-    """
-    Initializers
-    """
-
-    def initialize_fit_progress(
-        self,
-        num_epochs: Optional[int],
-        min_steps: Optional[int],
-        train_loader: DataLoader,
-        validation_loader: DataLoader,
-        **kwargs,
-    ) -> None:
-        self.is_training = True
-        self.log_interval = kwargs.get("log_interval", 1)
-
-        hparams = self._solve_hparams(num_epochs, min_steps, train_loader, validation_loader, **kwargs)
-        self.fit_tracker = FitTracker.from_hparams(**hparams)
-        self.fit_tracker.reset()  # <- reset current counts and progress bar line
-        if kwargs.get("progress_bar", True):
-            self.fit_tracker.make_progress_bars()
-
-    def initialize_evaluation_progress(self, stage: RunningStage, loader: DataLoader, **kwargs) -> None:
-        self.is_training = False
-        self.log_interval = kwargs.get("log_interval", 1)
-
-        max_batches = self._solve_num_batches(loader, kwargs.get("limit_batches", None))
-        tracker = StageTracker(max=max_batches, stage=stage)
-        setattr(self, f"{stage}_tracker", tracker)
-        tracker.reset()  # <- reset current counts and progress bar line
-        if kwargs.get("progress_bar", True):
-            tracker.make_progress_bar()
-
-    def initialize_epoch_progress(self, stage: RunningStage) -> None:
-        """Resets the `current` counters in the tracker and optionally their progress bars."""
-        self.current_stage = stage
-        self._get_stage_tracker().reset()  # <- reset current counts and progress bar line
-
-    def continue_epoch_progress(self, stage: RunningStage) -> None:
-        """Resets the `current` counters in the tracker and optionally their progress bars."""
-        self.current_stage = stage
+    def increment_step_progress(self) -> None:
+        self.fit_tracker.step_tracker.increment()
 
     """
     Helpers
     """
 
     def _get_stage_tracker(self) -> StageTracker:
-        tracker = self.fit_tracker if self.is_training else self
+        tracker = self.fit_tracker if self.is_fitting else self
         return getattr(tracker, f"{self.current_stage}_tracker")
-
-    def _solve_hparams(
-        self,
-        num_epochs: Optional[int],
-        min_steps: Optional[int],
-        train_loader: DataLoader,
-        validation_loader: DataLoader,
-        **kwargs,
-    ) -> Dict:
-        assert num_epochs is not None or min_steps is not None, "`num_epochs` or `min_steps` must be passed."
-
-        # train: limit batches
-        max_train_batches = self._solve_num_batches(train_loader, kwargs.get("limit_train_batches", None))
-
-        # train: epochs and steps
-        if num_epochs is None:
-            num_epochs = np.ceil(min_steps / max_train_batches)
-        if min_steps is not None:
-            num_epochs_for_num_steps = int(np.ceil(min_steps / max_train_batches))
-            if num_epochs < num_epochs_for_num_steps:
-                # if we do not have enough batches across epochs, adjust epoch number
-                num_epochs = num_epochs_for_num_steps
-            else:
-                # if we have enough batches to cover the num steps, do nothing
-                min_steps = None
-
-        # validation: limit batches and validation interval
-        max_validation_batches = self._solve_num_batches(
-            validation_loader, kwargs.get("limit_validation_batches", None)
-        )
-        validation_interval = kwargs.get("validation_interval", True)
-        if (
-            max_validation_batches is not None
-            and validation_interval is not None
-            and max_train_batches > validation_interval
-        ):
-            validation_interval = np.linspace(
-                max_train_batches / validation_interval, max_train_batches, validation_interval, dtype=int
-            ).tolist()[:-1]
-        else:
-            validation_interval = None
-
-        return {
-            "num_epochs": num_epochs,
-            "min_steps": min_steps,
-            "max_train_batches": max_train_batches,
-            "max_validation_batches": max_validation_batches,
-            "validation_interval": validation_interval,
-        }
-
-    def _solve_num_batches(self, loader: Union[DataLoader, None], limit_batches: Optional[int]) -> int:
-        if loader is not None:
-            max_batches = len(loader)
-            if limit_batches is not None:
-                max_batches = min(limit_batches, max_batches)
-            return max_batches
