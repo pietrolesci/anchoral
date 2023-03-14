@@ -44,7 +44,7 @@ class UncertaintyBasedStrategy(ActiveEstimator):
             - on_pool_batch_end
             - pool_epoch_end
         """
-        output = self.eval_loop(None, model, loader, RunningStage.POOL)
+        output = self.eval_loop(None, model, loader, RunningStage.POOL, **kwargs)
         topk_scores, indices = self._topk(output, query_size)
 
         output = QueryOutput(

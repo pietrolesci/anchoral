@@ -236,7 +236,6 @@ class Estimator(HyperparametersMixin):
                 out = self.eval_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION, **kwargs)
                 if out is not None:
                     validation_out.append(out)
-
                 # NOTE: continue training tracking -> re-attach train_tracker since it gets changed by `eval_loop`
                 self.progress_tracker.current_stage = RunningStage.TRAIN
 

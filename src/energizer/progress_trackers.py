@@ -146,19 +146,24 @@ class FitTracker:
 
     def initialize_epoch_progress(self, loader: DataLoader, stage: RunningStage, **kwargs) -> None:
         max_batches = min(len(loader), kwargs.get(f"limit_{stage}_batches", float("Inf")))
-
         getattr(self, f"{stage}_tracker").max = max_batches
         getattr(self, f"{stage}_tracker").reset()  # <- reset current counts and progress bar line
 
-        if stage == RunningStage.TRAIN and self.train_tracker.progress_bar is not None:
-            self.train_tracker.progress_bar.set_description(f"Epoch {self.epoch_tracker.current}")
+        if stage == RunningStage.TRAIN:
+            if self.train_tracker.progress_bar is not None:
+                self.train_tracker.progress_bar.set_description(f"Epoch {self.epoch_tracker.current}")
+            
+            validation_frequency = kwargs.get("validation_frequency", None)
+            if validation_frequency:
+                if validation_frequency < 1:
+                    self.validate_every_n_batches = int(max_batches * validation_frequency)
+                elif validation_frequency > 1:
+                    self.validate_every_n_epochs = int(validation_frequency)
 
-        validation_frequency = kwargs.get("validation_frequency", None)
-        if validation_frequency and stage == RunningStage.TRAIN:
-            if validation_frequency < 1:
-                self.validate_every_n_batches = int(max_batches * validation_frequency)
-            elif validation_frequency > 1:
-                self.validate_every_n_epochs = int(validation_frequency)
+        else:
+            if self.train_tracker.progress_bar is not None:
+                # self.train_tracker.progress_bar.set_postfix_str("Validating")
+                self.train_tracker.progress_bar.refresh()
 
 
 @dataclass
@@ -202,7 +207,7 @@ class ProgressTracker:
         )
 
     def should_log(self) -> bool:
-        return self.global_batch % self.log_interval == 0
+        return (self.global_batch + 1) % self.log_interval == 0
 
     def should_validate(self) -> bool:
         # no validation
@@ -212,14 +217,17 @@ class ProgressTracker:
         # we are fitting and training has finished
         if self.current_stage == RunningStage.TRAIN and self.is_epoch_done():
             if self.fit_tracker.validate_every_n_epochs is not None:
-                return (self.global_epoch + 1) % self.fit_tracker.validate_every_n_epochs == 0
-            else:
-                return True
+                return (
+                    self.global_step > 0 
+                    and (self.global_epoch + 1) % self.fit_tracker.validate_every_n_epochs == 0
+                )
+            return True
 
         # we can validate mid-epoch
         if (
             self.fit_tracker.validate_every_n_batches is not None
-            and (self.fit_tracker.train_tracker.current + 1) % self.fit_tracker.validate_every_n_batches == 0
+            and self.fit_tracker.train_tracker.current > 0
+            and self.fit_tracker.train_tracker.current % self.fit_tracker.validate_every_n_batches == 0
         ):
             return True
 

@@ -9,7 +9,6 @@ from torch.utils.data import DataLoader
 
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.active_learning.progress_trackers import ActiveProgressTracker
-from src.energizer.enums import RunningStage
 from src.energizer.estimator import Estimator, FitEpochOutput
 from src.energizer.types import EPOCH_OUTPUT, ROUND_OUTPUT
 
@@ -52,15 +51,14 @@ class ActiveEstimator(Estimator):
     def active_fit(
         self,
         active_datamodule: ActiveDataModule,
-        num_rounds: int,
         query_size: int,
-        val_perc: float,
+        max_rounds: Optional[int] = None,
         max_budget: Optional[int] = None,
-        val_sampling: Optional[str] = None,
+        validation_perc: Optional[float] = None,
+        validation_sampling: Optional[str] = None,
         reinit_model: bool = True,
         model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
-        num_epochs: Optional[int] = 3,
-        min_steps: Optional[int] = None,
+        # fit
         loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
         learning_rate: float = 0.001,
@@ -68,19 +66,30 @@ class ActiveEstimator(Estimator):
         optimizer_kwargs: Optional[Dict] = None,
         scheduler: Optional[str] = None,
         scheduler_kwargs: Optional[Dict] = None,
-        **kwargs,
+        max_epochs: Optional[int] = 3,
+        max_steps: Optional[int] = None,
+        min_epochs: Optional[int] = 3,
+        min_steps: Optional[int] = None,
+        validation_frequency: Optional[float] = None,
+        limit_train_batches: Optional[int] = None,
+        limit_validation_batches: Optional[int] = None,
+        limit_test_batches: Optional[int] = None,
+        limit_pool_batches: Optional[int] = None,
+        progress_bar: Optional[bool] = True,
+        log_interval: Optional[int] = 1,
     ) -> Any:
-        if reinit_model:
-            self.save_state_dict(model_cache_dir)
 
-        # configure progress tracking
+        # start progress tracking
         self.progress_tracker.initialize_active_fit_progress(
-            num_rounds=num_rounds,
+            max_rounds=max_rounds,
             max_budget=max_budget,
             query_size=query_size,
             initial_budget=active_datamodule.total_labelled_size,
-            **kwargs,
+            progress_bar=progress_bar,
         )
+
+        if reinit_model:
+            self.save_state_dict(model_cache_dir)
 
         # call hook
         self.fabric.call("on_active_fit_start", estimator=self, datamodule=active_datamodule)
@@ -90,10 +99,9 @@ class ActiveEstimator(Estimator):
             out = self.round_loop(
                 active_datamodule=active_datamodule,
                 query_size=query_size,
-                val_perc=val_perc,
-                val_sampling=val_sampling,
-                num_epochs=num_epochs,
-                min_steps=min_steps,
+                validation_perc=validation_perc,
+                validation_sampling=validation_sampling,
+                # fit
                 loss_fn=loss_fn,
                 loss_fn_kwargs=loss_fn_kwargs,
                 learning_rate=learning_rate,
@@ -101,7 +109,16 @@ class ActiveEstimator(Estimator):
                 optimizer_kwargs=optimizer_kwargs,
                 scheduler=scheduler,
                 scheduler_kwargs=scheduler_kwargs,
-                **kwargs,
+                max_epochs=max_epochs,
+                max_steps=max_steps,
+                min_epochs=min_epochs,
+                min_steps=min_steps,
+                validation_frequency=validation_frequency,
+                limit_train_batches=limit_train_batches,
+                limit_validation_batches=limit_validation_batches,
+                limit_test_batches=limit_test_batches,
+                limit_pool_batches=limit_pool_batches,
+                log_interval=log_interval,
             )
 
             if out is not None:
@@ -116,15 +133,16 @@ class ActiveEstimator(Estimator):
                 self.progress_tracker.budget_tracker.total == active_datamodule.total_labelled_size
             ), f"{self.progress_tracker.budget_tracker.total} == {active_datamodule.total_labelled_size}"
 
-        if not self.progress_tracker.num_rounds > 0:
-            raise ValueError("You did not run any labellng. Perhaps change your `max_budget` or `num_rounds`.")
-        
-        self.progress_tracker.finalize_active_fit_progress()
+        if not self.progress_tracker.global_round > 0:
+            raise ValueError("You did not run any labellng. Perhaps change your `max_budget` or `max_rounds`.")
 
         output = self.active_fit_end(output)
 
         # call hook
         self.fabric.call("on_active_fit_end", estimator=self, datamodule=active_datamodule, output=output)
+
+        # end progress tracking
+        self.progress_tracker.finalize_active_fit_progress()
 
         return output
 
@@ -132,9 +150,9 @@ class ActiveEstimator(Estimator):
         self,
         active_datamodule: ActiveDataModule,
         query_size: int,
-        val_perc: float,
-        val_sampling: Optional[str],
-        num_epochs: Optional[int] = 3,
+        validation_perc: float,
+        validation_sampling: Optional[str],
+         # fit
         loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
         learning_rate: float = 0.001,
@@ -142,7 +160,17 @@ class ActiveEstimator(Estimator):
         optimizer_kwargs: Optional[Dict] = None,
         scheduler: Optional[str] = None,
         scheduler_kwargs: Optional[Dict] = None,
-        **kwargs,
+        max_epochs: Optional[int] = 3,
+        max_steps: Optional[int] = None,
+        min_epochs: Optional[int] = 3,
+        min_steps: Optional[int] = None,
+        validation_frequency: Optional[float] = None,
+        limit_train_batches: Optional[int] = None,
+        limit_validation_batches: Optional[int] = None,
+        limit_test_batches: Optional[int] = None,
+        limit_pool_batches: Optional[int] = None,
+        progress_bar: Optional[bool] = True,
+        log_interval: Optional[int] = 1,
     ) -> ROUND_OUTPUT:
         output = RoundOutput()
 
@@ -154,7 +182,6 @@ class ActiveEstimator(Estimator):
             output.fit = self.fit(
                 train_loader=active_datamodule.train_loader(),
                 validation_loader=active_datamodule.validation_loader(),
-                num_epochs=num_epochs,
                 loss_fn=loss_fn,
                 loss_fn_kwargs=loss_fn_kwargs,
                 learning_rate=learning_rate,
@@ -162,7 +189,15 @@ class ActiveEstimator(Estimator):
                 optimizer_kwargs=optimizer_kwargs,
                 scheduler=scheduler,
                 scheduler_kwargs=scheduler_kwargs,
-                **kwargs,
+                max_epochs=max_epochs,
+                max_steps=max_steps,
+                min_epochs=min_epochs,
+                min_steps=min_steps,
+                validation_frequency=validation_frequency,
+                limit_train_batches=limit_train_batches,
+                limit_validation_batches=limit_validation_batches,
+                progress_bar=progress_bar,
+                log_interval=log_interval,
             )
 
         # test model
@@ -171,24 +206,36 @@ class ActiveEstimator(Estimator):
                 test_loader=active_datamodule.test_loader(),
                 loss_fn=loss_fn,
                 loss_fn_kwargs=loss_fn_kwargs,
-                **kwargs,
+                limit_batches=limit_test_batches,
+                progress_bar=progress_bar,
+                log_interval=log_interval,
             )
 
         # query indices to annotate, skip first round
         # do not annotate on the warm-up round
         if active_datamodule.pool_size > query_size:
-            output.query = self.query(active_datamodule=active_datamodule, query_size=query_size, **kwargs)
+            
+            output.query = self.query(
+                active_datamodule=active_datamodule, 
+                query_size=query_size, 
+                limit_batches=limit_pool_batches,
+                progress_bar=progress_bar,
+                log_interval=log_interval,
+            )
 
             # call hook
             self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule)
+            
             active_datamodule.label(
                 indices=output.query.indices,
-                round_idx=self.progress_tracker.num_rounds,
-                val_perc=val_perc,
-                val_sampling=val_sampling,
+                round_idx=self.progress_tracker.global_round,
+                validation_perc=validation_perc,
+                validation_sampling=validation_sampling,
             )
+            
             # call hook
             self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)
+        
         else:
             # no more pool instances
             self.progress_tracker.set_stop_active_training(True)
@@ -205,19 +252,16 @@ class ActiveEstimator(Estimator):
     Query loop
     """
 
-    def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Any:
+    def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
         return output
 
-    def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
+    def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Any:
         return output
 
     def query(self, active_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
         # configure dataloaders
         loader = self.get_pool_loader(active_datamodule=active_datamodule)
         loader = self.configure_dataloader(loader)
-
-        # progress tracking
-        self.progress_tracker.initialize_evaluation_progress(RunningStage.POOL, loader, **kwargs)
 
         # setup model with fabric
         model = self.fabric.setup(self.model)
