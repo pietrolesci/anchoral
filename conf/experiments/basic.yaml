@@ -6,16 +6,16 @@ hydra:
 
 fit:
   min_steps: 100
-  validation_interval: 5
+  validation_frequency: 0.2
 
 active_fit:
-  num_rounds: 100
-  val_perc: 0.4
+  max_rounds: 100
+  validation_perc: 0.4
   query_size: 25
 
 active_data:
   budget: 100
-  val_perc: 0.5
+  validation_perc: 0.5
 
 dataset_name: imdb_bert_tiny
 experiment_group: dry_run

@@ -59,8 +59,6 @@ class ActiveEstimator(Estimator):
         reinit_model: bool = True,
         model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
         # fit
-        loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
         learning_rate: float = 0.001,
         optimizer: str = "adamw",
         optimizer_kwargs: Optional[Dict] = None,
@@ -86,6 +84,7 @@ class ActiveEstimator(Estimator):
             query_size=query_size,
             initial_budget=active_datamodule.total_labelled_size,
             progress_bar=progress_bar,
+            log_interval=log_interval,
         )
 
         if reinit_model:
@@ -96,14 +95,15 @@ class ActiveEstimator(Estimator):
 
         output = []
         while not self.progress_tracker.is_active_fit_done():
+
+            if reinit_model:
+                self.load_state_dict(model_cache_dir)
+
             out = self.round_loop(
                 active_datamodule=active_datamodule,
                 query_size=query_size,
                 validation_perc=validation_perc,
                 validation_sampling=validation_sampling,
-                # fit
-                loss_fn=loss_fn,
-                loss_fn_kwargs=loss_fn_kwargs,
                 learning_rate=learning_rate,
                 optimizer=optimizer,
                 optimizer_kwargs=optimizer_kwargs,
@@ -118,14 +118,9 @@ class ActiveEstimator(Estimator):
                 limit_validation_batches=limit_validation_batches,
                 limit_test_batches=limit_test_batches,
                 limit_pool_batches=limit_pool_batches,
-                log_interval=log_interval,
             )
 
-            if out is not None:
-                output.append(out)
-
-            if reinit_model:
-                self.load_state_dict(model_cache_dir)
+            output.append(out)
 
             # update progress
             self.progress_tracker.increment_active_fit_progress()
@@ -152,25 +147,20 @@ class ActiveEstimator(Estimator):
         query_size: int,
         validation_perc: float,
         validation_sampling: Optional[str],
-         # fit
-        loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
-        learning_rate: float = 0.001,
-        optimizer: str = "adamw",
-        optimizer_kwargs: Optional[Dict] = None,
-        scheduler: Optional[str] = None,
-        scheduler_kwargs: Optional[Dict] = None,
-        max_epochs: Optional[int] = 3,
-        max_steps: Optional[int] = None,
-        min_epochs: Optional[int] = 3,
-        min_steps: Optional[int] = None,
-        validation_frequency: Optional[float] = None,
-        limit_train_batches: Optional[int] = None,
-        limit_validation_batches: Optional[int] = None,
-        limit_test_batches: Optional[int] = None,
-        limit_pool_batches: Optional[int] = None,
-        progress_bar: Optional[bool] = True,
-        log_interval: Optional[int] = 1,
+        learning_rate: float,
+        optimizer: str,
+        optimizer_kwargs: Optional[Dict],
+        scheduler: Optional[str],
+        scheduler_kwargs: Optional[Dict],
+        max_epochs: Optional[int],
+        max_steps: Optional[int],
+        min_epochs: Optional[int],
+        min_steps: Optional[int],
+        validation_frequency: Optional[float],
+        limit_train_batches: Optional[int],
+        limit_validation_batches: Optional[int],
+        limit_test_batches: Optional[int],
+        limit_pool_batches: Optional[int],
     ) -> ROUND_OUTPUT:
         output = RoundOutput()
 
@@ -182,8 +172,6 @@ class ActiveEstimator(Estimator):
             output.fit = self.fit(
                 train_loader=active_datamodule.train_loader(),
                 validation_loader=active_datamodule.validation_loader(),
-                loss_fn=loss_fn,
-                loss_fn_kwargs=loss_fn_kwargs,
                 learning_rate=learning_rate,
                 optimizer=optimizer,
                 optimizer_kwargs=optimizer_kwargs,
@@ -196,46 +184,44 @@ class ActiveEstimator(Estimator):
                 validation_frequency=validation_frequency,
                 limit_train_batches=limit_train_batches,
                 limit_validation_batches=limit_validation_batches,
-                progress_bar=progress_bar,
-                log_interval=log_interval,
+                progress_bar=None,  # already done
+                log_interval=None,  # already done
             )
 
         # test model
         if active_datamodule.has_test_data:
             output.test = self.test(
                 test_loader=active_datamodule.test_loader(),
-                loss_fn=loss_fn,
-                loss_fn_kwargs=loss_fn_kwargs,
                 limit_batches=limit_test_batches,
-                progress_bar=progress_bar,
-                log_interval=log_interval,
+                progress_bar=None,  # already done
+                log_interval=None,  # already done
             )
 
         # query indices to annotate, skip first round
         # do not annotate on the warm-up round
         if active_datamodule.pool_size > query_size:
-            
+
             output.query = self.query(
-                active_datamodule=active_datamodule, 
-                query_size=query_size, 
+                active_datamodule=active_datamodule,
+                query_size=query_size,
                 limit_batches=limit_pool_batches,
-                progress_bar=progress_bar,
-                log_interval=log_interval,
+                progress_bar=None,  # already done
+                log_interval=None,  # already done
             )
 
             # call hook
             self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule)
-            
+
             active_datamodule.label(
                 indices=output.query.indices,
                 round_idx=self.progress_tracker.global_round,
                 validation_perc=validation_perc,
                 validation_sampling=validation_sampling,
             )
-            
+
             # call hook
             self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)
-        
+
         else:
             # no more pool instances
             self.progress_tracker.set_stop_active_training(True)

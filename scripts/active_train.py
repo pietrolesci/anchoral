@@ -40,14 +40,6 @@ def main(cfg: DictConfig) -> None:
     if cfg.model.name_or_path is None:
         cfg.model.name_or_path = metadata.name_or_path
 
-    # toggle balanced loss
-    should_load_class_weights = (
-        cfg.fit.loss_fn is not None
-        and cfg.fit.loss_fn_kwargs is not None
-        and "weight" in cfg.fit.loss_fn_kwargs
-        and not isinstance(cfg.fit.loss_fn_kwargs.get("weight"), list)
-    )
-
     # logging
     log.info(f"\n{OmegaConf.to_yaml(cfg)}\n{sep_line}")
     log.info(f"Running active learning with strategy {cfg.strategy}")
@@ -78,14 +70,9 @@ def main(cfg: DictConfig) -> None:
     log.info(
         f"Initial budget set: labelling {cfg.active_data.budget or 0} samples "
         f"in a {cfg.active_data.sampling} way using seed {cfg.active_data.seed}. "
-        f"Keeping {cfg.active_data.val_perc} as validation."
+        f"Keeping {cfg.active_data.validation_perc} as validation."
     )
     log.info(f"Data statistics: {datamodule.data_statistics}")
-
-    # toggle class weights in loss function
-    if should_load_class_weights:
-        cfg.fit.loss_fn_kwargs = {"weight": datamodule.class_weights}
-        log.info(f"Class weights set to: {cfg.fit.loss_fn_kwargs['weight']}")
 
     ###################################################
     # ============ STEP 3: model loading ============ #
@@ -124,7 +111,6 @@ def main(cfg: DictConfig) -> None:
     hparams = {
         **OmegaConf.to_container(cfg.fit),
         **OmegaConf.to_container(cfg.active_fit),
-        **OmegaConf.to_container(cfg.test),
     }
     # NOTE: `active_fit_end` is overridden to return only test metrics
     fit_out = estimator.active_fit(active_datamodule=datamodule, **hparams)

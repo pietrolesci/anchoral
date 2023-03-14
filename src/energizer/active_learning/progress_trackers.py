@@ -1,10 +1,10 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from tqdm.auto import tqdm
 
 from src.energizer.enums import RunningStage
 from src.energizer.progress_trackers import ProgressTracker, StageTracker, Tracker
-from typing import Optional
 
 
 @dataclass
@@ -18,7 +18,7 @@ class RoundTracker(Tracker):
             desc="Completed rounds",
             dynamic_ncols=True,
             leave=True,
-            colour="#32a852",
+            colour="#f7e302",
         )
 
     def increment(self) -> None:
@@ -55,7 +55,13 @@ class ActiveProgressTracker(ProgressTracker):
         return self.round_tracker.max_reached() or self.budget_tracker.max_reached() or self.stop_active_training
 
     def initialize_active_fit_progress(
-        self, max_rounds: int, max_budget: int, query_size: int, initial_budget: int, progress_bar: Optional[bool]
+        self,
+        max_rounds: int,
+        max_budget: int,
+        query_size: int,
+        initial_budget: int,
+        progress_bar: Optional[bool],
+        log_interval: Optional[int],
     ) -> None:
         self.round_tracker = RoundTracker(max=max_rounds)
         self.budget_tracker = BudgetTracker(
@@ -63,11 +69,14 @@ class ActiveProgressTracker(ProgressTracker):
         )
         self.test_tracker = StageTracker(stage=RunningStage.TEST)
         self.pool_tracker = StageTracker(stage=RunningStage.POOL)
+        self.fit_tracker.has_validation = True  # NOTE: always prepare for validation
         if progress_bar:
             self.round_tracker.make_progress_bar()
             self.fit_tracker.make_progress_bars()
             self.test_tracker.make_progress_bar()
             self.pool_tracker.make_progress_bar()
+
+        self.log_interval = log_interval
 
     def increment_active_fit_progress(self) -> None:
         self.round_tracker.increment()
@@ -79,17 +88,12 @@ class ActiveProgressTracker(ProgressTracker):
         self.test_tracker.close_progress_bar()
         self.pool_tracker.close_progress_bar()
 
+    def set_stop_active_training(self, value: bool) -> None:
+        self.stop_active_training = value
+
     def finalize_fit_progress(self) -> None:
         self.fit_tracker.terminate_progress_bars()  # do not close prog_bar
         self.is_fitting = False
 
-    def set_stop_active_training(self, value: bool) -> None:
-        self.stop_active_training = value
-
-    def initialize_fit_progress(self, **kwargs) -> None:
-        """Set states, progress bars, and epoch/step trackers."""
-        self.is_fitting = True
-        _ = kwargs.pop("progress_bar", True)
-
-        self.fit_tracker.reset()  # <- reset current counts and progress bar line
-        self.fit_tracker.update_from_hparams(**kwargs)
+    def finalize_epoch_progress(self) -> None:
+        self._get_stage_tracker().terminate_progress_bar()

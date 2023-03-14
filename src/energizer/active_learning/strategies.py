@@ -44,7 +44,7 @@ class UncertaintyBasedStrategy(ActiveEstimator):
             - on_pool_batch_end
             - pool_epoch_end
         """
-        output = self.eval_loop(None, model, loader, RunningStage.POOL, **kwargs)
+        output = self.eval_loop(model, loader, RunningStage.POOL, **kwargs)
         topk_scores, indices = self._topk(output, query_size)
 
         output = QueryOutput(
@@ -57,7 +57,6 @@ class UncertaintyBasedStrategy(ActiveEstimator):
 
     def evaluation_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Any,
         batch_idx: int,
@@ -65,7 +64,7 @@ class UncertaintyBasedStrategy(ActiveEstimator):
         stage: RunningStage,
     ) -> BATCH_OUTPUT:
         if stage != RunningStage.POOL:
-            return super().evaluation_step(loss_fn, model, batch, batch_idx, metrics, stage)
+            return super().evaluation_step(model, batch, batch_idx, metrics, stage)
 
         ids = batch[InputKeys.ON_CPU][SpecialKeys.ID]
 

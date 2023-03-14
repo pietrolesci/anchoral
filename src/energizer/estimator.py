@@ -1,8 +1,7 @@
 import inspect
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 import torch
 from lightning.fabric import Fabric
@@ -18,7 +17,7 @@ from torch.utils.data import DataLoader
 
 from src.energizer.enums import OutputKeys, RunningStage
 from src.energizer.progress_trackers import ProgressTracker
-from src.energizer.registries import LOSS_FUNCTIONS_REGISTRY, OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
+from src.energizer.registries import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
 from src.energizer.utilities import init_deterministic, move_to_cpu
 from src.energizer.utilities.model_summary import summarize
@@ -38,32 +37,31 @@ class FitEpochOutput:
 
 class Estimator(HyperparametersMixin):
     _hparams_ignore: List[str] = ["model", "loggers", "callbacks"]
-    _loss_fn: Optional[Union[torch.nn.Module, Callable]] = None
     _progress_tracker: ProgressTracker = None
 
     def __init__(
         self,
         model: torch.nn.Module,
         accelerator: Optional[Union[str, Accelerator]] = None,
-        strategy: Optional[Union[str, Strategy]] = None,
-        devices: Optional[Union[List[int], str, int]] = None,
-        num_nodes: int = 1,
         precision: _PRECISION_INPUT = 32,
-        plugins: Optional[Union[_PLUGIN_INPUT, List[_PLUGIN_INPUT]]] = None,
         callbacks: Optional[Union[List[Any], Any]] = None,
         loggers: Optional[Union[Logger, List[Logger]]] = None,
         deterministic: bool = True,
+        # strategy: Optional[Union[str, Strategy]] = None,
+        # devices: Optional[Union[List[int], str, int]] = None,
+        # num_nodes: int = 1,
+        # plugins: Optional[Union[_PLUGIN_INPUT, List[_PLUGIN_INPUT]]] = None,
     ) -> None:
         super().__init__()
         self.fabric = Fabric(
             accelerator=accelerator,
-            strategy=strategy,
-            devices=devices,
-            num_nodes=num_nodes,
             precision=precision,
-            plugins=plugins,
             callbacks=callbacks,
             loggers=loggers,
+            # strategy=strategy,
+            # devices=devices,
+            # num_nodes=num_nodes,
+            # plugins=plugins,
         )
         self.model = model
         init_deterministic(deterministic)
@@ -91,8 +89,6 @@ class Estimator(HyperparametersMixin):
         self,
         train_loader: DataLoader,
         validation_loader: Optional[DataLoader] = None,
-        loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
         learning_rate: float = 0.001,
         optimizer: str = "adamw",
         optimizer_kwargs: Optional[Dict] = None,
@@ -111,12 +107,13 @@ class Estimator(HyperparametersMixin):
 
         # configure progress tracking
         self.progress_tracker.initialize_fit_progress(
+            progress_bar=progress_bar,
+            log_interval=log_interval,
             num_train_batches=len(train_loader),
             max_epochs=max_epochs,
             max_steps=max_steps,
             min_epochs=min_epochs,
             min_steps=min_steps,
-            progress_bar=progress_bar,
             has_validation=validation_loader is not None,
         )
 
@@ -127,9 +124,6 @@ class Estimator(HyperparametersMixin):
         # configure optimizer and scheduler
         optimizer = self.configure_optimizer(optimizer, learning_rate, optimizer_kwargs)
         scheduler = self.configure_scheduler(scheduler, optimizer, scheduler_kwargs)
-
-        # configure loss
-        loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.TRAIN)
 
         # setup model and optimizer with fabric
         model, optimizer = self.fabric.setup(self.model, optimizer)
@@ -143,13 +137,11 @@ class Estimator(HyperparametersMixin):
                 model=model,
                 train_loader=train_loader,
                 validation_loader=validation_loader,
-                loss_fn=loss_fn,
                 optimizer=optimizer,
                 scheduler=scheduler,
                 limit_train_batches=limit_train_batches,
                 limit_validation_batches=limit_validation_batches,
                 validation_frequency=validation_frequency,
-                log_interval=log_interval,
             )
 
             output.append(out)
@@ -157,44 +149,56 @@ class Estimator(HyperparametersMixin):
             # update progress
             self.progress_tracker.increment_fit_progress()
 
-        self.progress_tracker.finalize_fit_progress()
-
         # call hook
         self.fabric.call("on_fit_end", estimator=self, model=model, output=output)
+
+        self.progress_tracker.finalize_fit_progress()
 
         return output
 
     def validate(
         self,
         validation_loader: DataLoader,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
-        **kwargs,
+        limit_batches: Optional[int] = None,
+        progress_bar: Optional[bool] = True,
+        log_interval: Optional[int] = 1,
     ) -> EPOCH_OUTPUT:
         """Runs validation.
 
         Kwargs that can be passed:, log_interval: int, limit_batches: int, progress_bar: bool
         """
-        loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.VALIDATION)
         loader = self.configure_dataloader(validation_loader)
         model = self.fabric.setup(self.model)
-        return self.eval_loop(loss_fn, model, loader, RunningStage.VALIDATION, **kwargs)
+        return self.eval_loop(
+            model,
+            loader,
+            RunningStage.VALIDATION,
+            limit_batches=limit_batches,
+            progress_bar=progress_bar,
+            log_interval=log_interval,
+        )
 
     def test(
         self,
         test_loader: DataLoader,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
-        **kwargs,
+        limit_batches: Optional[int] = None,
+        progress_bar: Optional[bool] = True,
+        log_interval: Optional[int] = 1,
     ) -> EPOCH_OUTPUT:
         """Runs testing.
 
         Kwargs that can be passed:, log_interval: int, limit_batches: int, progress_bar: bool
         """
-        loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.TEST)
         loader = self.configure_dataloader(test_loader)
         model = self.fabric.setup(self.model)
-        return self.eval_loop(loss_fn, model, loader, RunningStage.TEST, **kwargs)
+        return self.eval_loop(
+            model,
+            loader,
+            RunningStage.TEST,
+            limit_batches=limit_batches,
+            progress_bar=progress_bar,
+            log_interval=log_interval,
+        )
 
     """
     Loops
@@ -205,15 +209,21 @@ class Estimator(HyperparametersMixin):
         model: _FabricModule,
         train_loader: _FabricDataLoader,
         validation_loader: Optional[_FabricDataLoader],
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         optimizer: _FabricOptimizer,
         scheduler: Optional[str],
-        **kwargs,
+        validation_frequency: Optional[float] = None,
+        limit_train_batches: Optional[int] = None,
+        limit_validation_batches: Optional[int] = None,
     ) -> FitEpochOutput:
         """Runs a training epoch."""
 
         # start progress tracking
-        self.progress_tracker.initialize_epoch_progress(train_loader, RunningStage.TRAIN, **kwargs)
+        self.progress_tracker.initialize_epoch_progress(
+            train_loader,
+            RunningStage.TRAIN,
+            validation_frequency=validation_frequency,
+            limit_train_batches=limit_train_batches,
+        )
 
         # define metrics
         metrics = self.configure_metrics(RunningStage.TRAIN)
@@ -233,7 +243,9 @@ class Estimator(HyperparametersMixin):
 
             # validate mid-epoch
             if self.progress_tracker.should_validate():
-                out = self.eval_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION, **kwargs)
+                out = self.eval_loop(
+                    model, validation_loader, RunningStage.VALIDATION, limit_validation_batches=limit_validation_batches
+                )
                 if out is not None:
                     validation_out.append(out)
                 # NOTE: continue training tracking -> re-attach train_tracker since it gets changed by `eval_loop`
@@ -253,7 +265,7 @@ class Estimator(HyperparametersMixin):
             )
 
             # run model on batch
-            batch_out = self.training_step(loss_fn, model, batch, batch_idx, optimizer, scheduler, metrics)
+            batch_out = self.training_step(model, batch, batch_idx, optimizer, scheduler, metrics)
 
             # call hook
             self.fabric.call(
@@ -285,7 +297,9 @@ class Estimator(HyperparametersMixin):
 
         # validate after training
         if self.progress_tracker.should_validate():
-            out = self.eval_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION, **kwargs)
+            out = self.eval_loop(
+                model, validation_loader, RunningStage.VALIDATION, limit_validation_batches=limit_validation_batches
+            )
             if out is not None:
                 validation_out.append(out)
 
@@ -296,7 +310,6 @@ class Estimator(HyperparametersMixin):
 
     def eval_loop(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         loader: _FabricDataLoader,
         stage: RunningStage,
@@ -334,7 +347,9 @@ class Estimator(HyperparametersMixin):
                 )
 
                 # run model on batch
-                batch_out = self.evaluation_step(loss_fn, model, batch, batch_idx, metrics, stage)
+                batch_out = self.evaluation_step(
+                    model=model, batch=batch, batch_idx=batch_idx, metrics=metrics, stage=stage
+                )
 
                 # call hook
                 self.fabric.call(
@@ -369,7 +384,6 @@ class Estimator(HyperparametersMixin):
 
     def training_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Any,
         batch_idx: int,
@@ -383,7 +397,7 @@ class Estimator(HyperparametersMixin):
         optimizer.zero_grad()
 
         # compute loss
-        output = self.train_step(loss_fn, model, batch, batch_idx, metrics)
+        output = self.train_step(model, batch, batch_idx, metrics)
         loss = output if isinstance(output, torch.Tensor) else output[OutputKeys.LOSS]
 
         # compute gradients
@@ -403,7 +417,6 @@ class Estimator(HyperparametersMixin):
 
     def evaluation_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Any,
         batch_idx: int,
@@ -412,7 +425,7 @@ class Estimator(HyperparametersMixin):
     ) -> Optional[BATCH_OUTPUT]:
         """Runs over a single batch of data."""
         # this might seems redundant but it's useful for active learning to hook in
-        return getattr(self, f"{stage}_step")(loss_fn, model, batch, batch_idx, metrics)
+        return getattr(self, f"{stage}_step")(model, batch, batch_idx, metrics)
 
     """
     Methods
@@ -485,34 +498,6 @@ class Estimator(HyperparametersMixin):
 
         return scheduler
 
-    def configure_loss_fn(
-        self,
-        loss_fn: Optional[Union[str, torch.nn.Module, Callable]],
-        loss_fn_kwargs: Optional[Dict],
-        stage: RunningStage,
-    ) -> Optional[Union[torch.nn.Module, Callable]]:
-        if loss_fn is None:
-            # if we have already trained, this will return the same loss_fn used during training
-            return self._loss_fn
-
-        loss_fn_kwargs = loss_fn_kwargs or {}
-
-        # get class or function from registry
-        if isinstance(loss_fn, str):
-            loss_fn = LOSS_FUNCTIONS_REGISTRY[loss_fn]
-
-        if isinstance(loss_fn, Callable):
-            # functional
-            loss_fn = partial(loss_fn, **loss_fn_kwargs)
-        else:
-            # module
-            loss_fn = loss_fn(**loss_fn_kwargs)
-
-        if stage == RunningStage.TRAIN:
-            self._loss_fn = loss_fn
-
-        return loss_fn
-
     def configure_dataloader(self, loader: Optional[DataLoader]) -> Optional[_FabricDataLoader]:
         """Does not move the dataloader to the device."""
         if loader is None:
@@ -520,54 +505,35 @@ class Estimator(HyperparametersMixin):
 
         return self.fabric.setup_dataloaders(loader, replace_sampler=False, move_to_device=False)
 
-    """
-    Hooks
-    """
-
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[METRIC]:
-        pass
-
-    def forward_pass(self, model: _FabricModule, batch: Any) -> Any:
-        return model(batch)
-
-    def compute_loss(
-        self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
-        model: _FabricModule,
-        batch: Any,
-    ) -> torch.Tensor:
-        preds = self.forward_pass(model, batch)
-        return loss_fn(preds, batch)
+        ...
 
     def train_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Any,
         batch_idx: int,
         metrics: Optional[METRIC] = None,
     ) -> BATCH_OUTPUT:
-        return self.compute_loss(loss_fn, model, batch)
+        raise NotImplementedError
 
     def validation_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Any,
         batch_idx: int,
         metrics: Optional[METRIC] = None,
     ) -> Optional[BATCH_OUTPUT]:
-        return self.compute_loss(loss_fn, model, batch)
+        raise NotImplementedError
 
     def test_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Any,
         batch_idx: int,
         metrics: Optional[METRIC] = None,
     ) -> Optional[BATCH_OUTPUT]:
-        return self.compute_loss(loss_fn, model, batch)
+        raise NotImplementedError
 
     def train_epoch_end(self, output: List[BATCH_OUTPUT], metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
         return output
