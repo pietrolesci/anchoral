@@ -161,8 +161,8 @@ class ActiveDataModule(DataModule):
         self,
         indices: List[int],
         round_idx: Optional[int] = None,
-        val_perc: Optional[float] = None,
-        val_sampling: Optional[str] = None,
+        validation_perc: Optional[float] = None,
+        validation_sampling: Optional[str] = None,
     ) -> None:
         """Moves instances at index `pool_idx` from the `pool_fold` to the `train_fold`.
 
@@ -170,22 +170,22 @@ class ActiveDataModule(DataModule):
             pool_idx (List[int]): The index (relative to the pool_fold, not the overall data) to label.
         """
         assert isinstance(indices, list), ValueError(f"`indices` must be of type `List[int]`, not {type(indices)}.")
-        assert isinstance(val_perc, float) or val_perc is None, ValueError(
-            f"`val_perc` must be of type `float`, not {type(val_perc)}"
+        assert isinstance(validation_perc, float) or validation_perc is None, ValueError(
+            f"`validation_perc` must be of type `float`, not {type(validation_perc)}"
         )
 
         mask = self._df[SpecialKeys.ID].isin(indices)
         self._df.loc[mask, SpecialKeys.IS_LABELLED] = True
         self._df.loc[mask, SpecialKeys.LABELLING_ROUND] = round_idx
 
-        if self.should_val_split and val_perc is not None:
-            n_val = round(val_perc * len(indices)) or 1  # at least add one
+        if self.should_val_split and validation_perc is not None:
+            n_val = round(validation_perc * len(indices)) or 1  # at least add one
             current_df = self._df.loc[mask, [SpecialKeys.ID, InputKeys.TARGET]]
             val_indices = self.sample(
                 indices=current_df[SpecialKeys.ID].tolist(),
                 size=n_val,
                 labels=current_df[InputKeys.TARGET],
-                sampling=val_sampling,
+                sampling=validation_sampling,
             )
             self._df.loc[self._df[SpecialKeys.ID].isin(val_indices), SpecialKeys.IS_VALIDATION] = True
 
@@ -195,7 +195,11 @@ class ActiveDataModule(DataModule):
                 self.index.mark_deleted(idx)
 
     def set_initial_budget(
-        self, budget: int, val_perc: Optional[float] = None, sampling: Optional[str] = None, seed: Optional[int] = None
+        self,
+        budget: int,
+        validation_perc: Optional[float] = None,
+        sampling: Optional[str] = None,
+        seed: Optional[int] = None,
     ) -> None:
         pool_df = self._df.loc[(self._df[SpecialKeys.IS_LABELLED] == False), [SpecialKeys.ID, InputKeys.TARGET]]
         # sample from the pool
@@ -208,7 +212,7 @@ class ActiveDataModule(DataModule):
         )
 
         # actually label
-        self.label(indices=indices, round_idx=-1, val_perc=val_perc, val_sampling=sampling)
+        self.label(indices=indices, round_idx=-1, validation_perc=validation_perc, validation_sampling=sampling)
 
     def sample(
         self,
@@ -249,7 +253,7 @@ class ActiveDataModule(DataModule):
             train_df = self._df.loc[
                 (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == False)
             ]
-            
+
             self.train_dataset = Dataset.from_pandas(train_df, preserve_index=False)
 
             return self.get_loader(RunningStage.TRAIN)

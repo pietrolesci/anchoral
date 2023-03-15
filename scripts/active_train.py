@@ -78,7 +78,7 @@ def main(cfg: DictConfig) -> None:
     log.info(
         f"Initial budget set: labelling {cfg.active_data.budget or 0} samples "
         f"in a {cfg.active_data.sampling} way using seed {cfg.active_data.seed}. "
-        f"Keeping {cfg.active_data.val_perc} as validation."
+        f"Keeping {cfg.active_data.validation_perc} as validation."
     )
     log.info(f"Data statistics: {datamodule.data_statistics}")
 

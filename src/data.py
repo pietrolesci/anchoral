@@ -12,8 +12,7 @@ from transformers import PreTrainedTokenizerBase
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.data import DataModule
 from src.energizer.enums import InputKeys, RunningStage, SpecialKeys
-from src.energizer.utilities import ld_to_dl, _pad
-
+from src.energizer.utilities import _pad, ld_to_dl
 
 """
 A very tailored datamodule for HuggingFace datasets
@@ -136,7 +135,7 @@ def collate_fn(
     pad_token_id: int,
     pad_fn: Callable,
 ) -> Dict[str, Union[List[str], Tensor]]:
-    
+
     batch = ld_to_dl(batch)
 
     # remove string columns that cannot be transfered on gpu

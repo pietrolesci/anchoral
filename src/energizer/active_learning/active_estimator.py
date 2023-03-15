@@ -54,9 +54,9 @@ class ActiveEstimator(Estimator):
         active_datamodule: ActiveDataModule,
         num_rounds: int,
         query_size: int,
-        val_perc: float,
+        validation_perc: float,
         max_budget: Optional[int] = None,
-        val_sampling: Optional[str] = None,
+        validation_sampling: Optional[str] = None,
         reinit_model: bool = True,
         model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
         num_epochs: Optional[int] = 3,
@@ -87,11 +87,15 @@ class ActiveEstimator(Estimator):
 
         output = []
         while not self.progress_tracker.is_active_fit_done():
+
+            if reinit_model:
+                self.load_state_dict(model_cache_dir)
+
             out = self.round_loop(
                 active_datamodule=active_datamodule,
                 query_size=query_size,
-                val_perc=val_perc,
-                val_sampling=val_sampling,
+                validation_perc=validation_perc,
+                validation_sampling=validation_sampling,
                 num_epochs=num_epochs,
                 min_steps=min_steps,
                 loss_fn=loss_fn,
@@ -107,9 +111,6 @@ class ActiveEstimator(Estimator):
             if out is not None:
                 output.append(out)
 
-            if reinit_model:
-                self.load_state_dict(model_cache_dir)
-
             # update progress
             self.progress_tracker.increment_active_fit_progress()
             assert (
@@ -118,7 +119,7 @@ class ActiveEstimator(Estimator):
 
         if not self.progress_tracker.num_rounds > 0:
             raise ValueError("You did not run any labellng. Perhaps change your `max_budget` or `num_rounds`.")
-        
+
         self.progress_tracker.finalize_active_fit_progress()
 
         output = self.active_fit_end(output)
@@ -132,8 +133,8 @@ class ActiveEstimator(Estimator):
         self,
         active_datamodule: ActiveDataModule,
         query_size: int,
-        val_perc: float,
-        val_sampling: Optional[str],
+        validation_perc: float,
+        validation_sampling: Optional[str],
         num_epochs: Optional[int] = 3,
         loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
@@ -184,8 +185,8 @@ class ActiveEstimator(Estimator):
             active_datamodule.label(
                 indices=output.query.indices,
                 round_idx=self.progress_tracker.num_rounds,
-                val_perc=val_perc,
-                val_sampling=val_sampling,
+                validation_perc=validation_perc,
+                validation_sampling=validation_sampling,
             )
             # call hook
             self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)

@@ -15,7 +15,7 @@ import torch
 from lightning.pytorch.core.mixins.hparams_mixin import HyperparametersMixin
 from numpy.random import RandomState
 from sklearn.utils.validation import check_random_state
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Sampler
+from torch.utils.data import DataLoader, RandomSampler, Sampler, SequentialSampler
 
 from src.energizer.enums import RunningStage
 from src.energizer.types import DATASET
@@ -98,7 +98,7 @@ class DataModule(HyperparametersMixin):
 
     def test_loader(self) -> Optional[DataLoader]:
         return self.get_loader(RunningStage.TEST)
-           
+
     def get_collate_fn(self, stage: Optional[str] = None) -> Optional[Callable]:
         return None
 
@@ -106,11 +106,16 @@ class DataModule(HyperparametersMixin):
         dataset = getattr(self, f"{stage}_dataset", None)
         if dataset is None:
             return
-        
+
         batch_size = self.batch_size if stage == RunningStage.TRAIN else self.eval_batch_size
         batch_size = min(batch_size, len(dataset))
 
-        sampler = _get_sampler(dataset, shuffle=self.shuffle if stage == RunningStage.TRAIN else False, replacement=self.replacement, seed=self.seed)
+        sampler = _get_sampler(
+            dataset,
+            shuffle=self.shuffle if stage == RunningStage.TRAIN else False,
+            replacement=self.replacement,
+            seed=self.seed,
+        )
 
         return DataLoader(
             dataset=dataset,
