@@ -179,21 +179,6 @@ class ProgressTracker:
         if self.fit_tracker.validation_interval is not None:
             return self.fit_tracker.train_tracker.current in self.fit_tracker.validation_interval
 
-    """
-    Operations
-    """
-
-    def set_stop_training(self, value: bool) -> None:
-        self.fit_tracker.stop_training = value
-
-    def increment_step_progress(self) -> None:
-        self.fit_tracker.step_tracker.increment()
-
-
-    """
-    Initializers
-    """
-
     def initialize_fit_progress(
         self,
         max_epochs: Optional[int],
@@ -263,9 +248,11 @@ class ProgressTracker:
         else:
             tracker.close_progress_bar()
 
-    """
-    Helpers
-    """
+    def set_stop_training(self, value: bool) -> None:
+        self.fit_tracker.stop_training = value
+
+    def increment_step_progress(self) -> None:
+        self.fit_tracker.step_tracker.increment()
 
     def _get_stage_tracker(self) -> StageTracker:
         tracker = self.fit_tracker if self.is_fitting else self
