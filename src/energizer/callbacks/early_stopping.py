@@ -83,7 +83,7 @@ class EarlyStopping(CallbackWithMonitor):
     def check(
         self, estimator: Estimator, output: Union[BATCH_OUTPUT, EPOCH_OUTPUT], stage: RunningStage, interval: Interval
     ) -> None:
-        if (self.stage == stage and self.interval == interval) and estimator.progress_tracker.is_training:
+        if (self.stage == stage and self.interval == interval) and estimator.progress_tracker.is_fitting:
             should_stop, reason = self.check_stopping_criteria(output)
             if should_stop:
                 estimator.progress_tracker.set_stop_training(True)

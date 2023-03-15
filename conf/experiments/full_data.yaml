@@ -1,7 +1,7 @@
 # @package _global_
 fit:
   min_steps: 100
-  num_epochs: 10
+  max_epochs: 10
   validation_interval: 5
 
 callbacks:

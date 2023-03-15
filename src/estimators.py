@@ -146,7 +146,7 @@ class SequenceClassificationMixin:
     def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
         """Log round-level statistics."""
         logs = {
-            "num_epochs": self.progress_tracker.fit_tracker.epoch_tracker.max,
+            "max_epochs": self.progress_tracker.fit_tracker.epoch_tracker.max,
             "num_train_batches": self.progress_tracker.fit_tracker.train_tracker.max,
             "num_validation_batches": self.progress_tracker.fit_tracker.validation_tracker.max,
             "global_train_steps": self.progress_tracker.fit_tracker.step_tracker.total,

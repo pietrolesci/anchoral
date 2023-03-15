@@ -3,7 +3,7 @@ poetry run python ./scripts/train.py \
     experiment_group=seed_variability \
     dataset_name=agnews_bert_tiny \
     train_val_split=0.05 \
-    fit.num_epochs=3 \
+    fit.max_epochs=3 \
     fit.validation_interval=5 \
     fit.learning_rate=0.0002 \
     model.seed=0,42,1994,6006,2023 \

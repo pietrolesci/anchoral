@@ -97,7 +97,7 @@ class ActiveProgressTracker(ProgressTracker):
             self.pool_tracker.make_progress_bar()
 
     def initialize_fit_progress(self, *args, **kwargs) -> None:
-        self.is_training = True
+        self.is_fitting = True
         self.log_interval = kwargs.get("log_interval", 1)
 
         # NOTE: here we update (not re-create) the fit_tracker
@@ -106,7 +106,7 @@ class ActiveProgressTracker(ProgressTracker):
         self.fit_tracker.reset()  # <- reset current counts and progress bar line
 
     def initialize_evaluation_progress(self, stage: RunningStage, loader: DataLoader, **kwargs) -> None:
-        self.is_training = False
+        self.is_fitting = False
         self.log_interval = kwargs.get("log_interval", 1)
 
         # NOTE: we do not reset the tracker nor the progress bar

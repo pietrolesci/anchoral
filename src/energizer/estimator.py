@@ -7,9 +7,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Union
 import torch
 from lightning.fabric import Fabric
 from lightning.fabric.accelerators.accelerator import Accelerator
-from lightning.fabric.connector import _PLUGIN_INPUT, _PRECISION_INPUT
+from lightning.fabric.connector import _PRECISION_INPUT
 from lightning.fabric.loggers import Logger
-from lightning.fabric.strategies import Strategy
 from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule, _FabricOptimizer
 from lightning.pytorch.core.mixins.hparams_mixin import HyperparametersMixin
 from torch.optim.lr_scheduler import _LRScheduler
@@ -45,11 +44,7 @@ class Estimator(HyperparametersMixin):
         self,
         model: torch.nn.Module,
         accelerator: Optional[Union[str, Accelerator]] = None,
-        strategy: Optional[Union[str, Strategy]] = None,
-        devices: Optional[Union[List[int], str, int]] = None,
-        num_nodes: int = 1,
         precision: _PRECISION_INPUT = 32,
-        plugins: Optional[Union[_PLUGIN_INPUT, List[_PLUGIN_INPUT]]] = None,
         callbacks: Optional[Union[List[Any], Any]] = None,
         loggers: Optional[Union[Logger, List[Logger]]] = None,
         deterministic: bool = True,
@@ -57,11 +52,7 @@ class Estimator(HyperparametersMixin):
         super().__init__()
         self.fabric = Fabric(
             accelerator=accelerator,
-            strategy=strategy,
-            devices=devices,
-            num_nodes=num_nodes,
             precision=precision,
-            plugins=plugins,
             callbacks=callbacks,
             loggers=loggers,
         )
@@ -91,7 +82,7 @@ class Estimator(HyperparametersMixin):
         self,
         train_loader: DataLoader,
         validation_loader: Optional[DataLoader] = None,
-        num_epochs: Optional[int] = 3,
+        max_epochs: Optional[int] = 3,
         min_steps: Optional[int] = None,
         loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
         loss_fn_kwargs: Optional[Dict] = None,
@@ -107,7 +98,7 @@ class Estimator(HyperparametersMixin):
         """
 
         # configure progress tracking
-        self.progress_tracker.initialize_fit_progress(num_epochs, min_steps, train_loader, validation_loader, **kwargs)
+        self.progress_tracker.initialize_fit_progress(max_epochs, min_steps, train_loader, validation_loader, **kwargs)
 
         # configure dataloaders
         train_loader = self.configure_dataloader(train_loader)
@@ -142,11 +133,11 @@ class Estimator(HyperparametersMixin):
             # update progress
             self.progress_tracker.increment_fit_progress()
 
-        self.progress_tracker.finalize_fit_progress()
-
         # call hook
         self.fabric.call("on_fit_end", estimator=self, model=model, output=output)
 
+        self.progress_tracker.finalize_fit_progress()
+        
         return output
 
     def validate(
@@ -272,7 +263,6 @@ class Estimator(HyperparametersMixin):
             # update progress tracker
             self.progress_tracker.increment_epoch_progress()
 
-        self.progress_tracker.finalize_epoch_progress()
 
         # method to possibly aggregate
         train_out = self.train_epoch_end(train_out, metrics)
@@ -286,6 +276,8 @@ class Estimator(HyperparametersMixin):
             metrics=metrics,
         )
 
+        self.progress_tracker.finalize_epoch_progress()
+        
         # validation loop
         if self.progress_tracker.should_validate():
             out = self.eval_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION)
@@ -311,7 +303,7 @@ class Estimator(HyperparametersMixin):
         metrics = self.configure_metrics(stage)
 
         # eval mode
-        is_training = model.training
+        is_fitting = model.training
         model.eval()
 
         # call hook
@@ -352,7 +344,6 @@ class Estimator(HyperparametersMixin):
                 # update progress tracker
                 self.progress_tracker.increment_epoch_progress()
 
-        self.progress_tracker.finalize_epoch_progress()
 
         # method to possibly aggregate
         output = getattr(self, f"{stage}_epoch_end")(output, metrics)
@@ -361,8 +352,10 @@ class Estimator(HyperparametersMixin):
         self.fabric.call(f"on_{stage}_epoch_end", estimator=self, model=model, output=output, metrics=metrics)
 
         # resets model training status
-        model.train(is_training)
+        model.train(is_fitting)
 
+        self.progress_tracker.finalize_epoch_progress()
+        
         return output
 
     def training_step(

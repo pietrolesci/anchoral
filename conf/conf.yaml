@@ -35,11 +35,7 @@ strategy: null
 
 estimator:
   accelerator: gpu
-  strategy: null
-  devices: null
-  num_nodes: 1
   precision: 32
-  plugins: null
   deterministic: true
 
 callbacks: null
@@ -69,7 +65,7 @@ active_data:
   seed: ${seed}
 
 fit:
-  num_epochs: 3
+  max_epochs: 3
   min_steps: null
   loss_fn: null
   loss_fn_kwargs: null
