@@ -12,9 +12,6 @@ class RoundTracker(Tracker):
     current: int = 0
     total: int = 0
 
-    # def reset_current(self) -> None:
-    #     self.current = -1
-
     def make_progress_bar(self) -> None:
         self.progress_bar = tqdm(
             total=self.max,

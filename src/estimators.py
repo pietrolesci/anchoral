@@ -135,7 +135,7 @@ class SequenceClassificationMixin:
 
         if stage == RunningStage.TEST and hasattr(self.progress_tracker, "global_budget"):
             logs = {f"{k}_vs_budget": v for k, v in logs.items()}
-            self.log_dict(logs, step=self.progress_tracker.max_budget)
+            self.log_dict(logs, step=self.progress_tracker.global_budget)
 
         return {
             OutputKeys.LOSS: aggregated_loss,
