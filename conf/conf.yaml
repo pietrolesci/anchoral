@@ -82,7 +82,7 @@ fit:
 
 # this is incremental to `fit` above
 active_fit:
-  num_rounds: 50
+  max_rounds: 50
   max_budget: null
   query_size: 25
   validation_perc: 0.3

@@ -55,18 +55,19 @@ class ActiveProgressTracker(ProgressTracker):
     """
 
     @property
-    def num_rounds(self) -> int:
+    def global_round(self) -> int:
         return self.round_tracker.total
 
     @property
     def budget(self) -> int:
         return self.budget_tracker.total
-
-    def get_epoch_num(self) -> int:
+    
+    @property
+    def safe_global_epoch(self) -> int:
         return (
-            self.num_rounds
+            self.global_round
             if self.current_stage in (RunningStage.TEST, RunningStage.POOL)
-            else self.fit_tracker.epoch_tracker.total
+            else super().safe_global_epoch
         )
 
     def is_active_fit_done(self) -> bool:
@@ -77,9 +78,9 @@ class ActiveProgressTracker(ProgressTracker):
     """
 
     def initialize_active_fit_progress(
-        self, num_rounds: int, max_budget: int, query_size: int, initial_budget: int, **kwargs
+        self, max_rounds: int, max_budget: int, query_size: int, initial_budget: int, **kwargs
     ) -> None:
-        self.round_tracker = RoundTracker(max=num_rounds)
+        self.round_tracker = RoundTracker(max=max_rounds)
         self.budget_tracker = BudgetTracker(max=max_budget, query_size=query_size)
         self.budget_tracker.set_initial_budget(initial_budget)
         self.fit_tracker = FitTracker(

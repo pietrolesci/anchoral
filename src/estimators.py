@@ -104,7 +104,7 @@ class SequenceClassificationMixin:
         if stage == RunningStage.TRAIN:
             # NOTE: only log at the batch level training
             logs = {OutputKeys.LOSS: loss, **out_metrics}
-            self.log_dict({f"{stage}/{k}": v for k, v in logs.items()}, step=self.progress_tracker.get_batch_num())
+            self.log_dict({f"{stage}/{k}": v for k, v in logs.items()}, step=self.progress_tracker.global_batch)
 
         return {
             OutputKeys.LOSS: loss,
@@ -131,7 +131,7 @@ class SequenceClassificationMixin:
         logs = {OutputKeys.LOSS: aggregated_loss, **aggregated_metrics}
 
         logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
-        self.log_dict(logs, step=self.progress_tracker.get_epoch_num())
+        self.log_dict(logs, step=self.progress_tracker.safe_global_epoch)
 
         if stage == RunningStage.TEST and hasattr(self.progress_tracker, "budget"):
             logs = {f"{k}_vs_budget": v for k, v in logs.items()}
@@ -152,7 +152,7 @@ class SequenceClassificationMixin:
             "global_train_steps": self.progress_tracker.fit_tracker.step_tracker.total,
         }
         logs = {f"round_stats/{k}": v for k, v in logs.items()}
-        self.log_dict(logs, step=self.progress_tracker.num_rounds)
+        self.log_dict(logs, step=self.progress_tracker.global_round)
 
         # # log using labelled size as the x-axis since here you have access to datamodule
         # # which you do not have in test_epoch_end

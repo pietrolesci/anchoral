@@ -75,7 +75,7 @@ class Timer(ActiveLearningCallbackMixin, Timer):
     def on_round_end(self, estimator: ActiveEstimator, *args, **kwargs) -> None:
         self.round_end = time.perf_counter()
         estimator.fabric.log(
-            "timer/round_time", self.round_end - self.round_start, step=estimator.progress_tracker.num_rounds
+            "timer/round_time", self.round_end - self.round_start, step=estimator.progress_tracker.global_round
         )
 
     def on_query_start(self, *args, **kwargs) -> None:
@@ -84,7 +84,7 @@ class Timer(ActiveLearningCallbackMixin, Timer):
     def on_query_end(self, estimator: ActiveEstimator, *args, **kwargs) -> None:
         self.query_end = time.perf_counter()
         estimator.fabric.log(
-            "timer/query_time", self.query_end - self.query_start, step=estimator.progress_tracker.num_rounds
+            "timer/query_time", self.query_end - self.query_start, step=estimator.progress_tracker.global_round
         )
 
     def on_label_start(self, *args, **kwargs) -> None:
@@ -93,7 +93,7 @@ class Timer(ActiveLearningCallbackMixin, Timer):
     def on_label_end(self, estimator: ActiveEstimator, *args, **kwargs) -> None:
         self.label_end = time.perf_counter()
         estimator.fabric.log(
-            "timer/label_time", self.label_end - self.label_start, step=estimator.progress_tracker.num_rounds
+            "timer/label_time", self.label_end - self.label_start, step=estimator.progress_tracker.global_round
         )
 
     def on_pool_epoch_start(self, *args, **kwargs) -> None:

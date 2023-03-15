@@ -15,7 +15,7 @@ poetry run python scripts/active_train.py \
     dataset_name=agnews_bert_tiny \
     strategy=random \
     fit.validation_interval=5 \
-    active_fit.num_rounds=2 \
+    active_fit.max_rounds=2 \
     limit_batches=10
 
 
@@ -60,7 +60,7 @@ poetry run python scripts/active_train.py \
     strategy=random \
     fit.validation_interval=3 \
     fit.min_steps=50 \
-    active_fit.num_rounds=50 \
+    active_fit.max_rounds=50 \
     active_fit.validation_perc=0.1 \
     active_fit.query_size=25 \
     +callbacks=model_checkpoint \

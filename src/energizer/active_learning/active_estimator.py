@@ -52,7 +52,7 @@ class ActiveEstimator(Estimator):
     def active_fit(
         self,
         active_datamodule: ActiveDataModule,
-        num_rounds: int,
+        max_rounds: int,
         query_size: int,
         validation_perc: float,
         max_budget: Optional[int] = None,
@@ -75,7 +75,7 @@ class ActiveEstimator(Estimator):
 
         # configure progress tracking
         self.progress_tracker.initialize_active_fit_progress(
-            num_rounds=num_rounds,
+            max_rounds=max_rounds,
             max_budget=max_budget,
             query_size=query_size,
             initial_budget=active_datamodule.total_labelled_size,
@@ -117,8 +117,8 @@ class ActiveEstimator(Estimator):
                 self.progress_tracker.budget_tracker.total == active_datamodule.total_labelled_size
             ), f"{self.progress_tracker.budget_tracker.total} == {active_datamodule.total_labelled_size}"
 
-        if not self.progress_tracker.num_rounds > 0:
-            raise ValueError("You did not run any labellng. Perhaps change your `max_budget` or `num_rounds`.")
+        if not self.progress_tracker.global_round > 0:
+            raise ValueError("You did not run any labellng. Perhaps change your `max_budget` or `max_rounds`.")
 
         self.progress_tracker.finalize_active_fit_progress()
 
@@ -184,7 +184,7 @@ class ActiveEstimator(Estimator):
             self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule)
             active_datamodule.label(
                 indices=output.query.indices,
-                round_idx=self.progress_tracker.num_rounds,
+                round_idx=self.progress_tracker.global_round,
                 validation_perc=validation_perc,
                 validation_sampling=validation_sampling,
             )

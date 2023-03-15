@@ -151,6 +151,28 @@ class ProgressTracker:
     Status
     """
 
+    @property
+    def global_step(self) -> int:
+        return self.fit_tracker.step_tracker.total
+
+
+    @property
+    def global_batch(self) -> int:
+        "automatically infers the active stage"
+        return self._get_stage_tracker().total
+    
+    @property
+    def global_epoch(self) -> int:
+        if self.is_fitting:
+            return self.fit_tracker.epoch_tracker.total
+        return 0
+    
+    @property
+    def safe_global_epoch(self) -> int:
+        if self.is_fitting and self.current_stage == RunningStage.VALIDATION and self.fit_tracker.validation_interval is not None and self.fit_tracker.validation_interval > 1:
+            return self.global_batch
+        return self.global_epoch
+
     def is_fit_done(self) -> bool:
         return self.fit_tracker.epoch_tracker.max_reached() or self.fit_tracker.stop_training
 
@@ -160,19 +182,17 @@ class ProgressTracker:
             cond = cond or self.fit_tracker.stop_training
         return cond
 
-    def get_batch_num(self) -> int:
-        return self._get_stage_tracker().total
 
     def get_epoch_num(self) -> int:
         if self.current_stage == RunningStage.TEST:
             return 0
         elif self.current_stage == RunningStage.VALIDATION and self.is_fitting:
-            return self.get_batch_num()
+            return self.global_batch
         return self.fit_tracker.epoch_tracker.total
 
     def should_log(self) -> None:
         # return batch_idx is None or (batch_idx == 0) or ((batch_idx + 1) % self.log_interval == 0)
-        return self.get_batch_num() % self.log_interval == 0
+        return self.global_batch % self.log_interval == 0
 
     def should_validate(self) -> bool:
         if self.fit_tracker.validation_tracker.max is None:
