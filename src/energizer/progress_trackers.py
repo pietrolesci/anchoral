@@ -160,10 +160,9 @@ class ProgressTracker:
         return self.fit_tracker.epoch_tracker.max_reached() or self.fit_tracker.stop_training
 
     def is_epoch_done(self) -> bool:
-        cond = self._get_stage_tracker().max_reached()
-        if self.current_stage == RunningStage.TRAIN and self.is_fitting:
-            cond = cond or self.fit_tracker.stop_training
-        return cond
+        return self._get_stage_tracker().max_reached() or (
+            self.current_stage == RunningStage.TRAIN and self.is_fitting and self.fit_tracker.stop_training
+        )
 
     def should_log(self) -> None:
         # return batch_idx is None or (batch_idx == 0) or ((batch_idx + 1) % self.log_interval == 0)
