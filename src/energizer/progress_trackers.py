@@ -147,16 +147,21 @@ class ProgressTracker:
     @property
     def global_batch(self) -> int:
         return self._get_stage_tracker().total
-    
+
     @property
     def global_epoch(self) -> int:
         if self.is_fitting:
             return self.fit_tracker.epoch_tracker.total
         return 0
-    
+
     @property
     def safe_global_epoch(self) -> int:
-        if self.is_fitting and self.current_stage == RunningStage.VALIDATION and self.fit_tracker.validation_interval is not None and self.fit_tracker.validation_interval > 1:
+        if (
+            self.is_fitting
+            and self.current_stage == RunningStage.VALIDATION
+            and self.fit_tracker.validation_interval is not None
+            and self.fit_tracker.validation_interval > 1
+        ):
             return self.global_batch
         return self.global_epoch
 
@@ -187,13 +192,15 @@ class ProgressTracker:
         self.is_fitting = True
 
         self.fit_tracker.reset()  # <- reset current counts and progress bar line
-        self.fit_tracker.update_from_hparams(**self._solve_hparams(*args, **kwargs), has_validation=kwargs.get("has_validation"))
-        
+        self.fit_tracker.update_from_hparams(
+            **self._solve_hparams(*args, **kwargs), has_validation=kwargs.get("has_validation")
+        )
+
         if kwargs.get("progress_bar"):
             self.fit_tracker.make_progress_bars()
 
         self.log_interval = kwargs.get("log_interval", 1)
-    
+
     def increment_fit_progress(self) -> None:
         self.fit_tracker.epoch_tracker.increment()
         pbar = self.fit_tracker.train_tracker.progress_bar

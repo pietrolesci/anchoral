@@ -55,7 +55,7 @@ class ActiveProgressTracker(ProgressTracker):
     @property
     def global_budget(self) -> int:
         return self.budget_tracker.total
-    
+
     @property
     def safe_global_epoch(self) -> int:
         return (
@@ -71,7 +71,14 @@ class ActiveProgressTracker(ProgressTracker):
         self.stop_active_training = value
 
     def initialize_active_fit_progress(
-        self, max_rounds: int, max_budget: int, query_size: int, initial_budget: int, has_pool: bool, has_validation: bool, **kwargs
+        self,
+        max_rounds: int,
+        max_budget: int,
+        query_size: int,
+        initial_budget: int,
+        has_pool: bool,
+        has_validation: bool,
+        **kwargs,
     ) -> None:
         self.round_tracker.max = max_rounds
         self.budget_tracker = BudgetTracker(
@@ -79,9 +86,9 @@ class ActiveProgressTracker(ProgressTracker):
         )
         if has_pool:
             self.pool_tracker = StageTracker(stage=RunningStage.POOL)
-        
+
         self.fit_tracker.has_validation = has_validation
-        
+
         if kwargs.get("progress_bar", True):
             self.round_tracker.make_progress_bar()
             self.fit_tracker.make_progress_bars()

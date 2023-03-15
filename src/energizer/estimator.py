@@ -98,7 +98,14 @@ class Estimator(HyperparametersMixin):
         """
 
         # configure progress tracking
-        self.progress_tracker.initialize_fit_progress(max_epochs, min_steps, train_loader, validation_loader, has_validation=validation_loader is not None, **kwargs)
+        self.progress_tracker.initialize_fit_progress(
+            max_epochs,
+            min_steps,
+            train_loader,
+            validation_loader,
+            has_validation=validation_loader is not None,
+            **kwargs,
+        )
 
         # configure dataloaders
         train_loader = self.configure_dataloader(train_loader)
@@ -137,7 +144,7 @@ class Estimator(HyperparametersMixin):
         self.fabric.call("on_fit_end", estimator=self, model=model, output=output)
 
         self.progress_tracker.finalize_fit_progress()
-        
+
         return output
 
     def validate(
@@ -260,7 +267,6 @@ class Estimator(HyperparametersMixin):
             # update progress tracker
             self.progress_tracker.increment_epoch_progress()
 
-
         # method to possibly aggregate
         train_out = self.train_epoch_end(train_out, metrics)
 
@@ -274,7 +280,7 @@ class Estimator(HyperparametersMixin):
         )
 
         self.progress_tracker.finalize_epoch_progress()
-        
+
         # validation loop
         if self.progress_tracker.should_validate():
             out = self.eval_loop(loss_fn, model, validation_loader, RunningStage.VALIDATION)
@@ -290,7 +296,7 @@ class Estimator(HyperparametersMixin):
         model: _FabricModule,
         loader: _FabricDataLoader,
         stage: RunningStage,
-        **kwargs
+        **kwargs,
     ) -> EPOCH_OUTPUT:
         """Runs over an entire evaluation dataloader."""
 
@@ -342,7 +348,6 @@ class Estimator(HyperparametersMixin):
                 # update progress tracker
                 self.progress_tracker.increment_epoch_progress()
 
-
         # method to possibly aggregate
         output = getattr(self, f"{stage}_epoch_end")(output, metrics)
 
@@ -353,7 +358,7 @@ class Estimator(HyperparametersMixin):
         model.train(is_fitting)
 
         self.progress_tracker.finalize_epoch_progress()
-        
+
         return output
 
     def training_step(
