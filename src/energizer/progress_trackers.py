@@ -82,11 +82,13 @@ class FitTracker:
 
     validation_interval: Optional[List[int]] = None
     stop_training: bool = False
+    has_validation: bool = False
 
     def make_progress_bars(self) -> None:
         self.epoch_tracker.make_progress_bar()
         self.train_tracker.make_progress_bar()
-        self.validation_tracker.make_progress_bar()
+        if self.has_validation:
+            self.validation_tracker.make_progress_bar()
 
     def close_progress_bars(self) -> None:
         self.epoch_tracker.close_progress_bar()
@@ -100,6 +102,7 @@ class FitTracker:
 
     def reset(self) -> None:
         self.stop_training = False
+        self.has_validation = False
         self.epoch_tracker.reset()
         self.step_tracker.reset()
         self.train_tracker.reset()
@@ -112,12 +115,14 @@ class FitTracker:
         max_train_batches: int,
         max_validation_batches: int,
         validation_interval: int,
+        has_validation: Optional[bool],
     ) -> None:
         self.epoch_tracker.max = max_epochs
         self.step_tracker.max = min_steps
         self.train_tracker.max = max_train_batches
         self.validation_tracker.max = max_validation_batches
         self.validation_interval = validation_interval
+        self.has_validation = has_validation
 
 
 @dataclass

@@ -77,7 +77,7 @@ class ActiveProgressTracker(ProgressTracker):
     """
 
     def initialize_active_fit_progress(
-        self, max_rounds: int, max_budget: int, query_size: int, initial_budget: int, has_pool: bool, **kwargs
+        self, max_rounds: int, max_budget: int, query_size: int, initial_budget: int, has_pool: bool, has_validation: bool, **kwargs
     ) -> None:
         self.round_tracker.max = max_rounds
         self.budget_tracker = BudgetTracker(
@@ -85,6 +85,8 @@ class ActiveProgressTracker(ProgressTracker):
         )
         if has_pool:
             self.pool_tracker = StageTracker(stage=RunningStage.POOL)
+        
+        self.fit_tracker.has_validation = has_validation
         
         if kwargs.get("progress_bar", True):
             self.round_tracker.make_progress_bar()
@@ -99,7 +101,7 @@ class ActiveProgressTracker(ProgressTracker):
 
         # NOTE: here we update (not re-create) the fit_tracker
         # also we do not re-create the progress bar
-        self.fit_tracker.update_from_hparams(**self._solve_hparams(*args, **kwargs))
+        self.fit_tracker.update_from_hparams(**self._solve_hparams(*args, **kwargs), has_validation=self.fit_tracker.has_validation)
         self.fit_tracker.reset()  # <- reset current counts and progress bar line
 
     def initialize_evaluation_progress(self, stage: RunningStage, loader: DataLoader, **kwargs) -> None:

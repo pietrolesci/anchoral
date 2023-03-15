@@ -98,7 +98,7 @@ class Estimator(HyperparametersMixin):
         """
 
         # configure progress tracking
-        self.progress_tracker.initialize_fit_progress(max_epochs, min_steps, train_loader, validation_loader, **kwargs)
+        self.progress_tracker.initialize_fit_progress(max_epochs, min_steps, train_loader, validation_loader, has_validation=validation_loader is not None, **kwargs)
 
         # configure dataloaders
         train_loader = self.configure_dataloader(train_loader)

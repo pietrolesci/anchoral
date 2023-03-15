@@ -80,6 +80,7 @@ class ActiveEstimator(Estimator):
             query_size=query_size,
             initial_budget=active_datamodule.total_labelled_size,
             has_pool=getattr(self, "pool_step", None) is not None,
+            has_validation=active_datamodule.validation_loader() or validation_perc,
             **kwargs,
         )
 
