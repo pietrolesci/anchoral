@@ -115,7 +115,7 @@ class FitTracker:
         max_train_batches: int,
         max_validation_batches: int,
         validation_interval: int,
-        has_validation: Optional[bool],
+        has_validation: bool,
     ) -> None:
         self.epoch_tracker.max = max_epochs
         self.step_tracker.max = min_steps
@@ -181,19 +181,15 @@ class ProgressTracker:
 
     def initialize_fit_progress(
         self,
-        max_epochs: Optional[int],
-        min_steps: Optional[int],
-        train_loader: DataLoader,
-        validation_loader: DataLoader,
+        *args,
         **kwargs,
     ) -> None:
         self.is_fitting = True
 
         self.fit_tracker.reset()  # <- reset current counts and progress bar line
-        hparams = self._solve_hparams(max_epochs, min_steps, train_loader, validation_loader, **kwargs)
-        self.fit_tracker.update_from_hparams(**hparams)
+        self.fit_tracker.update_from_hparams(**self._solve_hparams(*args, **kwargs), has_validation=kwargs.get("has_validation"))
         
-        if kwargs.get("progress_bar", True):
+        if kwargs.get("progress_bar"):
             self.fit_tracker.make_progress_bars()
 
         self.log_interval = kwargs.get("log_interval", 1)

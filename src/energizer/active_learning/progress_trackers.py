@@ -99,15 +99,6 @@ class ActiveProgressTracker(ProgressTracker):
         self.test_tracker.close_progress_bar()
         self.pool_tracker.close_progress_bar()
 
-    def initialize_fit_progress(self, *args, **kwargs) -> None:
-        self.is_fitting = True
-        self.log_interval = kwargs.get("log_interval", 1)
-
-        # NOTE: here we update (not re-create) the fit_tracker
-        # also we do not re-create the progress bar
-        self.fit_tracker.update_from_hparams(**self._solve_hparams(*args, **kwargs), has_validation=self.fit_tracker.has_validation)
-        self.fit_tracker.reset()  # <- reset current counts and progress bar line
-
     def finalize_fit_progress(self) -> None:
         self.fit_tracker.terminate_progress_bars()
         self.is_fitting = False

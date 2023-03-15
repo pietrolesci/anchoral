@@ -154,6 +154,7 @@ class ActiveEstimator(Estimator):
 
         # fit model on the available data
         if active_datamodule.has_labelled_data:
+            kwargs.pop("progress_bar")  # FIXME: hack!
             output.fit = self.fit(
                 train_loader=active_datamodule.train_loader(),
                 validation_loader=active_datamodule.validation_loader(),
@@ -165,6 +166,7 @@ class ActiveEstimator(Estimator):
                 optimizer_kwargs=optimizer_kwargs,
                 scheduler=scheduler,
                 scheduler_kwargs=scheduler_kwargs,
+                progress_bar=False,
                 **kwargs,
             )
 
@@ -174,13 +176,14 @@ class ActiveEstimator(Estimator):
                 test_loader=active_datamodule.test_loader(),
                 loss_fn=loss_fn,
                 loss_fn_kwargs=loss_fn_kwargs,
+                progress_bar=False,
                 **kwargs,
             )
 
         # query indices to annotate, skip first round
         # do not annotate on the warm-up round
         if active_datamodule.pool_size > query_size:
-            output.query = self.query(active_datamodule=active_datamodule, query_size=query_size, **kwargs)
+            output.query = self.query(active_datamodule=active_datamodule, query_size=query_size, progress_bar=False, **kwargs)
 
             # call hook
             self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule)
