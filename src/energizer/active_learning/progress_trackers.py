@@ -1,10 +1,9 @@
 from dataclasses import dataclass
 
-from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from src.energizer.enums import RunningStage
-from src.energizer.progress_trackers import EpochTracker, FitTracker, ProgressTracker, StageTracker, Tracker
+from src.energizer.progress_trackers import ProgressTracker, StageTracker, Tracker
 
 
 @dataclass
@@ -49,10 +48,6 @@ class ActiveProgressTracker(ProgressTracker):
 
     stop_active_training: bool = False
 
-    """
-    Status
-    """
-
     @property
     def global_round(self) -> int:
         return self.round_tracker.total
@@ -72,9 +67,8 @@ class ActiveProgressTracker(ProgressTracker):
     def is_active_fit_done(self) -> bool:
         return self.round_tracker.max_reached() or self.budget_tracker.max_reached() or self.stop_active_training
 
-    """
-    Initializers
-    """
+    def set_stop_active_training(self, value: bool) -> None:
+        self.stop_active_training = value
 
     def initialize_active_fit_progress(
         self, max_rounds: int, max_budget: int, query_size: int, initial_budget: int, has_pool: bool, has_validation: bool, **kwargs
@@ -95,6 +89,16 @@ class ActiveProgressTracker(ProgressTracker):
             if has_pool:
                 self.pool_tracker.make_progress_bar()
 
+    def increment_active_fit_progress(self) -> None:
+        self.round_tracker.increment()
+        self.budget_tracker.increment()
+
+    def finalize_active_fit_progress(self) -> None:
+        self.round_tracker.close_progress_bar()
+        self.fit_tracker.close_progress_bars()
+        self.test_tracker.close_progress_bar()
+        self.pool_tracker.close_progress_bar()
+
     def initialize_fit_progress(self, *args, **kwargs) -> None:
         self.is_fitting = True
         self.log_interval = kwargs.get("log_interval", 1)
@@ -103,12 +107,6 @@ class ActiveProgressTracker(ProgressTracker):
         # also we do not re-create the progress bar
         self.fit_tracker.update_from_hparams(**self._solve_hparams(*args, **kwargs), has_validation=self.fit_tracker.has_validation)
         self.fit_tracker.reset()  # <- reset current counts and progress bar line
-
-    def finalize_active_fit_progress(self) -> None:
-        self.round_tracker.close_progress_bar()
-        self.fit_tracker.close_progress_bars()
-        self.test_tracker.close_progress_bar()
-        self.pool_tracker.close_progress_bar()
 
     def finalize_fit_progress(self) -> None:
         self.fit_tracker.terminate_progress_bars()
@@ -121,9 +119,4 @@ class ActiveProgressTracker(ProgressTracker):
     Operations
     """
 
-    def increment_active_fit_progress(self) -> None:
-        self.round_tracker.increment()
-        self.budget_tracker.increment()
 
-    def set_stop_active_training(self, value: bool) -> None:
-        self.stop_active_training = value
