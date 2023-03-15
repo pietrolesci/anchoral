@@ -141,7 +141,7 @@ class FitTracker:
         self.epoch_tracker.min = min_epochs
         self.step_tracker.max = max_steps
         self.step_tracker.min = min_steps
-        self.has_validation = self.has_validation or has_validation
+        self.has_validation = has_validation
 
     def initialize_epoch_progress(self, loader: DataLoader, stage: RunningStage, **kwargs) -> None:
         max_batches = min(len(loader), kwargs.get(f"limit_{stage}_batches") or float("Inf"))

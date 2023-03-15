@@ -85,6 +85,8 @@ class ActiveEstimator(Estimator):
             initial_budget=active_datamodule.total_labelled_size,
             progress_bar=progress_bar,
             log_interval=log_interval,
+            has_validation=active_datamodule.validation_loader() or validation_perc,
+            has_pool=getattr(self, "pool_step", None) is not None,
         )
 
         if reinit_model:

@@ -13,12 +13,13 @@ from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.energizer.registries import SCORING_FUNCTIONS
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
+from numpy.random import RandomState
 
 
 class RandomStrategy(ActiveEstimator):
     def __init__(self, seed: Optional[int], *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.rng = check_random_state(seed)  # reproducibility
+        self.rng: RandomState = check_random_state(seed)  # reproducibility
 
     def query(self, active_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
         pool_indices = active_datamodule.pool_indices
@@ -125,8 +126,8 @@ Pool subsampling mixins
 
 
 class RandomPoolSubsamplingMixin:
-    subsampling_size: Union[int, float] = None
-    subsampling_rng: int = None
+    subsampling_size: Union[int, float]
+    subsampling_rng: RandomState
 
     def get_pool_loader(self, active_datamodule: ActiveDataModule) -> DataLoader:
         pool_indices = active_datamodule.pool_indices
@@ -167,11 +168,10 @@ class RandomSubsamplingRandomStrategy(RandomPoolSubsamplingMixin, RandomStrategy
         if isinstance(subsampling_size, float):
             assert 0 < subsampling_size <= 1
 
-        self.subsampling_seed = subsampling_seed
         self.subsampling_rng = check_random_state(subsampling_seed)  # reproducibility
 
 
 class SEALSRandomStrategy(SEALSMixin, RandomStrategy):
     def __init__(self, num_neighbours: int, *args, **kwargs) -> None:
-        super().__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.num_neighbours = num_neighbours

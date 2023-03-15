@@ -12,7 +12,7 @@ from transformers import AutoModelForSequenceClassification
 
 from src.energizer.active_learning.active_estimator import RoundOutput
 from src.energizer.active_learning.data import ActiveDataModule
-from src.energizer.active_learning.strategies import RandomStrategy, UncertaintyBasedStrategy
+from src.energizer.active_learning.strategies import RandomStrategy, UncertaintyBasedStrategy, SEALSRandomStrategy
 from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.energizer.estimator import Estimator
 from src.energizer.types import ROUND_OUTPUT, Dict
@@ -204,6 +204,8 @@ class SequenceClassificationMixin:
 class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator):
     ...
 
+class RandomStrategyForSequenceClassification(SequenceClassificationMixin, RandomStrategy):
+    ...
 
 class UncertaintyBasedStrategyForSequenceClassification(SequenceClassificationMixin, UncertaintyBasedStrategy):
     def pool_step(
@@ -221,5 +223,6 @@ class UncertaintyBasedStrategyForSequenceClassification(SequenceClassificationMi
         return {OutputKeys.SCORES: scores, OutputKeys.LOGITS: logits}
 
 
-class RandomStrategyForSequenceClassification(SequenceClassificationMixin, RandomStrategy):
-    pass
+
+class SEALSRandomStrategyForSequenceClassification(SequenceClassificationMixin, SEALSRandomStrategy):
+    ...

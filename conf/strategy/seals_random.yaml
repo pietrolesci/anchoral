@@ -1,0 +1,3 @@
+_target_: src.estimators.SEALSRandomStrategyForSequenceClassification
+seed: 42
+num_neighbours: 100

@@ -62,19 +62,25 @@ class ActiveProgressTracker(ProgressTracker):
         initial_budget: int,
         progress_bar: Optional[bool],
         log_interval: Optional[int],
+        has_validation: bool,
+        has_pool: bool,
     ) -> None:
         self.round_tracker = RoundTracker(max=max_rounds)
         self.budget_tracker = BudgetTracker(
             max=max_budget, total=initial_budget, current=initial_budget, query_size=query_size
         )
         self.test_tracker = StageTracker(stage=RunningStage.TEST)
-        self.pool_tracker = StageTracker(stage=RunningStage.POOL)
-        self.fit_tracker.has_validation = True  # NOTE: always prepare for validation
+        self.fit_tracker.has_validation = has_validation
+        
+        if has_pool:
+            self.pool_tracker = StageTracker(stage=RunningStage.POOL)
+        
         if progress_bar:
             self.round_tracker.make_progress_bar()
             self.fit_tracker.make_progress_bars()
             self.test_tracker.make_progress_bar()
-            self.pool_tracker.make_progress_bar()
+            if has_pool:
+                self.pool_tracker.make_progress_bar()
 
         self.log_interval = log_interval
 
