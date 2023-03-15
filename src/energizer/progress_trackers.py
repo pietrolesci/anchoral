@@ -165,8 +165,7 @@ class ProgressTracker:
         )
 
     def should_log(self) -> None:
-        # return batch_idx is None or (batch_idx == 0) or ((batch_idx + 1) % self.log_interval == 0)
-        return self.global_batch % self.log_interval == 0
+        return (self.global_batch + 1) % self.log_interval == 0
 
     def should_validate(self) -> bool:
         if self.fit_tracker.validation_tracker.max is None:
