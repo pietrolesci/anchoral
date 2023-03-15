@@ -141,7 +141,6 @@ class ProgressTracker:
 
     @property
     def global_batch(self) -> int:
-        "automatically infers the active stage"
         return self._get_stage_tracker().total
     
     @property
@@ -208,14 +207,16 @@ class ProgressTracker:
         **kwargs,
     ) -> None:
         self.is_fitting = True
-        self.log_interval = kwargs.get("log_interval", 1)
 
-        hparams = self._solve_hparams(max_epochs, min_steps, train_loader, validation_loader, **kwargs)
-        self.fit_tracker = FitTracker.update_from_hparams(**hparams)
         self.fit_tracker.reset()  # <- reset current counts and progress bar line
+        hparams = self._solve_hparams(max_epochs, min_steps, train_loader, validation_loader, **kwargs)
+        self.fit_tracker.update_from_hparams(**hparams)
+        
         if kwargs.get("progress_bar", True):
             self.fit_tracker.make_progress_bars()
 
+        self.log_interval = kwargs.get("log_interval", 1)
+    
     def increment_fit_progress(self) -> None:
         self.fit_tracker.epoch_tracker.increment()
         pbar = self.fit_tracker.train_tracker.progress_bar
@@ -224,6 +225,7 @@ class ProgressTracker:
 
     def finalize_fit_progress(self) -> None:
         self.fit_tracker.close_progress_bars()
+        self.is_fitting = False
 
 
 #  def initialize_fit_progress(self, progress_bar: bool, log_interval: int, **kwargs) -> None:

@@ -79,6 +79,7 @@ class ActiveEstimator(Estimator):
             max_budget=max_budget,
             query_size=query_size,
             initial_budget=active_datamodule.total_labelled_size,
+            has_pool=getattr(self, "pool_step", None) is not None,
             **kwargs,
         )
 
