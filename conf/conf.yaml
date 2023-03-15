@@ -64,8 +64,8 @@ data:
 # this is incremental to `data` above
 active_data:
   budget: null
-  val_perc: ${active_fit.val_perc}
-  sampling: ${active_fit.val_sampling}
+  validation_perc: ${active_fit.validation_perc}
+  sampling: ${active_fit.validation_sampling}
   seed: ${seed}
 
 fit:
@@ -89,8 +89,8 @@ active_fit:
   num_rounds: 50
   max_budget: null
   query_size: 25
-  val_perc: 0.3
-  val_sampling: stratified
+  validation_perc: 0.3
+  validation_sampling: stratified
   reinit_model: true
   limit_pool_batches: ${limit_batches}
   limit_test_batches: ${limit_batches}

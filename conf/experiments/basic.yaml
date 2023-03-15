@@ -10,12 +10,12 @@ fit:
 
 active_fit:
   num_rounds: 100
-  val_perc: 0.4
+  validation_perc: 0.4
   query_size: 25
 
 active_data:
   budget: 100
-  val_perc: 0.5
+  validation_perc: 0.5
 
 dataset_name: imdb_bert_tiny
 experiment_group: dry_run
