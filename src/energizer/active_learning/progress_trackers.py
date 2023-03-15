@@ -59,7 +59,7 @@ class ActiveProgressTracker(ProgressTracker):
         return self.round_tracker.total
 
     @property
-    def budget(self) -> int:
+    def global_budget(self) -> int:
         return self.budget_tracker.total
     
     @property
