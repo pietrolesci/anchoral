@@ -43,8 +43,10 @@ class BudgetTracker(Tracker):
 
 @dataclass
 class ActiveProgressTracker(ProgressTracker):
-    round_tracker: RoundTracker = None
-    pool_tracker: StageTracker = None
+    round_tracker: RoundTracker = RoundTracker()
+    budget_tracker: BudgetTracker = BudgetTracker()
+    pool_tracker: StageTracker = StageTracker(stage=RunningStage.POOL)
+
     stop_active_training: bool = False
 
     """
@@ -77,17 +79,10 @@ class ActiveProgressTracker(ProgressTracker):
     def initialize_active_fit_progress(
         self, max_rounds: int, max_budget: int, query_size: int, initial_budget: int, **kwargs
     ) -> None:
-        self.round_tracker = RoundTracker(max=max_rounds)
-        self.budget_tracker = BudgetTracker(max=max_budget, query_size=query_size)
-        self.budget_tracker.set_initial_budget(initial_budget)
-        self.fit_tracker = FitTracker(
-            epoch_tracker=EpochTracker(),
-            train_tracker=StageTracker(stage=RunningStage.TRAIN),
-            validation_tracker=StageTracker(stage=RunningStage.VALIDATION),
-            step_tracker=Tracker(),
-        )
-        self.test_tracker = StageTracker(stage=RunningStage.TEST)
-        self.pool_tracker = StageTracker(stage=RunningStage.POOL)
+        self.round_tracker.max = max_rounds
+        self.budget_tracker.max = max_budget
+        self.budget_tracker.query_size = query_size
+        self.budget_tracker.set_initial_budget(initial_budget)        
         if kwargs.get("progress_bar", True):
             self.round_tracker.make_progress_bar()
             self.fit_tracker.make_progress_bars()
