@@ -271,7 +271,7 @@ class Estimator(HyperparametersMixin):
 
             # update progress tracker
             self.progress_tracker.increment_epoch_progress()
-        
+
         self.progress_tracker.finalize_epoch_progress()
 
         # method to possibly aggregate
@@ -351,7 +351,7 @@ class Estimator(HyperparametersMixin):
 
                 # update progress tracker
                 self.progress_tracker.increment_epoch_progress()
-        
+
         self.progress_tracker.finalize_epoch_progress()
 
         # method to possibly aggregate

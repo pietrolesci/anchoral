@@ -200,17 +200,16 @@ class ProgressTracker:
 
     def increment_step_progress(self) -> None:
         self.fit_tracker.step_tracker.increment()
-    
+
     def finalize_epoch_progress(self) -> None:
         tracker = self._get_stage_tracker()
         if self.is_training:
             tracker.terminate_progress_bar()
         else:
             tracker.close_progress_bar()
-     
+
     def finalize_fit_progress(self) -> None:
         self.fit_tracker.close_progress_bars()
-
 
     """
     Initializers

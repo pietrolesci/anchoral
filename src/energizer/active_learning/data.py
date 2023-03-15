@@ -195,7 +195,11 @@ class ActiveDataModule(DataModule):
                 self.index.mark_deleted(idx)
 
     def set_initial_budget(
-        self, budget: int, validation_perc: Optional[float] = None, sampling: Optional[str] = None, seed: Optional[int] = None
+        self,
+        budget: int,
+        validation_perc: Optional[float] = None,
+        sampling: Optional[str] = None,
+        seed: Optional[int] = None,
     ) -> None:
         pool_df = self._df.loc[(self._df[SpecialKeys.IS_LABELLED] == False), [SpecialKeys.ID, InputKeys.TARGET]]
         # sample from the pool
@@ -249,7 +253,7 @@ class ActiveDataModule(DataModule):
             train_df = self._df.loc[
                 (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == False)
             ]
-            
+
             self.train_dataset = Dataset.from_pandas(train_df, preserve_index=False)
 
             return self.get_loader(RunningStage.TRAIN)
