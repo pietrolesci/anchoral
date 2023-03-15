@@ -114,9 +114,3 @@ class ActiveProgressTracker(ProgressTracker):
 
     def finalize_epoch_progress(self) -> None:
         self._get_stage_tracker().terminate_progress_bar()
-
-    """
-    Operations
-    """
-
-
