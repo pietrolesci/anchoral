@@ -176,9 +176,6 @@ class Estimator(HyperparametersMixin):
     ) -> EPOCH_OUTPUT:
         """This method is useful because validation can run in fit when model is already setup."""
 
-        # progress tracking
-        self.progress_tracker.initialize_evaluation_progress(stage, loader, **kwargs)
-
         # configure dataloader
         loader = self.configure_dataloader(loader)
 
@@ -188,7 +185,7 @@ class Estimator(HyperparametersMixin):
         # configure model
         model = self.fabric.setup(self.model)
 
-        return self.eval_loop(loss_fn, model, loader, stage)
+        return self.eval_loop(loss_fn, model, loader, stage, **kwargs)
 
     """
     Loops
@@ -293,11 +290,12 @@ class Estimator(HyperparametersMixin):
         model: _FabricModule,
         loader: _FabricDataLoader,
         stage: RunningStage,
+        **kwargs
     ) -> EPOCH_OUTPUT:
         """Runs over an entire evaluation dataloader."""
 
         # configure progress tracking
-        self.progress_tracker.initialize_epoch_progress(stage)
+        self.progress_tracker.initialize_epoch_progress(stage, loader=loader, **kwargs)
 
         # configure metrics
         metrics = self.configure_metrics(stage)

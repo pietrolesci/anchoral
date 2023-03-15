@@ -186,18 +186,9 @@ class ProgressTracker:
     def set_stop_training(self, value: bool) -> None:
         self.fit_tracker.stop_training = value
 
-    def increment_epoch_progress(self) -> None:
-        self._get_stage_tracker().increment()
-
     def increment_step_progress(self) -> None:
         self.fit_tracker.step_tracker.increment()
 
-    def finalize_epoch_progress(self) -> None:
-        tracker = self._get_stage_tracker()
-        if self.is_fitting:
-            tracker.terminate_progress_bar()
-        else:
-            tracker.close_progress_bar()
 
     """
     Initializers
@@ -232,28 +223,6 @@ class ProgressTracker:
         self.fit_tracker.close_progress_bars()
         self.is_fitting = False
 
-
-#  def initialize_fit_progress(self, progress_bar: bool, log_interval: int, **kwargs) -> None:
-#         """Set states and progress bars."""
-#         self.is_fitting = True
-
-#         self.fit_tracker.reset()  # <- reset current counts and progress bar line
-#         self.fit_tracker.update_from_hparams(**kwargs)
-
-#         if progress_bar:
-#             self.fit_tracker.make_progress_bars()
-#         if log_interval is not None:
-#             self.log_interval = log_interval
-
-#     def increment_fit_progress(self) -> None:
-#         self.fit_tracker.epoch_tracker.increment()
-
-#     def finalize_fit_progress(self) -> None:
-#         self.fit_tracker.close_progress_bars()
-#         self.is_fitting = False
-    
-
-
     def initialize_evaluation_progress(self, stage: RunningStage, loader: DataLoader, **kwargs) -> None:
         self.is_fitting = False
         self.log_interval = kwargs.get("log_interval", 1)
@@ -264,14 +233,35 @@ class ProgressTracker:
         if kwargs.get("progress_bar", True):
             getattr(self, f"{stage}_tracker").make_progress_bar()
 
-    def initialize_epoch_progress(self, stage: RunningStage) -> None:
+    def initialize_epoch_progress(self, stage: RunningStage, loader: Optional[DataLoader] = None, **kwargs) -> None:
         """Resets the `current` counters in the tracker and optionally their progress bars."""
         self.current_stage = stage
-        self._get_stage_tracker().reset()  # <- reset current counts and progress bar line
+        if self.is_fitting:
+            self._get_stage_tracker().reset()  # <- reset current counts and progress bar line
+            return
+
+        name = f"{stage}_tracker"
+        if kwargs.get("progress_bar") and getattr(self, name).progress_bar is None:
+            getattr(self, name).make_progress_bar()
+        getattr(self, name).max = min(len(loader), kwargs.get("limit_batches") or float("Inf"))
+        getattr(self, name).reset()  # <- reset current counts and progress bar line
+
+        if kwargs.get("log_interval") is not None:
+            self.log_interval = kwargs.get("log_interval")
+
+    def increment_epoch_progress(self) -> None:
+        self._get_stage_tracker().increment()
 
     def continue_epoch_progress(self, stage: RunningStage) -> None:
         """Resets the `current` counters in the tracker and optionally their progress bars."""
         self.current_stage = stage
+
+    def finalize_epoch_progress(self) -> None:
+        tracker = self._get_stage_tracker()
+        if self.is_fitting:
+            tracker.terminate_progress_bar()
+        else:
+            tracker.close_progress_bar()
 
     """
     Helpers

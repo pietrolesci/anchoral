@@ -104,15 +104,6 @@ class ActiveProgressTracker(ProgressTracker):
         self.fit_tracker.update_from_hparams(**self._solve_hparams(*args, **kwargs), has_validation=self.fit_tracker.has_validation)
         self.fit_tracker.reset()  # <- reset current counts and progress bar line
 
-    def initialize_evaluation_progress(self, stage: RunningStage, loader: DataLoader, **kwargs) -> None:
-        self.is_fitting = False
-        self.log_interval = kwargs.get("log_interval", 1)
-
-        # NOTE: we do not reset the tracker nor the progress bar
-        tracker = getattr(self, f"{stage}_tracker")
-        tracker.max = self._solve_num_batches(loader, kwargs.get("limit_batches", None))
-        tracker.reset()  # <- reset current counts and progress bar line
-
     def finalize_active_fit_progress(self) -> None:
         self.round_tracker.close_progress_bar()
         self.fit_tracker.close_progress_bars()
@@ -121,6 +112,7 @@ class ActiveProgressTracker(ProgressTracker):
 
     def finalize_fit_progress(self) -> None:
         self.fit_tracker.terminate_progress_bars()
+        self.is_fitting = False
 
     """
     Operations
