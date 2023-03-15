@@ -114,6 +114,9 @@ class ActiveProgressTracker(ProgressTracker):
         self.fit_tracker.terminate_progress_bars()
         self.is_fitting = False
 
+    def finalize_epoch_progress(self) -> None:
+        self._get_stage_tracker().terminate_progress_bar()
+
     """
     Operations
     """
