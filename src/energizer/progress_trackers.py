@@ -128,10 +128,8 @@ class FitTracker:
 @dataclass
 class ProgressTracker:
     fit_tracker: FitTracker = FitTracker()
-    validation_tracker: StageTracker = StageTracker(stage=RunningStage.VALIDATION)
     test_tracker: StageTracker = StageTracker(stage=RunningStage.TEST)
 
-    is_fitting: bool = False
     log_interval: int = 1
 
     current_stage: RunningStage = None
@@ -139,6 +137,10 @@ class ProgressTracker:
     """
     Status
     """
+
+    @property
+    def is_fitting(self) -> bool:
+        return self.current_stage in (RunningStage.TRAIN, RunningStage.VALIDATION)
 
     @property
     def global_step(self) -> int:
@@ -158,7 +160,6 @@ class ProgressTracker:
     def safe_global_epoch(self) -> int:
         if (
             self.is_fitting
-            and self.current_stage == RunningStage.VALIDATION
             and self.fit_tracker.validation_interval is not None
             # and self.fit_tracker.validation_interval > 1
         ):
@@ -184,13 +185,16 @@ class ProgressTracker:
         if self.fit_tracker.validation_interval is not None:
             return self.fit_tracker.train_tracker.current in self.fit_tracker.validation_interval
 
+    def start_tracking(self, stage: RunningStage, **kwargs) -> None:
+        if stage in (RunningStage.TRAIN, RunningStage.VALIDATION):
+            return self.fit_tracker.start_tracking(**kwargs)
+        getattr(self, f"{stage}_tracker").start_tracking(**kwargs)
+
     def initialize_fit_progress(
         self,
         *args,
         **kwargs,
     ) -> None:
-        self.is_fitting = True
-
         self.fit_tracker.reset()  # <- reset current counts and progress bar line
         self.fit_tracker.update_from_hparams(
             **self._solve_hparams(*args, **kwargs), has_validation=kwargs.get("has_validation")
@@ -209,10 +213,8 @@ class ProgressTracker:
 
     def finalize_fit_progress(self) -> None:
         self.fit_tracker.close_progress_bars()
-        self.is_fitting = False
 
     def initialize_evaluation_progress(self, stage: RunningStage, loader: DataLoader, **kwargs) -> None:
-        self.is_fitting = False
         self.log_interval = kwargs.get("log_interval", 1)
 
         max_batches = self._solve_num_batches(loader, kwargs.get("limit_batches", None))

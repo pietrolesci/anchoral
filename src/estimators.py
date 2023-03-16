@@ -33,33 +33,33 @@ class SequenceClassificationMixin:
 
     def train_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Dict,
         batch_idx: int,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         metrics: MetricCollection,
     ) -> Dict:
-        return self.step(loss_fn, model, batch, batch_idx, metrics, RunningStage.TRAIN)
+        return self.step(model, batch, batch_idx, loss_fn, metrics, RunningStage.TRAIN)
 
     def validation_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Dict,
         batch_idx: int,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         metrics: MetricCollection,
     ) -> Dict:
-        return self.step(loss_fn, model, batch, batch_idx, metrics, RunningStage.VALIDATION)
+        return self.step(model, batch, batch_idx, loss_fn, metrics, RunningStage.VALIDATION)
 
     def test_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Dict,
         batch_idx: int,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         metrics: MetricCollection,
     ) -> Dict:
-        return self.step(loss_fn, model, batch, batch_idx, metrics, RunningStage.TEST)
+        return self.step(model, batch, batch_idx, loss_fn, metrics, RunningStage.TEST)
 
     def train_epoch_end(self, output: List[Dict], metrics: MetricCollection) -> Dict:
         return self.epoch_end(output, metrics, RunningStage.TRAIN)
@@ -79,10 +79,10 @@ class SequenceClassificationMixin:
 
     def step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: AutoModelForSequenceClassification,
         batch: Dict,
         batch_idx: int,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         metrics: MetricCollection,
         stage: RunningStage,
     ) -> Dict:
@@ -178,16 +178,16 @@ class SequenceClassificationMixin:
         hparams["name_or_path"] = self.model.name_or_path
         return hparams
 
-    def configure_loss_fn(
-        self,
-        loss_fn: Optional[Union[str, torch.nn.Module, Callable]],
-        loss_fn_kwargs: Optional[Dict],
-        stage: RunningStage,
-    ) -> Optional[Union[torch.nn.Module, Callable]]:
-        if loss_fn_kwargs is not None and "weight" in loss_fn_kwargs:
-            loss_fn_kwargs["weight"] = torch.tensor(loss_fn_kwargs["weight"], dtype=torch.float32, device=self.device)
+    # def configure_loss_fn(
+    #     self,
+    #     loss_fn: Optional[Union[str, torch.nn.Module, Callable]],
+    #     loss_fn_kwargs: Optional[Dict],
+    #     stage: RunningStage,
+    # ) -> Optional[Union[torch.nn.Module, Callable]]:
+    #     if loss_fn_kwargs is not None and "weight" in loss_fn_kwargs:
+    #         loss_fn_kwargs["weight"] = torch.tensor(loss_fn_kwargs["weight"], dtype=torch.float32, device=self.device)
 
-        return super().configure_loss_fn(loss_fn, loss_fn_kwargs, stage)
+    #     return super().configure_loss_fn(loss_fn, loss_fn_kwargs, stage)
 
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[MetricCollection]:
         if stage == RunningStage.POOL:
