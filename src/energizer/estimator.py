@@ -74,10 +74,6 @@ class Estimator(HyperparametersMixin):
     def model_summary(self) -> str:
         return summarize(self)
 
-    """
-    Main methods
-    """
-
     def fit(
         self,
         train_loader: DataLoader,
@@ -146,57 +142,6 @@ class Estimator(HyperparametersMixin):
         self.progress_tracker.finalize_fit_progress()
 
         return output
-
-    def validate(
-        self,
-        validation_loader: DataLoader,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
-        **kwargs,
-    ) -> EPOCH_OUTPUT:
-        """Runs validation.
-
-        Kwargs that can be passed:, log_interval: int, limit_batches: int, progress_bar: bool
-        """
-        return self._evaluate(validation_loader, loss_fn, loss_fn_kwargs, RunningStage.VALIDATION, **kwargs)
-
-    def test(
-        self,
-        test_loader: DataLoader,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
-        **kwargs,
-    ) -> EPOCH_OUTPUT:
-        """Runs testing.
-
-        Kwargs that can be passed:, log_interval: int, limit_batches: int, progress_bar: bool
-        """
-        return self._evaluate(test_loader, loss_fn, loss_fn_kwargs, RunningStage.TEST, **kwargs)
-
-    def _evaluate(
-        self,
-        loader: DataLoader,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
-        loss_fn_kwargs: Optional[Dict],
-        stage: RunningStage,
-        **kwargs,
-    ) -> EPOCH_OUTPUT:
-        """This method is useful because validation can run in fit when model is already setup."""
-
-        # configure dataloader
-        loader = self.configure_dataloader(loader)
-
-        # define loss function
-        loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.VALIDATION)
-
-        # configure model
-        model = self.fabric.setup(self.model)
-
-        return self.eval_loop(loss_fn, model, loader, stage, **kwargs)
-
-    """
-    Loops
-    """
 
     def fit_epoch_loop(
         self,
@@ -289,6 +234,28 @@ class Estimator(HyperparametersMixin):
             self.progress_tracker.continue_epoch_progress(RunningStage.TRAIN)  # continue training tracking
 
         return FitEpochOutput(train=train_out, validation=validation_out)
+
+
+    def test(
+        self,
+        test_loader: DataLoader,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]] = None,
+        loss_fn_kwargs: Optional[Dict] = None,
+        **kwargs,
+    ) -> EPOCH_OUTPUT:
+        """This method is useful because validation can run in fit when model is already setup."""
+
+        # configure dataloader
+        loader = self.configure_dataloader(test_loader)
+
+        # define loss function
+        loss_fn = self.configure_loss_fn(loss_fn, loss_fn_kwargs, RunningStage.VALIDATION)
+
+        # configure model
+        model = self.fabric.setup(self.model)
+
+        return self.eval_loop(loss_fn, model, loader, RunningStage.TEST, **kwargs)
+
 
     def eval_loop(
         self,

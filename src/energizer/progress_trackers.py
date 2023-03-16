@@ -160,7 +160,7 @@ class ProgressTracker:
             self.is_fitting
             and self.current_stage == RunningStage.VALIDATION
             and self.fit_tracker.validation_interval is not None
-            and self.fit_tracker.validation_interval > 1
+            # and self.fit_tracker.validation_interval > 1
         ):
             return self.global_batch
         return self.global_epoch
