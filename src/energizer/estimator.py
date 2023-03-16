@@ -99,7 +99,7 @@ class Estimator(HyperparametersMixin):
 
         # configuration
         train_loader = self.configure_dataloader(train_loader)
-        validation_loader = self.configure_dataloader(validation_loader)        
+        validation_loader = self.configure_dataloader(validation_loader)
         optimizer = self.configure_optimizer(optimizer, learning_rate, optimizer_kwargs)
         scheduler = self.configure_scheduler(scheduler, optimizer, scheduler_kwargs)
         model, optimizer = self.fabric.setup(self.model, optimizer)
@@ -108,7 +108,7 @@ class Estimator(HyperparametersMixin):
         output = self.run_fit(model, train_loader, validation_loader, optimizer, scheduler)
 
         return output
-    
+
     def run_fit(
         self,
         model: _FabricModule,
@@ -117,15 +117,15 @@ class Estimator(HyperparametersMixin):
         optimizer: _FabricOptimizer,
         scheduler: Optional[str],
     ) -> FitEpochOutput:
-        
+
         self.progress_tracker.start_fit()
-                
+
         # call hook
         self.fabric.call("on_fit_start", estimator=self, model=model)
 
         output = []
         while not self.progress_tracker.is_fit_done():
-            
+
             out = self.run_epoch(
                 model=model,
                 train_loader=train_loader,
@@ -172,7 +172,7 @@ class Estimator(HyperparametersMixin):
         train_out, validation_out = [], []
         iterable = enumerate(train_loader)
         while not self.progress_tracker.is_epoch_done():
-         
+
             batch_idx, batch = next(iterable)
 
             # put batch on correct device
@@ -236,7 +236,7 @@ class Estimator(HyperparametersMixin):
         self.progress_tracker.end_epoch()
 
         return FitEpochOutput(train=train_out, validation=validation_out)
-    
+
     def run_training_step(
         self,
         model: _FabricModule,
@@ -271,14 +271,10 @@ class Estimator(HyperparametersMixin):
 
         return output
 
-    def test(
-        self,
-        test_loader: DataLoader,
-        **kwargs
-    ) -> EPOCH_OUTPUT:
+    def test(self, test_loader: DataLoader, **kwargs) -> EPOCH_OUTPUT:
         """This method is useful because validation can run in fit when model is already setup."""
         self.progress_tracker.setup_tracking(RunningStage.TEST, num_batches=len(test_loader), **kwargs)
-        
+
         # configuration
         loader = self.configure_dataloader(test_loader)
         model = self.fabric.setup(self.model)
@@ -451,18 +447,6 @@ class Estimator(HyperparametersMixin):
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[METRIC]:
         pass
 
-    def forward_pass(self, model: _FabricModule, batch: Any) -> Any:
-        return model(batch)
-
-    def compute_loss(
-        self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
-        model: _FabricModule,
-        batch: Any,
-    ) -> torch.Tensor:
-        preds = self.forward_pass(model, batch)
-        return loss_fn(preds, batch)
-
     def train_step(
         self,
         model: _FabricModule,
@@ -471,7 +455,7 @@ class Estimator(HyperparametersMixin):
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
         metrics: Optional[METRIC] = None,
     ) -> BATCH_OUTPUT:
-        return self.compute_loss(loss_fn, model, batch)
+        raise NotImplementedError
 
     def validation_step(
         self,
@@ -481,7 +465,7 @@ class Estimator(HyperparametersMixin):
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
         metrics: Optional[METRIC] = None,
     ) -> Optional[BATCH_OUTPUT]:
-        return self.compute_loss(loss_fn, model, batch)
+        ...
 
     def test_step(
         self,
@@ -491,7 +475,7 @@ class Estimator(HyperparametersMixin):
         loss_fn: Optional[Union[torch.nn.Module, Callable]],
         metrics: Optional[METRIC] = None,
     ) -> Optional[BATCH_OUTPUT]:
-        return self.compute_loss(loss_fn, model, batch)
+        ...
 
     def train_epoch_end(self, output: List[BATCH_OUTPUT], metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
         return output
