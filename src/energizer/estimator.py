@@ -85,16 +85,14 @@ class Estimator(HyperparametersMixin):
         scheduler_kwargs: Optional[Dict] = None,
         **kwargs,
     ) -> List[FitEpochOutput]:
-        """Runs full training and validation.
-        Kwargs: log_interval: int, limit_train_batches: int, limit_validation_batches: int
-        """
 
         # start progress tracking
-        self.progress_tracker.initialize_fit_progress(
-            max_epochs,
-            min_steps,
-            train_loader,
-            validation_loader,
+        self.progress_tracker.setup_tracking(
+            RunningStage.TRAIN,
+            max_epochs=max_epochs,
+            min_steps=min_steps,
+            train_loader=train_loader,
+            validation_loader=validation_loader,
             has_validation=validation_loader is not None,
             **kwargs,
         )
@@ -109,9 +107,6 @@ class Estimator(HyperparametersMixin):
         # run epochs
         output = self.run_fit(model, train_loader, validation_loader, optimizer, scheduler)
 
-        # end progress tracking
-        self.progress_tracker.finalize_fit_progress()
-
         return output
     
     def run_fit(
@@ -123,6 +118,8 @@ class Estimator(HyperparametersMixin):
         scheduler: Optional[str],
     ) -> FitEpochOutput:
         
+        self.progress_tracker.start_fit()
+                
         # call hook
         self.fabric.call("on_fit_start", estimator=self, model=model)
 
@@ -140,10 +137,12 @@ class Estimator(HyperparametersMixin):
             output.append(out)
 
             # update progress
-            self.progress_tracker.increment_fit_progress()
+            self.progress_tracker.increment_epoch()
 
         # call hook
         self.fabric.call("on_fit_end", estimator=self, model=model, output=output)
+
+        self.progress_tracker.end_fit()
 
         return output
 
@@ -158,7 +157,7 @@ class Estimator(HyperparametersMixin):
         """Runs a training epoch."""
 
         # configure progress tracking
-        self.progress_tracker.initialize_epoch_progress(RunningStage.TRAIN)
+        self.progress_tracker.start_epoch(RunningStage.TRAIN)
 
         # define metrics
         metrics = self.configure_metrics(RunningStage.TRAIN)
@@ -210,10 +209,10 @@ class Estimator(HyperparametersMixin):
                 out = self.run_evaluation(model, validation_loader, RunningStage.VALIDATION)
                 if out is not None:
                     validation_out.append(out)
-                self.progress_tracker.continue_epoch_progress(RunningStage.TRAIN)  # continue training tracking
+                self.progress_tracker.continue_training()
 
             # update progress tracker
-            self.progress_tracker.increment_epoch_progress()
+            self.progress_tracker.increment()
 
         # method to possibly aggregate
         train_out = self.train_epoch_end(train_out, metrics)
@@ -232,9 +231,9 @@ class Estimator(HyperparametersMixin):
             out = self.run_evaluation(model, validation_loader, RunningStage.VALIDATION)
             if out is not None:
                 validation_out.append(out)
-            self.progress_tracker.continue_epoch_progress(RunningStage.TRAIN)  # continue training tracking
+            self.progress_tracker.continue_training()
 
-        self.progress_tracker.finalize_epoch_progress()
+        self.progress_tracker.end_epoch()
 
         return FitEpochOutput(train=train_out, validation=validation_out)
     
@@ -268,32 +267,28 @@ class Estimator(HyperparametersMixin):
             scheduler.step()
 
         # update progress_tracker
-        self.progress_tracker.increment_step_progress()
+        self.progress_tracker.increment_optimization_step()
 
         return output
 
     def test(
         self,
         test_loader: DataLoader,
-        **kwargs,
+        **kwargs
     ) -> EPOCH_OUTPUT:
         """This method is useful because validation can run in fit when model is already setup."""
+        self.progress_tracker.setup_tracking(RunningStage.TEST, num_batches=len(test_loader), **kwargs)
+        
         # configuration
         loader = self.configure_dataloader(test_loader)
         model = self.fabric.setup(self.model)
-        return self.run_evaluation(model, loader, RunningStage.TEST, **kwargs)
+        return self.run_evaluation(model, loader, RunningStage.TEST)
 
-    def run_evaluation(
-        self,
-        model: _FabricModule,
-        loader: _FabricDataLoader,
-        stage: RunningStage,
-        **kwargs,
-    ) -> EPOCH_OUTPUT:
+    def run_evaluation(self, model: _FabricModule, loader: _FabricDataLoader, stage: RunningStage) -> EPOCH_OUTPUT:
         """Runs over an entire evaluation dataloader."""
 
         # configure progress tracking
-        self.progress_tracker.initialize_epoch_progress(stage, loader=loader, **kwargs)
+        self.progress_tracker.start_epoch(stage)
 
         # configure metrics
         metrics = self.configure_metrics(stage)
@@ -340,7 +335,7 @@ class Estimator(HyperparametersMixin):
                     output.append(move_to_cpu(batch_out))
 
                 # update progress tracker
-                self.progress_tracker.increment_epoch_progress()
+                self.progress_tracker.increment()
 
         # method to possibly aggregate
         output = getattr(self, f"{stage}_epoch_end")(output, metrics)
@@ -351,7 +346,7 @@ class Estimator(HyperparametersMixin):
         # resets model training status
         model.train(is_fitting)
 
-        self.progress_tracker.finalize_epoch_progress()
+        self.progress_tracker.end_epoch()
 
         return output
 
