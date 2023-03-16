@@ -19,11 +19,8 @@ class Tracker:
         """If a max is not set, it will never stop."""
         return self.max is not None and self.current >= self.max
 
-    def reset_current(self) -> None:
-        self.current = 0
-
     def reset(self) -> None:
-        self.reset_current()
+        self.current = 0
         if self.progress_bar is not None:
             self.progress_bar.reset(total=self.max)
 
@@ -107,7 +104,7 @@ class FitTracker:
     def setup_tracking(self, **kwargs) -> None:
         # Do all the math here
         self.stop_training = False
-        self.has_validation = kwargs.pop("has_validation")
+        self.has_validation = kwargs.get("num_validation_batches") > 0
 
         hparams = self._solve_hparams(**kwargs)
         self.epoch_tracker.max = hparams["max_epochs"]
@@ -120,8 +117,8 @@ class FitTracker:
         self,
         max_epochs: Optional[int],
         min_steps: Optional[int],
-        train_loader: DataLoader,
-        validation_loader: DataLoader,
+        num_train_batches: int,
+        num_validation_batches: int,
         limit_train_batches=None,
         limit_validation_batches=None,
         validation_interval=True,
@@ -129,7 +126,7 @@ class FitTracker:
         assert max_epochs is not None or min_steps is not None, "`max_epochs` or `min_steps` must be passed."
 
         # train: limit batches
-        max_train_batches = self._solve_num_batches(train_loader, limit_train_batches)
+        max_train_batches = min(num_train_batches, limit_train_batches or float("Inf"))
 
         # train: epochs and steps
         if max_epochs is None:
@@ -144,7 +141,7 @@ class FitTracker:
                 min_steps = None
 
         # validation: limit batches and validation interval
-        max_validation_batches = self._solve_num_batches(validation_loader, limit_validation_batches)
+        max_validation_batches = min(num_validation_batches, limit_validation_batches or float("Inf"))
         if (
             max_validation_batches is not None
             and validation_interval is not None
@@ -207,8 +204,8 @@ class ProgressTracker:
     def safe_global_epoch(self) -> int:
         if (
             self.is_fitting
+            and self.current_stage == RunningStage.VALIDATION
             and self.fit_tracker.validation_interval is not None
-            # and self.fit_tracker.validation_interval > 1
         ):
             return self.global_batch
         return self.global_epoch
@@ -282,7 +279,7 @@ class ProgressTracker:
                     f"Epoch {self.fit_tracker.epoch_tracker.current}"
                 )
 
-    def end_epoch(self):
+    def end_epoch(self) -> None:
         if self.current_stage in (RunningStage.TRAIN, RunningStage.VALIDATION):
             return self._get_stage_tracker().terminate_progress_bar()
         getattr(self, f"{self.current_stage}_tracker").close_progress_bar()

@@ -3,7 +3,7 @@ from typing import Any
 
 from lightning.fabric.wrappers import _FabricModule
 
-from src.energizer.active_learning.active_estimator import ActiveEstimator, QueryOutput
+from src.energizer.active_learning.active_estimator import ActiveEstimator
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.active_learning.progress_trackers import ActiveProgressTracker
 from src.energizer.callbacks.timer import Timer
@@ -27,7 +27,7 @@ class ActiveLearningCallbackMixin:
     def on_query_start(self, estimator: ActiveEstimator, model: _FabricModule) -> None:
         ...
 
-    def on_query_end(self, estimator: ActiveEstimator, model: _FabricModule, output: QueryOutput) -> None:
+    def on_query_end(self, estimator: ActiveEstimator, model: _FabricModule, output) -> None:
         ...
 
     def on_label_start(self, estimator: ActiveEstimator, datamodule: ActiveDataModule) -> None:

@@ -91,9 +91,8 @@ class Estimator(HyperparametersMixin):
             RunningStage.TRAIN,
             max_epochs=max_epochs,
             min_steps=min_steps,
-            train_loader=train_loader,
-            validation_loader=validation_loader,
-            has_validation=validation_loader is not None,
+            num_train_batches=len(train_loader),
+            num_validation_batches=len(validation_loader) if validation_loader is not None else 0,
             **kwargs,
         )
 

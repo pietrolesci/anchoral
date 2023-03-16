@@ -15,25 +15,10 @@ from src.energizer.types import EPOCH_OUTPUT, ROUND_OUTPUT
 
 
 @dataclass
-class QueryOutput:
-    """Output of a run on an entire pool dataloader.
-
-    metrics: Metrics aggregated over the entire pool dataloader.
-    output: List of individual outputs at the batch level.
-    topk_scores: TopK scores for the pool instances.
-    indices: Indices corresponding to the topk instances to query.
-    """
-
-    topk_scores: ndarray = None
-    indices: List[int] = None
-    output: Optional[List] = None
-
-
-@dataclass
 class RoundOutput:
     fit: List[FitEpochOutput] = None
     test: EPOCH_OUTPUT = None
-    query: QueryOutput = None
+    indices: List[int] = None
 
 
 class ActiveEstimator(Estimator):
@@ -61,8 +46,6 @@ class ActiveEstimator(Estimator):
         model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
         max_epochs: Optional[int] = 3,
         min_steps: Optional[int] = None,
-        loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
         learning_rate: float = 0.001,
         optimizer: str = "adamw",
         optimizer_kwargs: Optional[Dict] = None,
@@ -74,14 +57,14 @@ class ActiveEstimator(Estimator):
             self.save_state_dict(model_cache_dir)
 
         # configure progress tracking
-        self.progress_tracker.initialize_active_fit_progress(
+        self.progress_tracker.setup_meta_tracking(
             max_rounds=max_rounds,
-            max_budget=max_budget,
+            max_budget=min(active_datamodule.pool_size, max_budget or float("Inf")),
             query_size=query_size,
             initial_budget=active_datamodule.total_labelled_size,
             has_pool=getattr(self, "pool_step", None) is not None,
-            has_validation=active_datamodule.validation_loader() or validation_perc,
-            **kwargs,
+            has_validation=active_datamodule.validation_loader() is not None or validation_perc,
+            has_test=active_datamodule.test_loader() is not None,
         )
 
         # call hook
@@ -89,9 +72,11 @@ class ActiveEstimator(Estimator):
 
         output = []
         while not self.progress_tracker.is_active_fit_done():
-
+            
             if reinit_model:
                 self.load_state_dict(model_cache_dir)
+            
+            self.fabric.call("on_round_start", estimator=self, datamodule=active_datamodule)
 
             out = self.round_loop(
                 active_datamodule=active_datamodule,
@@ -100,8 +85,6 @@ class ActiveEstimator(Estimator):
                 validation_sampling=validation_sampling,
                 max_epochs=max_epochs,
                 min_steps=min_steps,
-                loss_fn=loss_fn,
-                loss_fn_kwargs=loss_fn_kwargs,
                 learning_rate=learning_rate,
                 optimizer=optimizer,
                 optimizer_kwargs=optimizer_kwargs,
@@ -110,11 +93,14 @@ class ActiveEstimator(Estimator):
                 **kwargs,
             )
 
+            self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=out)
+            
             if out is not None:
                 output.append(out)
 
+
             # update progress
-            self.progress_tracker.increment_active_fit_progress()
+            self.progress_tracker.increment_round()
             assert (
                 self.progress_tracker.budget_tracker.total == active_datamodule.total_labelled_size
             ), f"{self.progress_tracker.budget_tracker.total} == {active_datamodule.total_labelled_size}"
@@ -122,12 +108,12 @@ class ActiveEstimator(Estimator):
         if not self.progress_tracker.global_round > 0:
             raise ValueError("You did not run any labellng. Perhaps change your `max_budget` or `max_rounds`.")
 
-        self.progress_tracker.finalize_active_fit_progress()
-
         output = self.active_fit_end(output)
 
         # call hook
         self.fabric.call("on_active_fit_end", estimator=self, datamodule=active_datamodule, output=output)
+        
+        self.progress_tracker.end_active_fit()
 
         return output
 
@@ -138,8 +124,7 @@ class ActiveEstimator(Estimator):
         validation_perc: float,
         validation_sampling: Optional[str],
         max_epochs: Optional[int] = 3,
-        loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
+        min_steps: Optional[int] = None,
         learning_rate: float = 0.001,
         optimizer: str = "adamw",
         optimizer_kwargs: Optional[Dict] = None,
@@ -149,63 +134,51 @@ class ActiveEstimator(Estimator):
     ) -> ROUND_OUTPUT:
         output = RoundOutput()
 
-        # call hook
-        self.fabric.call("on_round_start", estimator=self, datamodule=active_datamodule)
+        self.progress_tracker.setup_tracking(
+            max_epochs=max_epochs,
+            min_steps=min_steps,
+            num_train_batches=len(active_datamodule.train_loader()) if active_datamodule.train_loader() else 0,
+            num_validation_batches=len(active_datamodule.validation_loader()) if active_datamodule.validation_loader() else 0,
+            num_test_batches=len(active_datamodule.test_loader()) if active_datamodule.test_loader() else 0,
+            num_pool_batches=len(active_datamodule.pool_loader()) if active_datamodule.pool_loader() else 0,
+            limit_train_batches=kwargs.get("limit_train_batches"),
+            limit_validation_batches=kwargs.get("limit_validation_batches"),
+            limit_test_batches=kwargs.get("limit_test_batches"),
+            validation_interval=kwargs.get("validation_interval"),
+        )
 
-        # fit model on the available data
+        train_loader = self.configure_dataloader(active_datamodule.train_loader())
+        validation_loader = self.configure_dataloader(active_datamodule.validation_loader())
+        test_loader = self.configure_dataloader(active_datamodule.test_loader())
+        optimizer = self.configure_optimizer(optimizer, learning_rate, optimizer_kwargs)
+        scheduler = self.configure_scheduler(scheduler, optimizer, scheduler_kwargs)
+        model, optimizer = self.fabric.setup(self.model, optimizer)
+
+        # fit 
         if active_datamodule.has_labelled_data:
-            kwargs.pop("progress_bar")  # FIXME: hack!
-            output.fit = self.fit(
-                train_loader=active_datamodule.train_loader(),
-                validation_loader=active_datamodule.validation_loader(),
-                max_epochs=max_epochs,
-                loss_fn=loss_fn,
-                loss_fn_kwargs=loss_fn_kwargs,
-                learning_rate=learning_rate,
-                optimizer=optimizer,
-                optimizer_kwargs=optimizer_kwargs,
-                scheduler=scheduler,
-                scheduler_kwargs=scheduler_kwargs,
-                progress_bar=False,
-                **kwargs,
-            )
+            output.fit = self.run_fit(model, train_loader, validation_loader, optimizer, scheduler)
 
-        # test model
+        # test
         if active_datamodule.has_test_data:
-            output.test = self.test(
-                test_loader=active_datamodule.test_loader(),
-                loss_fn=loss_fn,
-                loss_fn_kwargs=loss_fn_kwargs,
-                progress_bar=False,
-                **kwargs,
-            )
+            output.test = self.run_evaluation(model, test_loader, RunningStage.TEST)
 
-        # query indices to annotate, skip first round
-        # do not annotate on the warm-up round
+        # query and label
         if active_datamodule.pool_size > query_size:
-            output.query = self.query(
-                active_datamodule=active_datamodule, query_size=query_size, progress_bar=False, **kwargs
-            )
+            self.fabric.call("on_query_start", estimator=self, model=model)
+            output.indices = self.run_query(model, active_datamodule, query_size)
+            self.fabric.call("on_query_end", estimator=self, model=model, output=output)
 
-            # call hook
             self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule)
             active_datamodule.label(
-                indices=output.query.indices,
+                indices=output.indices,
                 round_idx=self.progress_tracker.global_round,
                 validation_perc=validation_perc,
                 validation_sampling=validation_sampling,
             )
-            # call hook
             self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)
-        else:
-            # no more pool instances
-            self.progress_tracker.set_stop_active_training(True)
 
         # method to possibly aggregate
         output = self.round_epoch_end(output, active_datamodule)
-
-        # call hook
-        self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=output)
 
         return output
 
@@ -219,28 +192,7 @@ class ActiveEstimator(Estimator):
     def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
         return output
 
-    def query(self, active_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
-        # configure dataloaders
-        loader = self.get_pool_loader(active_datamodule=active_datamodule)
-        loader = self.configure_dataloader(loader)
-
-        # progress tracking
-        self.progress_tracker.initialize_evaluation_progress(RunningStage.POOL, loader, **kwargs)
-
-        # setup model with fabric
-        model = self.fabric.setup(self.model)
-
-        # call hook
-        self.fabric.call("on_query_start", estimator=self, model=model)
-
-        output = self.query_loop(model, loader, query_size, **kwargs)
-
-        # call hook
-        self.fabric.call("on_query_end", estimator=self, model=model, output=output)
-
-        return output
-
-    def query_loop(self, model: _FabricModule, loader: _FabricDataLoader, query_size: int, **kwargs) -> QueryOutput:
+    def run_query(self, model: _FabricModule, active_datamodule: ActiveDataModule, query_size: int) -> List[int]:
         raise NotImplementedError
 
     """
