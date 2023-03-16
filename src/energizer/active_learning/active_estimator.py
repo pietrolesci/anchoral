@@ -72,10 +72,10 @@ class ActiveEstimator(Estimator):
 
         output = []
         while not self.progress_tracker.is_active_fit_done():
-            
+
             if reinit_model:
                 self.load_state_dict(model_cache_dir)
-            
+
             self.fabric.call("on_round_start", estimator=self, datamodule=active_datamodule)
 
             out = self.round_loop(
@@ -94,10 +94,9 @@ class ActiveEstimator(Estimator):
             )
 
             self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=out)
-            
+
             if out is not None:
                 output.append(out)
-
 
             # update progress
             self.progress_tracker.increment_round()
@@ -112,7 +111,7 @@ class ActiveEstimator(Estimator):
 
         # call hook
         self.fabric.call("on_active_fit_end", estimator=self, datamodule=active_datamodule, output=output)
-        
+
         self.progress_tracker.end_active_fit()
 
         return output
@@ -138,7 +137,9 @@ class ActiveEstimator(Estimator):
             max_epochs=max_epochs,
             min_steps=min_steps,
             num_train_batches=len(active_datamodule.train_loader()) if active_datamodule.train_loader() else 0,
-            num_validation_batches=len(active_datamodule.validation_loader()) if active_datamodule.validation_loader() else 0,
+            num_validation_batches=len(active_datamodule.validation_loader())
+            if active_datamodule.validation_loader()
+            else 0,
             num_test_batches=len(active_datamodule.test_loader()) if active_datamodule.test_loader() else 0,
             num_pool_batches=len(active_datamodule.pool_loader()) if active_datamodule.pool_loader() else 0,
             limit_train_batches=kwargs.get("limit_train_batches"),
@@ -154,7 +155,7 @@ class ActiveEstimator(Estimator):
         scheduler = self.configure_scheduler(scheduler, optimizer, scheduler_kwargs)
         model, optimizer = self.fabric.setup(self.model, optimizer)
 
-        # fit 
+        # fit
         if active_datamodule.has_labelled_data:
             output.fit = self.run_fit(model, train_loader, validation_loader, optimizer, scheduler)
 

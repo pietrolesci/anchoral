@@ -80,19 +80,19 @@ class ActiveProgressTracker(ProgressTracker):
         **kwargs,
     ) -> None:
         """Create progress bars."""
-        
+
         self.log_interval = kwargs.pop("log_interval", 1)
         self.enable_progress_bar = kwargs.pop("enable_progress_bar", True)
-        
+
         self.round_tracker.reset()
         self.budget_tracker.reset()
         self.round_tracker.max = max_rounds
         self.budget_tracker = BudgetTracker(
             max=max_budget, total=initial_budget, current=initial_budget, query_size=query_size
         )
-        
+
         self.fit_tracker.has_validation = has_validation
-        
+
         if self.enable_progress_bar:
             self.round_tracker.make_progress_bar()
             self.fit_tracker.make_progress_bar()
@@ -114,7 +114,7 @@ class ActiveProgressTracker(ProgressTracker):
             validation_interval=kwargs.get("validation_interval"),
         )
         self.test_tracker.max = min(kwargs.get("num_test_batches"), kwargs.get("limit_test_batches") or float("Inf"))
-        self.pool_tracker.max = min(kwargs.get("num_pool_batches"), kwargs.get("limit_pool_batches") or float("Inf"))        
+        self.pool_tracker.max = min(kwargs.get("num_pool_batches"), kwargs.get("limit_pool_batches") or float("Inf"))
 
     def increment_round(self) -> None:
         self.round_tracker.increment()
