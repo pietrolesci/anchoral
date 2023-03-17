@@ -156,7 +156,7 @@ class Estimator(HyperparametersMixin):
         """Runs a training epoch."""
 
         # configure progress tracking
-        self.progress_tracker.start_epoch(RunningStage.TRAIN)
+        self.progress_tracker.start(RunningStage.TRAIN)
 
         # define metrics
         metrics = self.configure_metrics(RunningStage.TRAIN)
@@ -170,7 +170,7 @@ class Estimator(HyperparametersMixin):
 
         train_out, validation_out = [], []
         iterable = enumerate(train_loader)
-        while not self.progress_tracker.is_epoch_done():
+        while not self.progress_tracker.is_done():
 
             batch_idx, batch = next(iterable)
 
@@ -208,7 +208,6 @@ class Estimator(HyperparametersMixin):
                 out = self.run_evaluation(model, validation_loader, RunningStage.VALIDATION)
                 if out is not None:
                     validation_out.append(out)
-                self.progress_tracker.continue_training()
 
             # update progress tracker
             self.progress_tracker.increment()
@@ -230,9 +229,8 @@ class Estimator(HyperparametersMixin):
             out = self.run_evaluation(model, validation_loader, RunningStage.VALIDATION)
             if out is not None:
                 validation_out.append(out)
-            self.progress_tracker.continue_training()
 
-        self.progress_tracker.end_epoch()
+        self.progress_tracker.end()
 
         return FitEpochOutput(train=train_out, validation=validation_out)
 
@@ -266,7 +264,7 @@ class Estimator(HyperparametersMixin):
             scheduler.step()
 
         # update progress_tracker
-        self.progress_tracker.increment_optimization_step()
+        self.progress_tracker.increment_step()
 
         return output
 
@@ -283,7 +281,7 @@ class Estimator(HyperparametersMixin):
         """Runs over an entire evaluation dataloader."""
 
         # configure progress tracking
-        self.progress_tracker.start_epoch(stage)
+        self.progress_tracker.start(stage)
 
         # configure metrics
         metrics = self.configure_metrics(stage)
@@ -300,7 +298,7 @@ class Estimator(HyperparametersMixin):
         iterable = enumerate(loader)
         with torch.inference_mode():
 
-            while not self.progress_tracker.is_epoch_done():
+            while not self.progress_tracker.is_done():
 
                 batch_idx, batch = next(iterable)
 
@@ -341,7 +339,7 @@ class Estimator(HyperparametersMixin):
         # resets model training status
         model.train(is_fitting)
 
-        self.progress_tracker.end_epoch()
+        self.progress_tracker.end()
 
         return output
 
@@ -408,26 +406,27 @@ class Estimator(HyperparametersMixin):
         optimizer: Optimizer,
         scheduler_kwargs: Optional[Dict] = None,
     ) -> Optional[_LRScheduler]:
-        if scheduler is None:
-            return
+        ...
+        # if scheduler is None:
+        #     return
 
-        scheduler_fn = SCHEDULER_REGISTRY[scheduler]
+        # scheduler_fn = SCHEDULER_REGISTRY[scheduler]
 
-        # collect scheduler kwargs
-        params = list(inspect.signature(scheduler_fn).parameters.keys())
-        scheduler_kwargs = scheduler_kwargs or {}
-        num_train_steps = self.progress_tracker.train_tracker.max
-        num_warmup_steps = scheduler_kwargs.get("num_warmup_steps", None)
-        if num_warmup_steps is not None and isinstance(num_warmup_steps, float):
-            num_warmup_steps *= num_train_steps
-        if "num_train_steps" in params:
-            scheduler_kwargs["num_train_steps"] = num_train_steps
-        if "num_warmup_steps" in params:
-            scheduler_kwargs["num_warmup_steps"] = num_warmup_steps
+        # # collect scheduler kwargs
+        # params = list(inspect.signature(scheduler_fn).parameters.keys())
+        # scheduler_kwargs = scheduler_kwargs or {}
+        # num_train_steps = self.progress_tracker.train_tracker.max
+        # num_warmup_steps = scheduler_kwargs.get("num_warmup_steps", None)
+        # if num_warmup_steps is not None and isinstance(num_warmup_steps, float):
+        #     num_warmup_steps *= num_train_steps
+        # if "num_train_steps" in params:
+        #     scheduler_kwargs["num_train_steps"] = num_train_steps
+        # if "num_warmup_steps" in params:
+        #     scheduler_kwargs["num_warmup_steps"] = num_warmup_steps
 
-        scheduler = scheduler_fn(optimizer, **scheduler_kwargs)
+        # scheduler = scheduler_fn(optimizer, **scheduler_kwargs)
 
-        return scheduler
+        # return scheduler
 
     def configure_loss_fn(self, stage: RunningStage) -> torch.nn.Module:
         ...
