@@ -63,10 +63,10 @@ class ModelCheckpoint(CallbackWithMonitor):
 
             logs = {
                 "selected": self.best_model_path,
-                "step": estimator.progress_tracker.get_epoch_num(),
+                "step": estimator.progress_tracker.safe_global_epoch,
             }
-            if hasattr(estimator.progress_tracker, "num_rounds"):
-                logs["round"] = getattr(estimator.progress_tracker, "num_rounds")
+            if hasattr(estimator.progress_tracker, "global_round"):
+                logs["round"] = getattr(estimator.progress_tracker, "global_round")
 
             srsly.write_jsonl(
                 self.dirpath / "checkpoint_logs.jsonl",
@@ -91,12 +91,12 @@ class ModelCheckpoint(CallbackWithMonitor):
 
             logs = {
                 "stage": stage,
-                "step": estimator.progress_tracker.get_epoch_num(),
+                "step": estimator.progress_tracker.safe_global_epoch,
                 **self._best_k_models,
             }
 
-            if hasattr(estimator.progress_tracker, "num_rounds"):
-                logs["round"] = getattr(estimator.progress_tracker, "num_rounds")
+            if hasattr(estimator.progress_tracker, "global_round"):
+                logs["round"] = getattr(estimator.progress_tracker, "global_round")
 
             srsly.write_jsonl(
                 self.dirpath / "checkpoint_logs.jsonl",
@@ -129,7 +129,7 @@ class ModelCheckpoint(CallbackWithMonitor):
     def _get_name(self, estimator: Estimator, stage: RunningStage, current: Optional[float] = None) -> str:
         # build filename
         step = "step" if stage == RunningStage.VALIDATION else "epoch"
-        name = f"{stage}_{step}={estimator.progress_tracker.get_epoch_num()}"
+        name = f"{stage}_{step}={estimator.progress_tracker.safe_global_epoch}"
         if current is not None:
             name += f"_{self.monitor}={current}"
         name += ".pt"

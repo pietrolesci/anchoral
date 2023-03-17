@@ -37,14 +37,6 @@ def main(cfg: DictConfig) -> None:
     if cfg.model.name_or_path is None:
         cfg.model.name_or_path = metadata.name_or_path
 
-    # toggle balanced loss
-    should_load_class_weights = (
-        cfg.fit.loss_fn is not None
-        and cfg.fit.loss_fn_kwargs is not None
-        and "weight" in cfg.fit.loss_fn_kwargs
-        and not isinstance(cfg.fit.loss_fn_kwargs.get("weight"), list)
-    )
-
     log.info(f"\n{OmegaConf.to_yaml(cfg)}\n{sep_line}")
     if cfg.limit_batches is not None:
         log.critical("!!! DEBUGGING !!!")
@@ -70,11 +62,6 @@ def main(cfg: DictConfig) -> None:
     datamodule = ClassificationDataModule.from_dataset_dict(
         dataset_dict, tokenizer=tokenizer, **OmegaConf.to_container(cfg.data)
     )
-
-    # toggle class weights in loss function
-    if should_load_class_weights:
-        cfg.fit.loss_fn_kwargs = {"weight": datamodule.class_weights}
-        log.info(f"Class weights set to: {cfg.fit.loss_fn_kwargs['weight']}")
 
     ###################################################
     # ============ STEP 3: model loading ============ #

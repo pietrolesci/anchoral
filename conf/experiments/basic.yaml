@@ -9,7 +9,7 @@ fit:
   validation_interval: 5
 
 active_fit:
-  num_rounds: 100
+  max_rounds: 100
   validation_perc: 0.4
   query_size: 25
 

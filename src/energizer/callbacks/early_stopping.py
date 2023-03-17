@@ -83,7 +83,7 @@ class EarlyStopping(CallbackWithMonitor):
     def check(
         self, estimator: Estimator, output: Union[BATCH_OUTPUT, EPOCH_OUTPUT], stage: RunningStage, interval: Interval
     ) -> None:
-        if (self.stage == stage and self.interval == interval) and estimator.progress_tracker.is_training:
+        if (self.stage == stage and self.interval == interval) and estimator.progress_tracker.is_fitting:
             should_stop, reason = self.check_stopping_criteria(output)
             if should_stop:
                 estimator.progress_tracker.set_stop_training(True)
@@ -92,9 +92,9 @@ class EarlyStopping(CallbackWithMonitor):
                     "reason": reason,
                     "stage": stage,
                     "interval": interval,
-                    "step": estimator.progress_tracker.get_epoch_num()
+                    "step": estimator.progress_tracker.safe_global_epoch
                     if interval == Interval.EPOCH
-                    else estimator.progress_tracker.get_batch_num(),
+                    else estimator.progress_tracker.global_batch,
                 }
                 srsly.write_jsonl(self.dirpath, [make_dict_json_serializable(out)], append=True, append_new_line=False)
 

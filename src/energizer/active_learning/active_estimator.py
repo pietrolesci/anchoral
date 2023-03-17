@@ -15,25 +15,10 @@ from src.energizer.types import EPOCH_OUTPUT, ROUND_OUTPUT
 
 
 @dataclass
-class QueryOutput:
-    """Output of a run on an entire pool dataloader.
-
-    metrics: Metrics aggregated over the entire pool dataloader.
-    output: List of individual outputs at the batch level.
-    topk_scores: TopK scores for the pool instances.
-    indices: Indices corresponding to the topk instances to query.
-    """
-
-    topk_scores: ndarray = None
-    indices: List[int] = None
-    output: Optional[List] = None
-
-
-@dataclass
 class RoundOutput:
     fit: List[FitEpochOutput] = None
     test: EPOCH_OUTPUT = None
-    query: QueryOutput = None
+    indices: List[int] = None
 
 
 class ActiveEstimator(Estimator):
@@ -52,17 +37,15 @@ class ActiveEstimator(Estimator):
     def active_fit(
         self,
         active_datamodule: ActiveDataModule,
-        num_rounds: int,
+        max_rounds: int,
         query_size: int,
         validation_perc: float,
         max_budget: Optional[int] = None,
         validation_sampling: Optional[str] = None,
         reinit_model: bool = True,
         model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
-        num_epochs: Optional[int] = 3,
+        max_epochs: Optional[int] = 3,
         min_steps: Optional[int] = None,
-        loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
         learning_rate: float = 0.001,
         optimizer: str = "adamw",
         optimizer_kwargs: Optional[Dict] = None,
@@ -74,12 +57,14 @@ class ActiveEstimator(Estimator):
             self.save_state_dict(model_cache_dir)
 
         # configure progress tracking
-        self.progress_tracker.initialize_active_fit_progress(
-            num_rounds=num_rounds,
-            max_budget=max_budget,
-            query_size=query_size,
+        self.progress_tracker.setup(
+            max_rounds=max_rounds,
+            max_budget=min(active_datamodule.pool_size, max_budget or float("Inf")),
             initial_budget=active_datamodule.total_labelled_size,
-            **kwargs,
+            query_size=query_size,
+            has_pool=getattr(self, "pool_step", None) is not None,
+            has_validation=active_datamodule.validation_loader() is not None or validation_perc,
+            has_test=active_datamodule.test_loader() is not None,
         )
 
         # call hook
@@ -91,15 +76,15 @@ class ActiveEstimator(Estimator):
             if reinit_model:
                 self.load_state_dict(model_cache_dir)
 
-            out = self.round_loop(
+            self.fabric.call("on_round_start", estimator=self, datamodule=active_datamodule)
+
+            out = self.run_round(
                 active_datamodule=active_datamodule,
                 query_size=query_size,
                 validation_perc=validation_perc,
                 validation_sampling=validation_sampling,
-                num_epochs=num_epochs,
+                max_epochs=max_epochs,
                 min_steps=min_steps,
-                loss_fn=loss_fn,
-                loss_fn_kwargs=loss_fn_kwargs,
                 learning_rate=learning_rate,
                 optimizer=optimizer,
                 optimizer_kwargs=optimizer_kwargs,
@@ -108,36 +93,37 @@ class ActiveEstimator(Estimator):
                 **kwargs,
             )
 
+            self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=out)
+
             if out is not None:
                 output.append(out)
 
             # update progress
-            self.progress_tracker.increment_active_fit_progress()
+            self.progress_tracker.increment_round()
             assert (
                 self.progress_tracker.budget_tracker.total == active_datamodule.total_labelled_size
             ), f"{self.progress_tracker.budget_tracker.total} == {active_datamodule.total_labelled_size}"
 
-        if not self.progress_tracker.num_rounds > 0:
-            raise ValueError("You did not run any labellng. Perhaps change your `max_budget` or `num_rounds`.")
-
-        self.progress_tracker.finalize_active_fit_progress()
+        if not self.progress_tracker.global_round > 0:
+            raise ValueError("You did not run any labellng. Perhaps change your `max_budget` or `max_rounds`.")
 
         output = self.active_fit_end(output)
 
         # call hook
         self.fabric.call("on_active_fit_end", estimator=self, datamodule=active_datamodule, output=output)
 
+        self.progress_tracker.end_active_fit()
+
         return output
 
-    def round_loop(
+    def run_round(
         self,
         active_datamodule: ActiveDataModule,
         query_size: int,
         validation_perc: float,
         validation_sampling: Optional[str],
-        num_epochs: Optional[int] = 3,
-        loss_fn: Optional[Union[str, torch.nn.Module, Callable]] = None,
-        loss_fn_kwargs: Optional[Dict] = None,
+        max_epochs: Optional[int] = 3,
+        min_steps: Optional[int] = None,
         learning_rate: float = 0.001,
         optimizer: str = "adamw",
         optimizer_kwargs: Optional[Dict] = None,
@@ -147,58 +133,55 @@ class ActiveEstimator(Estimator):
     ) -> ROUND_OUTPUT:
         output = RoundOutput()
 
-        # call hook
-        self.fabric.call("on_round_start", estimator=self, datamodule=active_datamodule)
+        self.progress_tracker.setup_round_tracking(
+            # fit
+            max_epochs=max_epochs,
+            min_steps=min_steps,
+            num_train_batches=len(active_datamodule.train_loader() or []),
+            num_validation_batches=len(active_datamodule.validation_loader() or []),
+            limit_train_batches=kwargs.get("limit_train_batches"),
+            limit_validation_batches=kwargs.get("limit_validation_batches"),
+            validation_interval=kwargs.get("validation_interval"),
+            # test
+            num_test_batches=len(active_datamodule.test_loader() or []),
+            limit_test_batches=kwargs.get("limit_test_batches"),
+            # pool
+            num_pool_batches=len(active_datamodule.pool_loader() or []),
+            limit_pool_batches=kwargs.get("limit_pool_batches"),
+        )
 
-        # fit model on the available data
+        train_loader = self.configure_dataloader(active_datamodule.train_loader())
+        validation_loader = self.configure_dataloader(active_datamodule.validation_loader())
+        test_loader = self.configure_dataloader(active_datamodule.test_loader())
+        optimizer = self.configure_optimizer(optimizer, learning_rate, optimizer_kwargs)
+        scheduler = self.configure_scheduler(scheduler, optimizer, scheduler_kwargs)
+        model, optimizer = self.fabric.setup(self.model, optimizer)
+
+        # fit
         if active_datamodule.has_labelled_data:
-            output.fit = self.fit(
-                train_loader=active_datamodule.train_loader(),
-                validation_loader=active_datamodule.validation_loader(),
-                num_epochs=num_epochs,
-                loss_fn=loss_fn,
-                loss_fn_kwargs=loss_fn_kwargs,
-                learning_rate=learning_rate,
-                optimizer=optimizer,
-                optimizer_kwargs=optimizer_kwargs,
-                scheduler=scheduler,
-                scheduler_kwargs=scheduler_kwargs,
-                **kwargs,
-            )
+            output.fit = self.run_fit(model, train_loader, validation_loader, optimizer, scheduler)
 
-        # test model
+        # test
         if active_datamodule.has_test_data:
-            output.test = self.test(
-                test_loader=active_datamodule.test_loader(),
-                loss_fn=loss_fn,
-                loss_fn_kwargs=loss_fn_kwargs,
-                **kwargs,
-            )
+            output.test = self.run_evaluation(model, test_loader, RunningStage.TEST)
 
-        # query indices to annotate, skip first round
-        # do not annotate on the warm-up round
+        # query and label
         if active_datamodule.pool_size > query_size:
-            output.query = self.query(active_datamodule=active_datamodule, query_size=query_size, **kwargs)
+            self.fabric.call("on_query_start", estimator=self, model=model)
+            output.indices = self.run_query(model, active_datamodule, query_size)
+            self.fabric.call("on_query_end", estimator=self, model=model, output=output)
 
-            # call hook
             self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule)
             active_datamodule.label(
-                indices=output.query.indices,
-                round_idx=self.progress_tracker.num_rounds,
+                indices=output.indices,
+                round_idx=self.progress_tracker.global_round,
                 validation_perc=validation_perc,
                 validation_sampling=validation_sampling,
             )
-            # call hook
             self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)
-        else:
-            # no more pool instances
-            self.progress_tracker.set_stop_active_training(True)
 
         # method to possibly aggregate
         output = self.round_epoch_end(output, active_datamodule)
-
-        # call hook
-        self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=output)
 
         return output
 
@@ -212,28 +195,7 @@ class ActiveEstimator(Estimator):
     def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
         return output
 
-    def query(self, active_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
-        # configure dataloaders
-        loader = self.get_pool_loader(active_datamodule=active_datamodule)
-        loader = self.configure_dataloader(loader)
-
-        # progress tracking
-        self.progress_tracker.initialize_evaluation_progress(RunningStage.POOL, loader, **kwargs)
-
-        # setup model with fabric
-        model = self.fabric.setup(self.model)
-
-        # call hook
-        self.fabric.call("on_query_start", estimator=self, model=model)
-
-        output = self.query_loop(model, loader, query_size, **kwargs)
-
-        # call hook
-        self.fabric.call("on_query_end", estimator=self, model=model, output=output)
-
-        return output
-
-    def query_loop(self, model: _FabricModule, loader: _FabricDataLoader, query_size: int, **kwargs) -> QueryOutput:
+    def run_query(self, model: _FabricModule, active_datamodule: ActiveDataModule, query_size: int) -> List[int]:
         raise NotImplementedError
 
     """
@@ -255,3 +217,51 @@ class ActiveEstimator(Estimator):
 
     def get_pool_loader(self, active_datamodule: ActiveDataModule) -> DataLoader:
         return active_datamodule.pool_loader()
+
+    # def replay_active_fit(
+    #     self,
+    #     active_datamodule: ActiveDataModule,
+    #     max_epochs: Optional[int] = 3,
+    #     min_steps: Optional[int] = None,
+    #     learning_rate: float = 0.001,
+    #     optimizer: str = "adamw",
+    #     optimizer_kwargs: Optional[Dict] = None,
+    #     scheduler: Optional[str] = None,
+    #     scheduler_kwargs: Optional[Dict] = None,
+    #     **kwargs,
+    # ) -> List[FitEpochOutput]:
+
+    #     num_rounds = active_datamodule.
+
+    #     for round in rounds:
+
+    #         train_loader, validation_loader, test_loader = ...
+
+    #         self.progress_tracker.setup_tracking(
+    #             max_epochs=max_epochs,
+    #             min_steps=min_steps,
+    #             num_train_batches=len(active_datamodule.train_loader()) if active_datamodule.train_loader() else 0,
+    #             num_validation_batches=len(active_datamodule.validation_loader())
+    #             if active_datamodule.validation_loader()
+    #             else 0,
+    #             num_test_batches=len(active_datamodule.test_loader()) if active_datamodule.test_loader() else 0,
+    #             num_pool_batches=len(active_datamodule.pool_loader()) if active_datamodule.pool_loader() else 0,
+    #             limit_train_batches=kwargs.get("limit_train_batches"),
+    #             limit_validation_batches=kwargs.get("limit_validation_batches"),
+    #             limit_test_batches=kwargs.get("limit_test_batches"),
+    #             validation_interval=kwargs.get("validation_interval"),
+    #         )
+
+    #         train_loader = self.configure_dataloader(active_datamodule.train_loader())
+    #         validation_loader = self.configure_dataloader(active_datamodule.validation_loader())
+    #         test_loader = self.configure_dataloader(active_datamodule.test_loader())
+    #         optimizer = self.configure_optimizer(optimizer, learning_rate, optimizer_kwargs)
+    #         scheduler = self.configure_scheduler(scheduler, optimizer, scheduler_kwargs)
+    #         model, optimizer = self.fabric.setup(self.model, optimizer)
+
+    #         # fit
+    #         output.fit = self.run_fit(model, train_loader, validation_loader, optimizer, scheduler)
+
+    #         # test
+    #         if active_datamodule.has_test_data:
+    #             output.test = self.run_evaluation(model, test_loader, RunningStage.TEST)

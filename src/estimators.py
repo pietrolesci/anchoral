@@ -33,33 +33,33 @@ class SequenceClassificationMixin:
 
     def train_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Dict,
         batch_idx: int,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         metrics: MetricCollection,
     ) -> Dict:
-        return self.step(loss_fn, model, batch, batch_idx, metrics, RunningStage.TRAIN)
+        return self.step(model, batch, batch_idx, loss_fn, metrics, RunningStage.TRAIN)
 
     def validation_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Dict,
         batch_idx: int,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         metrics: MetricCollection,
     ) -> Dict:
-        return self.step(loss_fn, model, batch, batch_idx, metrics, RunningStage.VALIDATION)
+        return self.step(model, batch, batch_idx, loss_fn, metrics, RunningStage.VALIDATION)
 
     def test_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Dict,
         batch_idx: int,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         metrics: MetricCollection,
     ) -> Dict:
-        return self.step(loss_fn, model, batch, batch_idx, metrics, RunningStage.TEST)
+        return self.step(model, batch, batch_idx, loss_fn, metrics, RunningStage.TEST)
 
     def train_epoch_end(self, output: List[Dict], metrics: MetricCollection) -> Dict:
         return self.epoch_end(output, metrics, RunningStage.TRAIN)
@@ -79,10 +79,10 @@ class SequenceClassificationMixin:
 
     def step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: AutoModelForSequenceClassification,
         batch: Dict,
         batch_idx: int,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         metrics: MetricCollection,
         stage: RunningStage,
     ) -> Dict:
@@ -104,7 +104,7 @@ class SequenceClassificationMixin:
         if stage == RunningStage.TRAIN:
             # NOTE: only log at the batch level training
             logs = {OutputKeys.LOSS: loss, **out_metrics}
-            self.log_dict({f"{stage}/{k}": v for k, v in logs.items()}, step=self.progress_tracker.get_batch_num())
+            self.log_dict({f"{stage}/{k}": v for k, v in logs.items()}, step=self.progress_tracker.global_batch)
 
         return {
             OutputKeys.LOSS: loss,
@@ -131,11 +131,11 @@ class SequenceClassificationMixin:
         logs = {OutputKeys.LOSS: aggregated_loss, **aggregated_metrics}
 
         logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
-        self.log_dict(logs, step=self.progress_tracker.get_epoch_num())
+        self.log_dict(logs, step=self.progress_tracker.safe_global_epoch)
 
-        if stage == RunningStage.TEST and hasattr(self.progress_tracker, "budget"):
+        if stage == RunningStage.TEST and hasattr(self.progress_tracker, "global_budget"):
             logs = {f"{k}_vs_budget": v for k, v in logs.items()}
-            self.log_dict(logs, step=self.progress_tracker.budget)
+            self.log_dict(logs, step=self.progress_tracker.global_budget)
 
         return {
             OutputKeys.LOSS: aggregated_loss,
@@ -146,13 +146,13 @@ class SequenceClassificationMixin:
     def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
         """Log round-level statistics."""
         logs = {
-            "num_epochs": self.progress_tracker.fit_tracker.epoch_tracker.max,
-            "num_train_batches": self.progress_tracker.fit_tracker.train_tracker.max,
-            "num_validation_batches": self.progress_tracker.fit_tracker.validation_tracker.max,
-            "global_train_steps": self.progress_tracker.fit_tracker.step_tracker.total,
+            "max_epochs": self.progress_tracker.epoch_tracker.max,
+            "num_train_batches": self.progress_tracker.train_tracker.max,
+            "num_validation_batches": self.progress_tracker.validation_tracker.max,
+            "global_train_steps": self.progress_tracker.step_tracker.total,
         }
         logs = {f"round_stats/{k}": v for k, v in logs.items()}
-        self.log_dict(logs, step=self.progress_tracker.num_rounds)
+        self.log_dict(logs, step=self.progress_tracker.global_round)
 
         # # log using labelled size as the x-axis since here you have access to datamodule
         # # which you do not have in test_epoch_end
@@ -178,16 +178,16 @@ class SequenceClassificationMixin:
         hparams["name_or_path"] = self.model.name_or_path
         return hparams
 
-    def configure_loss_fn(
-        self,
-        loss_fn: Optional[Union[str, torch.nn.Module, Callable]],
-        loss_fn_kwargs: Optional[Dict],
-        stage: RunningStage,
-    ) -> Optional[Union[torch.nn.Module, Callable]]:
-        if loss_fn_kwargs is not None and "weight" in loss_fn_kwargs:
-            loss_fn_kwargs["weight"] = torch.tensor(loss_fn_kwargs["weight"], dtype=torch.float32, device=self.device)
+    # def configure_loss_fn(
+    #     self,
+    #     loss_fn: Optional[Union[str, torch.nn.Module, Callable]],
+    #     loss_fn_kwargs: Optional[Dict],
+    #     stage: RunningStage,
+    # ) -> Optional[Union[torch.nn.Module, Callable]]:
+    #     if loss_fn_kwargs is not None and "weight" in loss_fn_kwargs:
+    #         loss_fn_kwargs["weight"] = torch.tensor(loss_fn_kwargs["weight"], dtype=torch.float32, device=self.device)
 
-        return super().configure_loss_fn(loss_fn, loss_fn_kwargs, stage)
+    #     return super().configure_loss_fn(loss_fn, loss_fn_kwargs, stage)
 
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[MetricCollection]:
         if stage == RunningStage.POOL:

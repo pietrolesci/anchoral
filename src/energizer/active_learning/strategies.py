@@ -8,7 +8,7 @@ from sklearn.utils.validation import (
 )
 from torch.utils.data import DataLoader
 
-from src.energizer.active_learning.active_estimator import ActiveEstimator, QueryOutput
+from src.energizer.active_learning.active_estimator import ActiveEstimator
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.energizer.registries import SCORING_FUNCTIONS
@@ -16,14 +16,13 @@ from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
 
 
 class RandomStrategy(ActiveEstimator):
-    def __init__(self, seed: Optional[int], *args, **kwargs) -> None:
+    def __init__(self, *args, seed: Optional[int], **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.rng = check_random_state(seed)  # reproducibility
 
-    def query(self, active_datamodule: ActiveDataModule, query_size: int, **kwargs) -> QueryOutput:
+    def run_query(self, model, active_datamodule: ActiveDataModule, query_size: int) -> List[int]:
         pool_indices = active_datamodule.pool_indices
-        indices = self.rng.choice(pool_indices, size=query_size, replace=False).tolist()
-        return QueryOutput(indices=indices)
+        return self.rng.choice(pool_indices, size=query_size, replace=False).tolist()
 
 
 class UncertaintyBasedStrategy(ActiveEstimator):
@@ -33,8 +32,8 @@ class UncertaintyBasedStrategy(ActiveEstimator):
         super().__init__(*args, **kwargs)
         self.score_fn = score_fn if isinstance(score_fn, Callable) else self._scoring_fn_registry[score_fn]
 
-    def query_loop(self, model: _FabricModule, loader: _FabricDataLoader, query_size: int, **kwargs) -> QueryOutput:
-        """Note that since this relies on the `eval_loop` method it automatically calls some hooks.
+    def query_loop(self, model: _FabricModule, loader: _FabricDataLoader, query_size: int, **kwargs) -> List[int]:
+        """Note that since this relies on the `run_evaluation` method it automatically calls some hooks.
 
         In particular:
             - configure_metrics
@@ -44,14 +43,14 @@ class UncertaintyBasedStrategy(ActiveEstimator):
             - on_pool_batch_end
             - pool_epoch_end
         """
-        output = self.eval_loop(None, model, loader, RunningStage.POOL)
+        output = self.run_evaluation(None, model, loader, RunningStage.POOL)
         topk_scores, indices = self._topk(output, query_size)
 
-        output = QueryOutput(
-            topk_scores=topk_scores,
-            indices=indices,
-            output=output,
-        )
+        # output = QueryOutput(
+        #     topk_scores=topk_scores,
+        #     indices=indices,
+        #     output=output,
+        # )
 
         return output
 

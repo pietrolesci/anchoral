@@ -80,11 +80,11 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
                 columns=[f"logit_{i}" for i in range(estimator.model.num_labels)], data=output[OutputKeys.LOGITS]
             )
             data[SpecialKeys.ID] = output[SpecialKeys.ID]
-            data[Interval.EPOCH] = estimator.progress_tracker.get_epoch_num()
+            data[Interval.EPOCH] = estimator.progress_tracker.safe_global_epoch
 
             # if we are active learning
-            if hasattr(estimator.progress_tracker, "num_rounds"):
-                data[Interval.ROUND] = estimator.progress_tracker.num_rounds
+            if hasattr(estimator.progress_tracker, "global_round"):
+                data[Interval.ROUND] = estimator.progress_tracker.global_round
                 if OutputKeys.SCORES in output:
                     data[OutputKeys.SCORES] = output[OutputKeys.SCORES]
 
@@ -100,12 +100,12 @@ class SaveOutputs(ActiveLearningCallbackMixin, Callback):
         if self.epoch_level and stage != RunningStage.POOL:
             data = {
                 "stage": stage,
-                Interval.EPOCH: estimator.progress_tracker.get_epoch_num(),
+                Interval.EPOCH: estimator.progress_tracker.safe_global_epoch,
                 OutputKeys.LOSS: output[OutputKeys.LOSS],
                 **output[OutputKeys.METRICS],
             }
-            if hasattr(estimator.progress_tracker, "num_rounds"):
-                data[Interval.ROUND] = estimator.progress_tracker.num_rounds
+            if hasattr(estimator.progress_tracker, "global_round"):
+                data[Interval.ROUND] = estimator.progress_tracker.global_round
 
             # sanitize inputs for JSON serialization
             srsly.write_jsonl(

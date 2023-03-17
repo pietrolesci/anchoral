@@ -1,11 +1,11 @@
 defaults:
   - _self_
-  - callbacks:
-    # - pytorch_profiler
-    - save_outputs
-    - timer
-    - model_checkpoint
-    - early_stopping
+  # - callbacks:
+  #   # - pytorch_profiler
+  #   - save_outputs
+  #   - timer
+  #   - model_checkpoint
+  #   - early_stopping
   - loggers:
     - tensorboard
   - optional strategy: null
@@ -35,11 +35,7 @@ strategy: null
 
 estimator:
   accelerator: gpu
-  strategy: null
-  devices: null
-  num_nodes: 1
   precision: 32
-  plugins: null
   deterministic: true
 
 callbacks: null
@@ -69,24 +65,22 @@ active_data:
   seed: ${seed}
 
 fit:
-  num_epochs: 3
+  max_epochs: 3
   min_steps: null
-  loss_fn: null
-  loss_fn_kwargs: null
   learning_rate: 0.0002
   optimizer: adamw
   optimizer_kwargs: null
   scheduler: constant_schedule
   scheduler_kwargs: null
   log_interval: ${log_interval}
-  progress_bar: ${progress_bar}
+  enable_progress_bar: ${enable_progress_bar}
   limit_train_batches: ${limit_batches}
   limit_validation_batches: ${limit_batches}
   validation_interval: 1
 
 # this is incremental to `fit` above
 active_fit:
-  num_rounds: 50
+  max_rounds: 50
   max_budget: null
   query_size: 25
   validation_perc: 0.3
@@ -95,19 +89,14 @@ active_fit:
   limit_pool_batches: ${limit_batches}
   limit_test_batches: ${limit_batches}
 
-validation:
-  log_interval: ${log_interval}
-  progress_bar: ${progress_bar}
-  limit_batches: ${limit_batches}
-
 test:
   log_interval: ${log_interval}
-  progress_bar: ${progress_bar}
+  enable_progress_bar: ${enable_progress_bar}
   limit_batches: ${limit_batches}
 
 # global settings
 log_interval: 1
-progress_bar: true
+enable_progress_bar: true
 limit_batches: null
 train_val_split: null
 
