@@ -1,8 +1,7 @@
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 import numpy as np
-from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from src.energizer.enums import RunningStage
@@ -72,13 +71,13 @@ class StageTracker(Tracker):
 
 @dataclass
 class ProgressTracker:
-    epoch_tracker: EpochTracker = EpochTracker()
-    step_tracker: Tracker = Tracker()
+    epoch_tracker: EpochTracker = field(default_factory=lambda: EpochTracker())
+    step_tracker: Tracker = field(default_factory=lambda: Tracker())
 
     # stage trackers
-    train_tracker: StageTracker = StageTracker(stage=RunningStage.TRAIN)
-    validation_tracker: StageTracker = StageTracker(stage=RunningStage.VALIDATION)
-    test_tracker: StageTracker = StageTracker(stage=RunningStage.TEST)
+    train_tracker: StageTracker = field(default_factory=lambda: StageTracker(stage=RunningStage.TRAIN))
+    validation_tracker: StageTracker = field(default_factory=lambda: StageTracker(stage=RunningStage.VALIDATION))
+    test_tracker: StageTracker = field(default_factory=lambda: StageTracker(stage=RunningStage.TEST))
 
     validation_interval: Optional[List[int]] = None
     stop_training: bool = False

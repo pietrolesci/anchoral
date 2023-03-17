@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from tqdm.auto import tqdm
 
@@ -45,9 +45,9 @@ class BudgetTracker(Tracker):
 
 @dataclass
 class ActiveProgressTracker(ProgressTracker):
-    round_tracker: RoundTracker = RoundTracker()
-    budget_tracker: BudgetTracker = BudgetTracker()
-    pool_tracker: StageTracker = StageTracker(stage=RunningStage.POOL)
+    round_tracker: RoundTracker = field(default_factory=lambda: RoundTracker())
+    budget_tracker: BudgetTracker = field(default_factory=lambda: BudgetTracker())
+    pool_tracker: StageTracker = field(default_factory=lambda: StageTracker(stage=RunningStage.POOL))
 
     has_pool: bool = False
     has_test: bool = False
@@ -77,6 +77,7 @@ class ActiveProgressTracker(ProgressTracker):
 
     def end_active_fit(self) -> None:
         self.round_tracker.close_progress_bar()
+        self.epoch_tracker.close_progress_bar()
         self.train_tracker.close_progress_bar()
         self.validation_tracker.close_progress_bar()
         self.test_tracker.close_progress_bar()

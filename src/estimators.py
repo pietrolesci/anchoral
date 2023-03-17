@@ -154,19 +154,15 @@ class SequenceClassificationMixin:
         logs = {f"round_stats/{k}": v for k, v in logs.items()}
         self.log_dict(logs, step=self.progress_tracker.global_round)
 
-        # # log using labelled size as the x-axis since here you have access to datamodule
-        # # which you do not have in test_epoch_end
-        # test_out = output.test
-        # test_out = {OutputKeys.LOSS: test_out[OutputKeys.LOSS], **test_out[OutputKeys.METRICS]}
-        # logs = {f"test_end/{k}_vs_budget": v for k, v in test_out.items()}
-        # self.log_dict(logs, step=datamodule.train_size)
-
         return output
 
     def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:
         """Log metrics at the end of training."""
         logs = ld_to_dl([out.test[OutputKeys.METRICS] for out in output])
-        return {f"hparams/test_{k}_auc": np.trapz(v) for k, v in logs.items()}
+        return {
+            **{f"hparams/test_{k}": v[-1].item() for k, v in logs.items()},
+            **{f"hparams/test_{k}_auc": np.trapz(v) for k, v in logs.items()},
+        }
 
     """
     Changes
@@ -177,17 +173,6 @@ class SequenceClassificationMixin:
         hparams = super().hparams
         hparams["name_or_path"] = self.model.name_or_path
         return hparams
-
-    # def configure_loss_fn(
-    #     self,
-    #     loss_fn: Optional[Union[str, torch.nn.Module, Callable]],
-    #     loss_fn_kwargs: Optional[Dict],
-    #     stage: RunningStage,
-    # ) -> Optional[Union[torch.nn.Module, Callable]]:
-    #     if loss_fn_kwargs is not None and "weight" in loss_fn_kwargs:
-    #         loss_fn_kwargs["weight"] = torch.tensor(loss_fn_kwargs["weight"], dtype=torch.float32, device=self.device)
-
-    #     return super().configure_loss_fn(loss_fn, loss_fn_kwargs, stage)
 
     def configure_metrics(self, stage: Optional[RunningStage] = None) -> Optional[MetricCollection]:
         if stage == RunningStage.POOL:
@@ -231,4 +216,4 @@ class UncertaintyBasedStrategyForSequenceClassification(SequenceClassificationMi
 
 
 class RandomStrategyForSequenceClassification(SequenceClassificationMixin, RandomStrategy):
-    pass
+    ...

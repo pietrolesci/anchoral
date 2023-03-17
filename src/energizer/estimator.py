@@ -1,4 +1,3 @@
-import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Union
@@ -16,7 +15,7 @@ from torch.utils.data import DataLoader
 
 from src.energizer.enums import OutputKeys, RunningStage
 from src.energizer.progress_trackers import ProgressTracker
-from src.energizer.registries import OPTIMIZER_REGISTRY, SCHEDULER_REGISTRY
+from src.energizer.registries import OPTIMIZER_REGISTRY
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
 from src.energizer.utilities import init_deterministic, move_to_cpu
 from src.energizer.utilities.model_summary import summarize

@@ -29,19 +29,12 @@ class ActiveDataModule(DataModule):
     """
 
     @property
-    def should_val_split(self) -> bool:
-        """If user passed a validation dataset, we do not take validation indices from annotations."""
-        return self.validation_dataset is None
-
-    @property
     def train_size(self) -> int:
         return ((self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == False)).sum()
 
     @property
     def validation_size(self) -> int:
-        if self.should_val_split:
-            return ((self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == True)).sum()
-        return len(self.validation_dataset)
+        return ((self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == True)).sum()
 
     @property
     def total_labelled_size(self) -> int:
@@ -54,7 +47,7 @@ class ActiveDataModule(DataModule):
 
     @property
     def pool_size(self) -> int:
-        return len(self._df) - self.train_size
+        return (self._df[SpecialKeys.IS_LABELLED] == False).sum()
 
     @property
     def train_indices(self) -> np.ndarray:
@@ -178,7 +171,7 @@ class ActiveDataModule(DataModule):
         self._df.loc[mask, SpecialKeys.IS_LABELLED] = True
         self._df.loc[mask, SpecialKeys.LABELLING_ROUND] = round_idx
 
-        if self.should_val_split and validation_perc is not None:
+        if validation_perc is not None:
             n_val = round(validation_perc * len(indices)) or 1  # at least add one
             current_df = self._df.loc[mask, [SpecialKeys.ID, InputKeys.TARGET]]
             val_indices = self.sample(
@@ -259,16 +252,11 @@ class ActiveDataModule(DataModule):
             return self.get_loader(RunningStage.TRAIN)
 
     def validation_loader(self) -> Optional[DataLoader]:
-        if self.should_val_split and self._df[SpecialKeys.IS_VALIDATION].sum() > 0:
+        if self.validation_size > 0:
             val_df = self._df.loc[
                 (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == True)
             ]
-            val_dataset = Dataset.from_pandas(val_df, preserve_index=False)
-        else:
-            val_dataset = self.validation_dataset
-
-        if val_dataset is not None and len(val_dataset) > 0:
-            self.validation_dataset = val_dataset
+            self.validation_dataset = Dataset.from_pandas(val_df, preserve_index=False)
             return self.get_loader(RunningStage.VALIDATION)
 
     def pool_loader(self, subset_indices: Optional[List[int]] = None) -> DataLoader:

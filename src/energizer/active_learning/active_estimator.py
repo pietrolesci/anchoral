@@ -1,10 +1,9 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import torch
-from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule
-from numpy import ndarray
+from lightning.fabric.wrappers import _FabricModule
 from torch.utils.data import DataLoader
 
 from src.energizer.active_learning.data import ActiveDataModule
@@ -39,11 +38,10 @@ class ActiveEstimator(Estimator):
         active_datamodule: ActiveDataModule,
         max_rounds: int,
         query_size: int,
-        validation_perc: float,
+        validation_perc: Optional[float] = None,
         max_budget: Optional[int] = None,
         validation_sampling: Optional[str] = None,
         reinit_model: bool = True,
-        model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
         max_epochs: Optional[int] = 3,
         min_steps: Optional[int] = None,
         learning_rate: float = 0.001,
@@ -51,6 +49,7 @@ class ActiveEstimator(Estimator):
         optimizer_kwargs: Optional[Dict] = None,
         scheduler: Optional[str] = None,
         scheduler_kwargs: Optional[Dict] = None,
+        model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
         **kwargs,
     ) -> Any:
         if reinit_model:
@@ -95,8 +94,7 @@ class ActiveEstimator(Estimator):
 
             self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=out)
 
-            if out is not None:
-                output.append(out)
+            output.append(out)
 
             # update progress
             self.progress_tracker.increment_round()
@@ -122,13 +120,13 @@ class ActiveEstimator(Estimator):
         query_size: int,
         validation_perc: float,
         validation_sampling: Optional[str],
-        max_epochs: Optional[int] = 3,
-        min_steps: Optional[int] = None,
-        learning_rate: float = 0.001,
-        optimizer: str = "adamw",
-        optimizer_kwargs: Optional[Dict] = None,
-        scheduler: Optional[str] = None,
-        scheduler_kwargs: Optional[Dict] = None,
+        max_epochs: Optional[int],
+        min_steps: Optional[int],
+        learning_rate: float,
+        optimizer: str,
+        optimizer_kwargs: Optional[Dict],
+        scheduler: Optional[str],
+        scheduler_kwargs: Optional[Dict],
         **kwargs,
     ) -> ROUND_OUTPUT:
         output = RoundOutput()
