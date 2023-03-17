@@ -416,7 +416,7 @@ class Estimator(HyperparametersMixin):
         # collect scheduler kwargs
         params = list(inspect.signature(scheduler_fn).parameters.keys())
         scheduler_kwargs = scheduler_kwargs or {}
-        num_train_steps = self.progress_tracker.fit_tracker.train_tracker.max
+        num_train_steps = self.progress_tracker.train_tracker.max
         num_warmup_steps = scheduler_kwargs.get("num_warmup_steps", None)
         if num_warmup_steps is not None and isinstance(num_warmup_steps, float):
             num_warmup_steps *= num_train_steps
