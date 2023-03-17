@@ -49,6 +49,11 @@ class ActiveProgressTracker(ProgressTracker):
     budget_tracker: BudgetTracker = BudgetTracker()
     pool_tracker: StageTracker = StageTracker(stage=RunningStage.POOL)
 
+    has_pool: bool = False
+    has_test: bool = False
+
+    """Properties"""
+    
     @property
     def global_round(self) -> int:
         return self.round_tracker.total
@@ -64,11 +69,44 @@ class ActiveProgressTracker(ProgressTracker):
             if self.current_stage in (RunningStage.TEST, RunningStage.POOL)
             else super().safe_global_epoch
         )
+    
+    """Super outer loops"""
 
     def is_active_fit_done(self) -> bool:
         return self.round_tracker.max_reached() or self.budget_tracker.max_reached()
+    
+    def end_active_fit(self) -> None:
+        self.round_tracker.close_progress_bar()
+        self.train_tracker.close_progress_bar()
+        self.validation_tracker.close_progress_bar()
+        self.test_tracker.close_progress_bar()
+        self.pool_tracker.close_progress_bar()
 
-    def setup_meta_tracking(
+    def increment_round(self) -> None:
+        self.round_tracker.increment()
+        self.budget_tracker.increment()
+
+    """Outer loops"""
+    def start_fit(self) -> None:
+        super().start_fit()
+        if self.enable_progress_bar:
+            self.epoch_tracker.progress_bar.set_postfix_str("")
+
+    def end_fit(self) -> None:
+        self.epoch_tracker.terminate_progress_bar()
+        self.train_tracker.terminate_progress_bar()
+        self.validation_tracker.terminate_progress_bar()
+
+    """Stage trackers"""
+    def end(self) -> None:
+        self.get_stage_tracker().terminate_progress_bar()
+        if self.current_stage == RunningStage.VALIDATION:
+            self.current_stage = RunningStage.TRAIN  # reattach training
+
+
+    """Helpers"""
+    
+    def setup(
         self,
         max_rounds: int,
         max_budget: int,
@@ -91,20 +129,23 @@ class ActiveProgressTracker(ProgressTracker):
             max=max_budget, total=initial_budget, current=initial_budget, query_size=query_size
         )
 
-        self.fit_tracker.has_validation = has_validation
+        self.has_validation = has_validation
+        self.has_pool = has_pool
+        self.has_test = has_test
 
         if self.enable_progress_bar:
             self.round_tracker.make_progress_bar()
-            self.fit_tracker.make_progress_bar()
-            if has_test:
+            self.epoch_tracker.make_progress_bar()
+            self.train_tracker.make_progress_bar()
+            if self.has_validation:
+                self.validation_tracker.make_progress_bar()
+            if self.has_test:
                 self.test_tracker.make_progress_bar()
-            if has_pool:
+            if self.has_pool:
                 self.pool_tracker.make_progress_bar()
 
-    def setup_tracking(self, **kwargs) -> None:
-        """Only do the math."""
-
-        self.fit_tracker.setup_tracking(
+    def setup_round_tracking(self, **kwargs) -> None:
+        self._setup_fit(
             max_epochs=kwargs.get("max_epochs"),
             min_steps=kwargs.get("min_steps"),
             num_train_batches=kwargs.get("num_train_batches"),
@@ -113,21 +154,9 @@ class ActiveProgressTracker(ProgressTracker):
             limit_validation_batches=kwargs.get("limit_validation_batches"),
             validation_interval=kwargs.get("validation_interval"),
         )
-        self.test_tracker.max = min(kwargs.get("num_test_batches"), kwargs.get("limit_test_batches") or float("Inf"))
-        self.pool_tracker.max = min(kwargs.get("num_pool_batches"), kwargs.get("limit_pool_batches") or float("Inf"))
+        for stage in (RunningStage.TEST, RunningStage.POOL):
+            if getattr(self, f"has_{stage}"):
+                limit_batches = kwargs.get(f"limit_{stage}_batches") or float("Inf")
+                getattr(self, f"{stage}_tracker").max = min(kwargs.get(f"num_{stage}_batches"), limit_batches)
 
-    def increment_round(self) -> None:
-        self.round_tracker.increment()
-        self.budget_tracker.increment()
 
-    def end_active_fit(self) -> None:
-        self.round_tracker.close_progress_bar()
-        self.fit_tracker.close_progress_bar()
-        self.test_tracker.close_progress_bar()
-        self.pool_tracker.close_progress_bar()
-
-    def end_epoch(self) -> None:
-        self._get_stage_tracker().terminate_progress_bar()
-
-    def end_fit(self) -> None:
-        self.fit_tracker.terminate_progress_bar()

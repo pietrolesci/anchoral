@@ -87,12 +87,12 @@ class Estimator(HyperparametersMixin):
     ) -> List[FitEpochOutput]:
 
         # start progress tracking
-        self.progress_tracker.setup_tracking(
+        self.progress_tracker.setup(
             RunningStage.TRAIN,
             max_epochs=max_epochs,
             min_steps=min_steps,
             num_train_batches=len(train_loader),
-            num_validation_batches=len(validation_loader) if validation_loader is not None else 0,
+            num_validation_batches=len(validation_loader or []),
             **kwargs,
         )
 
@@ -270,7 +270,7 @@ class Estimator(HyperparametersMixin):
 
     def test(self, test_loader: DataLoader, **kwargs) -> EPOCH_OUTPUT:
         """This method is useful because validation can run in fit when model is already setup."""
-        self.progress_tracker.setup_tracking(RunningStage.TEST, num_batches=len(test_loader), **kwargs)
+        self.progress_tracker.setup(RunningStage.TEST, num_batches=len(test_loader), **kwargs)
 
         # configuration
         loader = self.configure_dataloader(test_loader)

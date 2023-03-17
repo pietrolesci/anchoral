@@ -57,11 +57,11 @@ class ActiveEstimator(Estimator):
             self.save_state_dict(model_cache_dir)
 
         # configure progress tracking
-        self.progress_tracker.setup_meta_tracking(
+        self.progress_tracker.setup(
             max_rounds=max_rounds,
             max_budget=min(active_datamodule.pool_size, max_budget or float("Inf")),
-            query_size=query_size,
             initial_budget=active_datamodule.total_labelled_size,
+            query_size=query_size,
             has_pool=getattr(self, "pool_step", None) is not None,
             has_validation=active_datamodule.validation_loader() is not None or validation_perc,
             has_test=active_datamodule.test_loader() is not None,
@@ -78,7 +78,7 @@ class ActiveEstimator(Estimator):
 
             self.fabric.call("on_round_start", estimator=self, datamodule=active_datamodule)
 
-            out = self.round_loop(
+            out = self.run_round(
                 active_datamodule=active_datamodule,
                 query_size=query_size,
                 validation_perc=validation_perc,
@@ -116,7 +116,7 @@ class ActiveEstimator(Estimator):
 
         return output
 
-    def round_loop(
+    def run_round(
         self,
         active_datamodule: ActiveDataModule,
         query_size: int,
@@ -133,19 +133,21 @@ class ActiveEstimator(Estimator):
     ) -> ROUND_OUTPUT:
         output = RoundOutput()
 
-        self.progress_tracker.setup_tracking(
+        self.progress_tracker.setup_round_tracking(
+            # fit
             max_epochs=max_epochs,
             min_steps=min_steps,
-            num_train_batches=len(active_datamodule.train_loader()) if active_datamodule.train_loader() else 0,
-            num_validation_batches=len(active_datamodule.validation_loader())
-            if active_datamodule.validation_loader()
-            else 0,
-            num_test_batches=len(active_datamodule.test_loader()) if active_datamodule.test_loader() else 0,
-            num_pool_batches=len(active_datamodule.pool_loader()) if active_datamodule.pool_loader() else 0,
+            num_train_batches=len(active_datamodule.train_loader() or []),
+            num_validation_batches=len(active_datamodule.validation_loader() or []),
             limit_train_batches=kwargs.get("limit_train_batches"),
             limit_validation_batches=kwargs.get("limit_validation_batches"),
-            limit_test_batches=kwargs.get("limit_test_batches"),
             validation_interval=kwargs.get("validation_interval"),
+            # test
+            num_test_batches=len(active_datamodule.test_loader() or []),
+            limit_test_batches=kwargs.get("limit_test_batches"),
+            # pool
+            num_pool_batches=len(active_datamodule.pool_loader() or []),
+            limit_pool_batches=kwargs.get("limit_pool_batches"),
         )
 
         train_loader = self.configure_dataloader(active_datamodule.train_loader())
@@ -215,3 +217,51 @@ class ActiveEstimator(Estimator):
 
     def get_pool_loader(self, active_datamodule: ActiveDataModule) -> DataLoader:
         return active_datamodule.pool_loader()
+
+    # def replay_active_fit(
+    #     self,
+    #     active_datamodule: ActiveDataModule,
+    #     max_epochs: Optional[int] = 3,
+    #     min_steps: Optional[int] = None,
+    #     learning_rate: float = 0.001,
+    #     optimizer: str = "adamw",
+    #     optimizer_kwargs: Optional[Dict] = None,
+    #     scheduler: Optional[str] = None,
+    #     scheduler_kwargs: Optional[Dict] = None,
+    #     **kwargs,
+    # ) -> List[FitEpochOutput]:
+
+    #     num_rounds = active_datamodule.
+
+    #     for round in rounds:
+
+    #         train_loader, validation_loader, test_loader = ...
+
+    #         self.progress_tracker.setup_tracking(
+    #             max_epochs=max_epochs,
+    #             min_steps=min_steps,
+    #             num_train_batches=len(active_datamodule.train_loader()) if active_datamodule.train_loader() else 0,
+    #             num_validation_batches=len(active_datamodule.validation_loader())
+    #             if active_datamodule.validation_loader()
+    #             else 0,
+    #             num_test_batches=len(active_datamodule.test_loader()) if active_datamodule.test_loader() else 0,
+    #             num_pool_batches=len(active_datamodule.pool_loader()) if active_datamodule.pool_loader() else 0,
+    #             limit_train_batches=kwargs.get("limit_train_batches"),
+    #             limit_validation_batches=kwargs.get("limit_validation_batches"),
+    #             limit_test_batches=kwargs.get("limit_test_batches"),
+    #             validation_interval=kwargs.get("validation_interval"),
+    #         )
+
+    #         train_loader = self.configure_dataloader(active_datamodule.train_loader())
+    #         validation_loader = self.configure_dataloader(active_datamodule.validation_loader())
+    #         test_loader = self.configure_dataloader(active_datamodule.test_loader())
+    #         optimizer = self.configure_optimizer(optimizer, learning_rate, optimizer_kwargs)
+    #         scheduler = self.configure_scheduler(scheduler, optimizer, scheduler_kwargs)
+    #         model, optimizer = self.fabric.setup(self.model, optimizer)
+
+    #         # fit
+    #         output.fit = self.run_fit(model, train_loader, validation_loader, optimizer, scheduler)
+
+    #         # test
+    #         if active_datamodule.has_test_data:
+    #             output.test = self.run_evaluation(model, test_loader, RunningStage.TEST)
