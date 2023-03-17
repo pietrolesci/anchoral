@@ -152,13 +152,13 @@ class ProgressTracker:
         """Make progress bars and reset the counters."""
         self.current_stage = stage
         self.get_stage_tracker().reset()
-        
+
         if self.enable_progress_bar:
             self.get_stage_tracker().progress_bar.set_postfix_str("")
-            
+
             if self.current_stage == RunningStage.TRAIN:
                 self.train_tracker.progress_bar.set_description(f"Epoch {self.epoch_tracker.current}")
-            
+
             if self.current_stage == RunningStage.VALIDATION:
                 self.train_tracker.progress_bar.set_postfix_str("Validating")
 
@@ -178,9 +178,9 @@ class ProgressTracker:
     """Setup"""
 
     def setup(self, stage: RunningStage, **kwargs) -> None:
-        """Do all the math here and create progress bars."""        
+        """Do all the math here and create progress bars."""
         self.log_interval = kwargs.pop("log_interval", 1)
-        self.enable_progress_bar = kwargs.pop("enable_progress_bar", True)        
+        self.enable_progress_bar = kwargs.pop("enable_progress_bar", True)
 
         if stage == RunningStage.TRAIN:
             self.has_validation = kwargs.get("num_validation_batches", 0) > 0
@@ -222,7 +222,7 @@ class ProgressTracker:
         validation_interval: Optional[int] = True,
     ) -> None:
         self.stop_training = False
-        
+
         assert max_epochs is not None or min_steps is not None, "`max_epochs` or `min_steps` must be passed."
 
         # train: limit batches

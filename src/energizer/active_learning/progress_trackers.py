@@ -53,7 +53,7 @@ class ActiveProgressTracker(ProgressTracker):
     has_test: bool = False
 
     """Properties"""
-    
+
     @property
     def global_round(self) -> int:
         return self.round_tracker.total
@@ -69,12 +69,12 @@ class ActiveProgressTracker(ProgressTracker):
             if self.current_stage in (RunningStage.TEST, RunningStage.POOL)
             else super().safe_global_epoch
         )
-    
+
     """Super outer loops"""
 
     def is_active_fit_done(self) -> bool:
         return self.round_tracker.max_reached() or self.budget_tracker.max_reached()
-    
+
     def end_active_fit(self) -> None:
         self.round_tracker.close_progress_bar()
         self.train_tracker.close_progress_bar()
@@ -87,6 +87,7 @@ class ActiveProgressTracker(ProgressTracker):
         self.budget_tracker.increment()
 
     """Outer loops"""
+
     def start_fit(self) -> None:
         super().start_fit()
         if self.enable_progress_bar:
@@ -98,14 +99,14 @@ class ActiveProgressTracker(ProgressTracker):
         self.validation_tracker.terminate_progress_bar()
 
     """Stage trackers"""
+
     def end(self) -> None:
         self.get_stage_tracker().terminate_progress_bar()
         if self.current_stage == RunningStage.VALIDATION:
             self.current_stage = RunningStage.TRAIN  # reattach training
 
-
     """Helpers"""
-    
+
     def setup(
         self,
         max_rounds: int,
@@ -158,5 +159,3 @@ class ActiveProgressTracker(ProgressTracker):
             if getattr(self, f"has_{stage}"):
                 limit_batches = kwargs.get(f"limit_{stage}_batches") or float("Inf")
                 getattr(self, f"{stage}_tracker").max = min(kwargs.get(f"num_{stage}_batches"), limit_batches)
-
-
