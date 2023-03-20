@@ -154,7 +154,7 @@ class SequenceClassificationMixin:
             datamodule.data_statistics(self.progress_tracker.global_round),
         )
         logs = {
-            "check": len(datamodule.train_loader().dataset) if datamodule.train_loader() else 0,
+            "check": len(datamodule.train_loader(self.progress_tracker.global_round).dataset) if datamodule.train_loader(self.progress_tracker.global_round) else 0,
             "max_epochs": self.progress_tracker.epoch_tracker.max,
             "num_train_batches": self.progress_tracker.train_tracker.max,
             "num_validation_batches": self.progress_tracker.validation_tracker.max,

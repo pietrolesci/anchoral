@@ -116,7 +116,7 @@ class ActiveEstimator(Estimator):
 
         # configure progress tracking
         self.progress_tracker.setup(
-            max_rounds=active_datamodule.last_labelling_round + 1,
+            max_rounds=active_datamodule.last_labelling_round,
             max_budget=None,
             initial_budget=active_datamodule.initial_budget,
             query_size=active_datamodule.query_size,
@@ -199,17 +199,19 @@ class ActiveEstimator(Estimator):
             )
 
             self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=out)
-
+            
             output.append(out)
 
             # update progress
             self.progress_tracker.increment_round()
 
             # check
-            total_budget = active_datamodule.total_labelled_size(self.progress_tracker.global_round)
-            assert (
-                self.progress_tracker.budget_tracker.current == total_budget
-            ), f"{self.progress_tracker.budget_tracker.current} == {total_budget}"
+            if not self.progress_tracker.is_last_round:
+                print(self.progress_tracker.round_tracker)
+                total_budget = active_datamodule.total_labelled_size(self.progress_tracker.global_round)
+                assert (
+                    self.progress_tracker.budget_tracker.current == total_budget
+                ), f"{self.progress_tracker.budget_tracker.current} == {total_budget}"
 
         if not self.progress_tracker.global_round > 0:
             raise ValueError("You did not run any labellng. Perhaps change your `max_budget` or `max_rounds`.")
@@ -279,13 +281,16 @@ class ActiveEstimator(Estimator):
         # test
         if active_datamodule.has_test_data:
             output.test = self.run_evaluation(model, test_loader, RunningStage.TEST)
+        
+        # query and label
+        if not replay and active_datamodule.pool_size(num_round) > query_size and not self.progress_tracker.is_last_round:
+            self.run_annotation(model, active_datamodule, query_size, validation_perc, validation_sampling)
+
+        if replay:
+            self.progress_tracker.increment_budget()
 
         # method to possibly aggregate
         output = self.round_epoch_end(output, active_datamodule)
-
-        # query and label
-        if not replay and active_datamodule.pool_size(num_round) > query_size:
-            self.run_annotation(model, active_datamodule, query_size, validation_perc, validation_sampling)
 
         return output
 
@@ -308,12 +313,13 @@ class ActiveEstimator(Estimator):
         # label
         self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule)
 
-        active_datamodule.label(
+        n_labelled = active_datamodule.label(
             indices=indices,
-            round_idx=self.progress_tracker.global_round,
+            round_idx=self.progress_tracker.global_round + 1,  # because the data will be used in the following round
             validation_perc=validation_perc,
             validation_sampling=validation_sampling,
         )
+        self.progress_tracker.increment_budget(n_labelled)
 
         self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)
 

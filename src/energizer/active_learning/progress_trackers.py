@@ -35,9 +35,10 @@ class RoundTracker(Tracker):
 class BudgetTracker(Tracker):
     query_size: int = None
 
-    def increment(self) -> None:
-        self.current += self.query_size
-        self.total += self.query_size
+    def increment(self, n_labelled: Optional[int] = None) -> None:
+        n_labelled = n_labelled or self.query_size
+        self.current += n_labelled
+        self.total += n_labelled
 
     def set_initial_budget(self, initial_budget: int) -> None:
         self.current = initial_budget
@@ -58,6 +59,10 @@ class ActiveProgressTracker(ProgressTracker):
     has_test: bool = False
 
     """Properties"""
+
+    @property
+    def is_last_round(self) -> bool:
+        return self.round_tracker.current >= (self.round_tracker.max - 1)
 
     @property
     def global_round(self) -> int:
@@ -90,7 +95,9 @@ class ActiveProgressTracker(ProgressTracker):
 
     def increment_round(self) -> None:
         self.round_tracker.increment()
-        self.budget_tracker.increment()
+
+    def increment_budget(self, n_labelled: Optional[int] = None) -> None:
+        self.budget_tracker.increment(n_labelled)
 
     """Outer loops"""
 
@@ -132,7 +139,7 @@ class ActiveProgressTracker(ProgressTracker):
 
         self.round_tracker.reset()
         self.budget_tracker.reset()
-        self.round_tracker.max = max_rounds
+        self.round_tracker.max = max_rounds + 1
         self.budget_tracker = BudgetTracker(
             max=max_budget, total=initial_budget, current=initial_budget, query_size=query_size
         )

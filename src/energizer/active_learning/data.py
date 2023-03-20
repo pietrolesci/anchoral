@@ -30,7 +30,7 @@ class ActiveDataModule(DataModule):
     def _resolve_round(self, round: Optional[int] = None) -> Union[float, int]:
         if round is None:
             return float("Inf")
-        return round - 1
+        return round
 
     def _labelled_mask(self, round: Optional[int] = None) -> pd.Series:
         return (self._df[SpecialKeys.IS_LABELLED] == True) & (
@@ -71,7 +71,7 @@ class ActiveDataModule(DataModule):
 
     @property
     def initial_budget(self) -> int:
-        return (self._df[SpecialKeys.LABELLING_ROUND] == -1).sum()
+        return (self._df[SpecialKeys.LABELLING_ROUND] == 0).sum()
 
     def train_size(self, round: Optional[int] = None) -> int:
         return self._train_mask(round).sum()
@@ -194,7 +194,7 @@ class ActiveDataModule(DataModule):
         round_idx: Optional[int] = None,
         validation_perc: Optional[float] = None,
         validation_sampling: Optional[str] = None,
-    ) -> None:
+    ) -> int:
         """Moves instances at index `pool_idx` from the `pool_fold` to the `train_fold`.
 
         Args:
@@ -225,6 +225,8 @@ class ActiveDataModule(DataModule):
             for idx in indices:
                 self.index.mark_deleted(idx)
 
+        return mask.sum()
+
     def set_initial_budget(
         self,
         budget: int,
@@ -243,7 +245,7 @@ class ActiveDataModule(DataModule):
         )
 
         # actually label
-        self.label(indices=indices, round_idx=-1, validation_perc=validation_perc, validation_sampling=sampling)
+        self.label(indices=indices, round_idx=0, validation_perc=validation_perc, validation_sampling=sampling)
 
     def sample(
         self,
