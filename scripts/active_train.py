@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-
+import pandas as pd
 import hydra
 from datasets import load_from_disk
 from hydra.utils import get_original_cwd, instantiate
@@ -46,6 +46,9 @@ def main(cfg: DictConfig) -> None:
     if cfg.limit_batches is not None:
         log.critical("!!! DEBUGGING !!!")
 
+    if cfg.replay_path is not None:
+        log.critical(f"Replaying the run from {cfg.replay_path}")
+
     # seed everything
     seed_everything(cfg.seed)
     log.info(f"Seed enabled: {cfg.seed}")
@@ -64,15 +67,21 @@ def main(cfg: DictConfig) -> None:
         dataset_dict, tokenizer=tokenizer, **OmegaConf.to_container(cfg.data)
     )
 
-    # define initial budget
-    if cfg.active_data.budget is not None and cfg.active_data.budget > 0:
-        datamodule.set_initial_budget(**OmegaConf.to_container(cfg.active_data))
-    log.info(
-        f"Initial budget set: labelling {cfg.active_data.budget or 0} samples "
-        f"in a {cfg.active_data.sampling} way using seed {cfg.active_data.seed}. "
-        f"Keeping {cfg.active_data.validation_perc} as validation."
-    )
-    log.info(f"Data statistics: {datamodule.data_statistics}")
+    if cfg.replay_path:
+        df = pd.read_parquet(cfg.replay_path)
+        datamodule.set_labelled_dataset(df)
+
+    else:
+        # define initial budget
+        if cfg.active_data.budget is not None and cfg.active_data.budget > 0:
+            datamodule.set_initial_budget(**OmegaConf.to_container(cfg.active_data))
+            log.info(
+                f"Initial budget set: labelling {cfg.active_data.budget or 0} samples "
+                f"in a {cfg.active_data.sampling} way using seed {cfg.active_data.seed}. "
+            )
+
+    log.info(f"Keeping {cfg.active_data.validation_perc} as validation.")
+    log.info(f"Data statistics: {datamodule.data_statistics()}")
 
     ###################################################
     # ============ STEP 3: model loading ============ #
@@ -108,15 +117,24 @@ def main(cfg: DictConfig) -> None:
     )
     log.info(f"\n{estimator.model_summary}")
 
-    hparams = {
-        **OmegaConf.to_container(cfg.fit),
-        **OmegaConf.to_container(cfg.active_fit),
-        **OmegaConf.to_container(cfg.test),
-    }
     # NOTE: `active_fit_end` is overridden to return only test metrics
-    fit_out = estimator.active_fit(active_datamodule=datamodule, **hparams)
+    hparams = OmegaConf.to_container(cfg.fit)
+    if cfg.replay_path is not None:
+        hparams = {
+             **hparams, 
+             "reinit_model": cfg.active_fit.reinit_model,
+             "limit_pool_batches": cfg.active_fit.limit_pool_batches,
+             "limit_test_batches": cfg.active_fit.limit_test_batches,
+        }
+        fit_out = estimator.replay_active_fit(active_datamodule=datamodule, **hparams)
+    else:
+        hparams = {**hparams, **OmegaConf.to_container(cfg.active_fit)}
+        fit_out = estimator.active_fit(active_datamodule=datamodule, **hparams)
     log.info(f"Labelled dataset size: {datamodule.train_size}")
 
+    # TODO:
+    datamodule.save_labelled_dataset("./")
+    
     ##################################################
     # ============ STEP 6: save outputs ============ #
     ##################################################

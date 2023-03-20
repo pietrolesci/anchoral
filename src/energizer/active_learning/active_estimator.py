@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-import torch
 from lightning.fabric.wrappers import _FabricModule
 from torch.utils.data import DataLoader
 
@@ -50,7 +49,13 @@ class ActiveEstimator(Estimator):
         scheduler: Optional[str] = None,
         scheduler_kwargs: Optional[Dict] = None,
         model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
-        **kwargs,
+        log_interval: Optional[int] = 1,
+        enable_progress_bar: Optional[bool] = True,
+        limit_train_batches: Optional[int] = None,
+        limit_validation_batches: Optional[int] = None,
+        limit_test_batches: Optional[int] = None,
+        limit_pool_batches: Optional[int] = None,
+        validation_interval: Optional[int] = None,
     ) -> Any:
 
         # configure progress tracking
@@ -62,7 +67,8 @@ class ActiveEstimator(Estimator):
             has_test=active_datamodule.has_test_data,
             has_pool=getattr(self, "pool_step", None) is not None,
             has_validation=active_datamodule.has_validation_data() or validation_perc,
-            **kwargs,
+            log_interval=log_interval,
+            enable_progress_bar=enable_progress_bar,
         )
 
         return self.run_active_fit(
@@ -80,7 +86,11 @@ class ActiveEstimator(Estimator):
             validation_sampling=validation_sampling,
             validation_perc=validation_perc,
             model_cache_dir=model_cache_dir,
-            **kwargs,
+            limit_train_batches=limit_train_batches,
+            limit_validation_batches=limit_validation_batches,
+            limit_test_batches=limit_test_batches,
+            limit_pool_batches=limit_pool_batches,
+            validation_interval=validation_interval,
         )
     
     def replay_active_fit(
@@ -95,7 +105,13 @@ class ActiveEstimator(Estimator):
         scheduler: Optional[str] = None,
         scheduler_kwargs: Optional[Dict] = None,
         model_cache_dir: Optional[Union[str, Path]] = ".model_cache",
-        **kwargs,
+        log_interval: Optional[int] = 1,
+        enable_progress_bar: Optional[bool] = True,
+        limit_train_batches: Optional[int] = None,
+        limit_validation_batches: Optional[int] = None,
+        limit_test_batches: Optional[int] = None,
+        limit_pool_batches: Optional[int] = None,
+        validation_interval: Optional[int] = None,
     ) -> Any:
         
         # configure progress tracking
@@ -106,7 +122,9 @@ class ActiveEstimator(Estimator):
             query_size=active_datamodule.query_size,
             has_validation=active_datamodule.has_validation_data(),
             has_test=active_datamodule.has_test_data,
-            has_pool=False
+            has_pool=False,
+            log_interval=log_interval,
+            enable_progress_bar=enable_progress_bar,
         )
 
         return self.run_active_fit(
@@ -120,11 +138,15 @@ class ActiveEstimator(Estimator):
             scheduler=scheduler,
             scheduler_kwargs=scheduler_kwargs,
             reinit_model=reinit_model,
-            query_size=None,
-            validation_sampling=None,
-            validation_perc=None,
             model_cache_dir=model_cache_dir,
-            **kwargs,
+            limit_train_batches=limit_train_batches,
+            limit_validation_batches=limit_validation_batches,
+            limit_test_batches=limit_test_batches,
+            limit_pool_batches=limit_pool_batches,
+            validation_interval=validation_interval,
+            query_size=None,
+            validation_perc=None,
+            validation_sampling=None,
         )
     
 
@@ -144,7 +166,7 @@ class ActiveEstimator(Estimator):
         validation_sampling: Optional[str],
         validation_perc: Optional[float],
         model_cache_dir: Optional[Union[str, Path]],
-        **kwargs,
+        **kwargs
     ) -> Any:
 
         if reinit_model:
@@ -211,13 +233,17 @@ class ActiveEstimator(Estimator):
         optimizer_kwargs: Optional[Dict],
         scheduler: Optional[str],
         scheduler_kwargs: Optional[Dict],
-        query_size: Optional[int] = None,
-        validation_perc: Optional[float] = None,
-        validation_sampling: Optional[str] = None,
-        **kwargs,
+        query_size: Optional[int],
+        validation_perc: Optional[float],
+        validation_sampling: Optional[str],
+        limit_train_batches: Optional[int],
+        limit_validation_batches: Optional[int],
+        limit_test_batches: Optional[int],
+        limit_pool_batches: Optional[int],
+        validation_interval: Optional[int],
     ) -> ROUND_OUTPUT:
 
-        num_round = self.progress_tracker.global_round - 1 if replay else None
+        num_round = self.progress_tracker.global_round if replay else None
         
         self.progress_tracker.setup_round_tracking(
             # fit
@@ -225,15 +251,15 @@ class ActiveEstimator(Estimator):
             min_steps=min_steps,
             num_train_batches=len(active_datamodule.train_loader(num_round) or []),
             num_validation_batches=len(active_datamodule.validation_loader(num_round) or []),
-            limit_train_batches=kwargs.get("limit_train_batches"),
-            limit_validation_batches=kwargs.get("limit_validation_batches"),
-            validation_interval=kwargs.get("validation_interval"),
+            limit_train_batches=limit_train_batches,
+            limit_validation_batches=limit_validation_batches,
+            validation_interval=validation_interval,
             # test
             num_test_batches=len(active_datamodule.test_loader() or []),
-            limit_test_batches=kwargs.get("limit_test_batches"),
+            limit_test_batches=limit_test_batches,
             # pool
             num_pool_batches=len(active_datamodule.pool_loader(num_round) or []) if not replay else None,
-            limit_pool_batches=kwargs.get("limit_pool_batches") if not replay else None,
+            limit_pool_batches=limit_pool_batches if not replay else None,
         )
         
         train_loader = self.configure_dataloader(active_datamodule.train_loader(num_round))
@@ -253,12 +279,12 @@ class ActiveEstimator(Estimator):
         if active_datamodule.has_test_data:
             output.test = self.run_evaluation(model, test_loader, RunningStage.TEST)
 
+        # method to possibly aggregate
+        output = self.round_epoch_end(output, active_datamodule)
+
         # query and label
         if not replay and active_datamodule.pool_size(num_round) > query_size:
             self.run_annotation(model, active_datamodule, query_size, validation_perc, validation_sampling)
-
-        # method to possibly aggregate
-        output = self.round_epoch_end(output, active_datamodule)
 
         return output
     
@@ -267,7 +293,7 @@ class ActiveEstimator(Estimator):
         model: _FabricModule,
         active_datamodule: ActiveDataModule,
         query_size: int,
-        validation_perc: float,
+        validation_perc: Optional[float],
         validation_sampling: Optional[str],
     ) -> None:
         

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-
+from typing import Optional
 from tqdm.auto import tqdm
 
 from src.energizer.enums import RunningStage
@@ -10,6 +10,9 @@ from src.energizer.progress_trackers import ProgressTracker, StageTracker, Track
 class RoundTracker(Tracker):
     current: int = 0
     total: int = 0
+
+    # def reset(self) -> None:
+    #     self.current = -1
 
     def make_progress_bar(self) -> None:
         self.progress_bar = tqdm(
@@ -118,12 +121,13 @@ class ActiveProgressTracker(ProgressTracker):
         has_pool: bool,
         has_test: bool,
         has_validation: bool,
-        **kwargs,
+        log_interval: Optional[int] = 1,
+        enable_progress_bar: Optional[bool] = True,
     ) -> None:
         """Create progress bars."""
 
-        self.log_interval = kwargs.pop("log_interval", 1)
-        self.enable_progress_bar = kwargs.pop("enable_progress_bar", True)
+        self.log_interval = log_interval
+        self.enable_progress_bar = enable_progress_bar
 
         self.round_tracker.reset()
         self.budget_tracker.reset()
@@ -131,6 +135,14 @@ class ActiveProgressTracker(ProgressTracker):
         self.budget_tracker = BudgetTracker(
             max=max_budget, total=initial_budget, current=initial_budget, query_size=query_size
         )
+
+        # # in the first iteration we might not fit since we might start with an
+        # # empty training set. In those cases we want the first testing to start at -1
+        # # however if we are fitting in the first iteration, we want the counter to be at 0
+        # print(self.round_tracker)
+        # if initial_budget > 0:
+        #     self.round_tracker.increment()
+        # print(self.round_tracker)
 
         self.has_validation = has_validation
         self.has_pool = has_pool

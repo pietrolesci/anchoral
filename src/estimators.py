@@ -115,6 +115,8 @@ class SequenceClassificationMixin:
 
     def epoch_end(self, output: List[Dict], metrics: MetricCollection, stage: RunningStage) -> Dict:
         """Aggregate and log metrics after each train/validation/test/pool epoch."""
+        print(self.progress_tracker.current_stage, self.progress_tracker.round_tracker.current)
+        
         data = ld_to_dl(output)
 
         # aggregate instance-level metrics
@@ -145,11 +147,14 @@ class SequenceClassificationMixin:
 
     def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
         """Log round-level statistics."""
+        print("END", self.progress_tracker.current_stage, self.progress_tracker.round_tracker.current, datamodule.data_statistics(self.progress_tracker.global_round))
         logs = {
+            "check": len(datamodule.train_loader().dataset) if datamodule.train_loader() else 0,
             "max_epochs": self.progress_tracker.epoch_tracker.max,
             "num_train_batches": self.progress_tracker.train_tracker.max,
             "num_validation_batches": self.progress_tracker.validation_tracker.max,
             "global_train_steps": self.progress_tracker.step_tracker.total,
+            **datamodule.data_statistics(self.progress_tracker.global_round),
         }
         logs = {f"round_stats/{k}": v for k, v in logs.items()}
         self.log_dict(logs, step=self.progress_tracker.global_round)

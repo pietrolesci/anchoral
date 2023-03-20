@@ -8,7 +8,7 @@
 # and evaluation.
 # In addition, the ActiveDataModule also implements the logic to label data.
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -26,6 +26,23 @@ class ActiveDataModule(DataModule):
     """
     Properties
     """
+
+    def _resolve_round(self, round: Optional[int] = None) -> Union[float, int]:
+        if round is None:
+            return float("Inf")
+        return round - 1
+
+    def _labelled_mask(self, round: Optional[int] = None) -> pd.Series:
+        return (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.LABELLING_ROUND] <= self._resolve_round(round))
+    
+    def _train_mask(self, round: Optional[int] = None) -> pd.Series:
+        return self._labelled_mask(round) & (self._df[SpecialKeys.IS_VALIDATION] == False)
+    
+    def _validation_mask(self, round: Optional[int] = None) -> pd.Series:
+        return self._labelled_mask(round) & (self._df[SpecialKeys.IS_VALIDATION] == True)
+    
+    def _pool_mask(self, round: Optional[int] = None) -> pd.Series:
+        return (self._df[SpecialKeys.IS_LABELLED] == False) | (self._df[SpecialKeys.LABELLING_ROUND] > self._resolve_round(round))
 
     @property
     def test_size(self) -> int:
@@ -53,65 +70,36 @@ class ActiveDataModule(DataModule):
         return (self._df[SpecialKeys.LABELLING_ROUND] == -1).sum()
     
     def train_size(self, round: Optional[int] = None) -> int:
-        round = round or float("Inf")
-        return (
-            (self._df[SpecialKeys.IS_LABELLED] == True) 
-            & (self._df[SpecialKeys.IS_VALIDATION] == False)
-            & (self._df[SpecialKeys.LABELLING_ROUND] < round)
-        ).sum()
+        return self._train_mask(round).sum()
 
     def has_train_data(self, round: Optional[int] = None) -> bool:
-        return self.train_size(round or float("Inf")) > 0
+        return self.train_size(round) > 0
 
     def validation_size(self, round: Optional[int] = None) -> int:
-        round = round or float("Inf")
-        return (
-            (self._df[SpecialKeys.IS_LABELLED] == True) 
-            & (self._df[SpecialKeys.IS_VALIDATION] == True)
-            & (self._df[SpecialKeys.LABELLING_ROUND] < round)
-        ).sum()
+        return self._validation_mask(round).sum()
     
     def has_validation_data(self, round: Optional[int] = None) -> bool:
-        return self.validation_size(round or float("Inf")) > 0
+        return self.validation_size(round) > 0
     
     def total_labelled_size(self, round: Optional[int] = None) -> int:
-        round = round or float("Inf")
-        return self.train_size(round) + self.validation_size(round)
+        return self._labelled_mask(round).sum()
 
     def pool_size(self, round: Optional[int] = None) -> int:
-        round = round or float("Inf")
-        return (
-            (self._df[SpecialKeys.IS_LABELLED] == False) 
-            & (self._df[SpecialKeys.LABELLING_ROUND] < round)
-        ).sum()
+        return self._pool_mask(round).sum()
+    
+    def has_unlabelled_data(self, round: Optional[int] = None) -> bool:
+        return self.pool_size(round) > 0
 
-    def train_indices(self, round: Optional[int] = None) -> np.ndarray:
-        round = round or float("Inf")
-        return self._df.loc[
-            (
-                (self._df[SpecialKeys.IS_LABELLED] == True) 
-                & (self._df[SpecialKeys.IS_VALIDATION] == False) 
-                & (self._df[SpecialKeys.LABELLING_ROUND] < round),
-            ),
-            SpecialKeys.ID,
-        ].values
+    def train_indices(self, round: Optional[int] = None) -> np.ndarray:        
+        return self._df.loc[self._train_mask(round), SpecialKeys.ID].values
+
+    def validation_indices(self, round: Optional[int] = None) -> np.ndarray:        
+        return self._df.loc[self._validation_mask(round), SpecialKeys.ID].values
    
     def pool_indices(self, round: Optional[int] = None) -> np.ndarray:
-        round = round or float("Inf")
-        return self._df.loc[
-            (
-                (self._df[SpecialKeys.IS_LABELLED] == False) 
-                & (self._df[SpecialKeys.LABELLING_ROUND] < round),
-            ),
-            SpecialKeys.ID,
-        ].values
-
-    def has_unlabelled_data(self, round: Optional[int] = None) -> bool:
-        """Checks whether there are data to be labelled."""
-        return self.pool_size(round = round or float("Inf")) > 0
+        return self._df.loc[self._pool_mask(round), SpecialKeys.ID].values
 
     def data_statistics(self, round: Optional[int] = None) -> Dict[str, int]:
-        round = round or float("Inf")
         return {
             "train_size": self.train_size(round),
             "validation_size": self.validation_size(round),
@@ -170,6 +158,22 @@ class ActiveDataModule(DataModule):
     def get_labelled_dataset(self) -> pd.DataFrame:
         cols = [i for i in SpecialKeys] + [InputKeys.TARGET]
         return self._df.loc[self._df[SpecialKeys.IS_LABELLED] == True, cols]
+    
+    def set_labelled_dataset(self, df: pd.DataFrame) -> None:
+        assert df[SpecialKeys.ID].isin(self._df[SpecialKeys.ID]).all()
+
+        to_keep = self._df.loc[~self._df[SpecialKeys.ID].isin(df[SpecialKeys.ID])]
+        
+        cols = [SpecialKeys.IS_LABELLED, SpecialKeys.IS_VALIDATION, SpecialKeys.LABELLING_ROUND]
+        to_update = pd.merge(df[cols + [SpecialKeys.ID]], self._df.drop(columns=cols), on=SpecialKeys.ID, how="inner")
+        assert not to_update[SpecialKeys.ID].isin(to_keep[SpecialKeys.ID]).all()
+
+        new_df = pd.concat([to_keep, to_update])
+        assert new_df.shape == self._df.shape
+        assert df[SpecialKeys.IS_LABELLED].sum() == new_df[SpecialKeys.IS_LABELLED].sum()
+        assert df[SpecialKeys.IS_VALIDATION].sum() == new_df[SpecialKeys.IS_VALIDATION].sum()
+
+        self._df = new_df.copy()
 
     def save_labelled_dataset(self, save_dir: str) -> None:
         save_dir = Path(save_dir)
@@ -203,7 +207,7 @@ class ActiveDataModule(DataModule):
         self._df.loc[mask, SpecialKeys.IS_LABELLED] = True
         self._df.loc[mask, SpecialKeys.LABELLING_ROUND] = round_idx
 
-        if validation_perc is not None:
+        if validation_perc is not None and validation_perc > 0.:
             n_val = round(validation_perc * len(indices)) or 1  # at least add one
             current_df = self._df.loc[mask, [SpecialKeys.ID, InputKeys.TARGET]]
             val_indices = self.sample(
@@ -274,27 +278,17 @@ class ActiveDataModule(DataModule):
     """
 
     def train_loader(self, round: Optional[int] = None) -> Optional[DataLoader]:
-        round = round or float("Inf")
+        round = self._resolve_round(round)
         if self.train_size(round) > 0:
-            df = self._df.loc[
-                (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == False)
-            ]
-            if round is not None:
-                df = df.loc[df[SpecialKeys.LABELLING_ROUND] < round]
-
+            df = self._df.loc[self._train_mask(round)]
             dataset = Dataset.from_pandas(df, preserve_index=False)
 
             return self.get_loader(RunningStage.TRAIN, dataset)
 
     def validation_loader(self, round: Optional[int] = None) -> Optional[DataLoader]:
-        round = round or float("Inf")
+        round = self._resolve_round(round)
         if self.validation_size(round) > 0:
-            df = self._df.loc[
-                (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.IS_VALIDATION] == True)
-            ]
-            if round is not None:
-                df = df.loc[df[SpecialKeys.LABELLING_ROUND] < round]
-
+            df = self._df.loc[self._validation_mask(round)]
             dataset = Dataset.from_pandas(df, preserve_index=False)
             return self.get_loader(RunningStage.VALIDATION, dataset)
 
