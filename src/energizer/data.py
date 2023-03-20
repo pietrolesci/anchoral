@@ -7,7 +7,7 @@
 # That is, the DataModule is only used to feed data to the model during training
 # and evaluation.
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Tuple, Union, Iterable
+from typing import Any, Callable, Iterable, List, Optional, Tuple, Union
 
 import hnswlib as hb
 import numpy as np

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional
+
 from tqdm.auto import tqdm
 
 from src.energizer.enums import RunningStage

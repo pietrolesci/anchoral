@@ -92,7 +92,7 @@ class ActiveEstimator(Estimator):
             limit_pool_batches=limit_pool_batches,
             validation_interval=validation_interval,
         )
-    
+
     def replay_active_fit(
         self,
         active_datamodule: ActiveDataModule,
@@ -113,7 +113,7 @@ class ActiveEstimator(Estimator):
         limit_pool_batches: Optional[int] = None,
         validation_interval: Optional[int] = None,
     ) -> Any:
-        
+
         # configure progress tracking
         self.progress_tracker.setup(
             max_rounds=active_datamodule.last_labelling_round + 1,
@@ -148,7 +148,6 @@ class ActiveEstimator(Estimator):
             validation_perc=None,
             validation_sampling=None,
         )
-    
 
     def run_active_fit(
         self,
@@ -162,11 +161,11 @@ class ActiveEstimator(Estimator):
         scheduler: Optional[str],
         scheduler_kwargs: Optional[Dict],
         reinit_model: bool,
-        query_size: Optional[int] ,
+        query_size: Optional[int],
         validation_sampling: Optional[str],
         validation_perc: Optional[float],
         model_cache_dir: Optional[Union[str, Path]],
-        **kwargs
+        **kwargs,
     ) -> Any:
 
         if reinit_model:
@@ -205,10 +204,12 @@ class ActiveEstimator(Estimator):
 
             # update progress
             self.progress_tracker.increment_round()
-            
+
             # check
             total_budget = active_datamodule.total_labelled_size(self.progress_tracker.global_round)
-            assert self.progress_tracker.budget_tracker.current == total_budget, f"{self.progress_tracker.budget_tracker.current} == {total_budget}"
+            assert (
+                self.progress_tracker.budget_tracker.current == total_budget
+            ), f"{self.progress_tracker.budget_tracker.current} == {total_budget}"
 
         if not self.progress_tracker.global_round > 0:
             raise ValueError("You did not run any labellng. Perhaps change your `max_budget` or `max_rounds`.")
@@ -244,7 +245,7 @@ class ActiveEstimator(Estimator):
     ) -> ROUND_OUTPUT:
 
         num_round = self.progress_tracker.global_round if replay else None
-        
+
         self.progress_tracker.setup_round_tracking(
             # fit
             max_epochs=max_epochs,
@@ -261,7 +262,7 @@ class ActiveEstimator(Estimator):
             num_pool_batches=len(active_datamodule.pool_loader(num_round) or []) if not replay else None,
             limit_pool_batches=limit_pool_batches if not replay else None,
         )
-        
+
         train_loader = self.configure_dataloader(active_datamodule.train_loader(num_round))
         validation_loader = self.configure_dataloader(active_datamodule.validation_loader(num_round))
         test_loader = self.configure_dataloader(active_datamodule.test_loader())
@@ -287,7 +288,7 @@ class ActiveEstimator(Estimator):
             self.run_annotation(model, active_datamodule, query_size, validation_perc, validation_sampling)
 
         return output
-    
+
     def run_annotation(
         self,
         model: _FabricModule,
@@ -296,17 +297,17 @@ class ActiveEstimator(Estimator):
         validation_perc: Optional[float],
         validation_sampling: Optional[str],
     ) -> None:
-        
+
         # query
         self.fabric.call("on_query_start", estimator=self, model=model)
-        
+
         indices = self.run_query(model, active_datamodule, query_size)
-        
+
         self.fabric.call("on_query_end", estimator=self, model=model, output=indices)
 
         # label
         self.fabric.call("on_label_start", estimator=self, datamodule=active_datamodule)
-        
+
         active_datamodule.label(
             indices=indices,
             round_idx=self.progress_tracker.global_round,
@@ -315,7 +316,6 @@ class ActiveEstimator(Estimator):
         )
 
         self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)
-    
 
     """
     Query loop

@@ -33,16 +33,20 @@ class ActiveDataModule(DataModule):
         return round - 1
 
     def _labelled_mask(self, round: Optional[int] = None) -> pd.Series:
-        return (self._df[SpecialKeys.IS_LABELLED] == True) & (self._df[SpecialKeys.LABELLING_ROUND] <= self._resolve_round(round))
-    
+        return (self._df[SpecialKeys.IS_LABELLED] == True) & (
+            self._df[SpecialKeys.LABELLING_ROUND] <= self._resolve_round(round)
+        )
+
     def _train_mask(self, round: Optional[int] = None) -> pd.Series:
         return self._labelled_mask(round) & (self._df[SpecialKeys.IS_VALIDATION] == False)
-    
+
     def _validation_mask(self, round: Optional[int] = None) -> pd.Series:
         return self._labelled_mask(round) & (self._df[SpecialKeys.IS_VALIDATION] == True)
-    
+
     def _pool_mask(self, round: Optional[int] = None) -> pd.Series:
-        return (self._df[SpecialKeys.IS_LABELLED] == False) | (self._df[SpecialKeys.LABELLING_ROUND] > self._resolve_round(round))
+        return (self._df[SpecialKeys.IS_LABELLED] == False) | (
+            self._df[SpecialKeys.LABELLING_ROUND] > self._resolve_round(round)
+        )
 
     @property
     def test_size(self) -> int:
@@ -58,17 +62,17 @@ class ActiveDataModule(DataModule):
     def last_labelling_round(self) -> int:
         """Returns the number of the last active learning step."""
         return int(self._df[SpecialKeys.LABELLING_ROUND].max())
-        
+
     @property
     def query_size(self) -> int:
         last = len(self._df.loc[self._df[SpecialKeys.LABELLING_ROUND] <= self.last_labelling_round])
         prev = len(self._df.loc[self._df[SpecialKeys.LABELLING_ROUND] <= self.last_labelling_round - 1])
         return last - prev
-    
+
     @property
     def initial_budget(self) -> int:
         return (self._df[SpecialKeys.LABELLING_ROUND] == -1).sum()
-    
+
     def train_size(self, round: Optional[int] = None) -> int:
         return self._train_mask(round).sum()
 
@@ -77,25 +81,25 @@ class ActiveDataModule(DataModule):
 
     def validation_size(self, round: Optional[int] = None) -> int:
         return self._validation_mask(round).sum()
-    
+
     def has_validation_data(self, round: Optional[int] = None) -> bool:
         return self.validation_size(round) > 0
-    
+
     def total_labelled_size(self, round: Optional[int] = None) -> int:
         return self._labelled_mask(round).sum()
 
     def pool_size(self, round: Optional[int] = None) -> int:
         return self._pool_mask(round).sum()
-    
+
     def has_unlabelled_data(self, round: Optional[int] = None) -> bool:
         return self.pool_size(round) > 0
 
-    def train_indices(self, round: Optional[int] = None) -> np.ndarray:        
+    def train_indices(self, round: Optional[int] = None) -> np.ndarray:
         return self._df.loc[self._train_mask(round), SpecialKeys.ID].values
 
-    def validation_indices(self, round: Optional[int] = None) -> np.ndarray:        
+    def validation_indices(self, round: Optional[int] = None) -> np.ndarray:
         return self._df.loc[self._validation_mask(round), SpecialKeys.ID].values
-   
+
     def pool_indices(self, round: Optional[int] = None) -> np.ndarray:
         return self._df.loc[self._pool_mask(round), SpecialKeys.ID].values
 
@@ -154,16 +158,16 @@ class ActiveDataModule(DataModule):
 
     def get_pool_embeddings(self) -> np.ndarray:
         return self.index.get_items(self.pool_indices)
-    
+
     def get_labelled_dataset(self) -> pd.DataFrame:
         cols = [i for i in SpecialKeys] + [InputKeys.TARGET]
         return self._df.loc[self._df[SpecialKeys.IS_LABELLED] == True, cols]
-    
+
     def set_labelled_dataset(self, df: pd.DataFrame) -> None:
         assert df[SpecialKeys.ID].isin(self._df[SpecialKeys.ID]).all()
 
         to_keep = self._df.loc[~self._df[SpecialKeys.ID].isin(df[SpecialKeys.ID])]
-        
+
         cols = [SpecialKeys.IS_LABELLED, SpecialKeys.IS_VALIDATION, SpecialKeys.LABELLING_ROUND]
         to_update = pd.merge(df[cols + [SpecialKeys.ID]], self._df.drop(columns=cols), on=SpecialKeys.ID, how="inner")
         assert not to_update[SpecialKeys.ID].isin(to_keep[SpecialKeys.ID]).all()
@@ -178,9 +182,7 @@ class ActiveDataModule(DataModule):
     def save_labelled_dataset(self, save_dir: str) -> None:
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
-        self.get_labelled_dataset().to_parquet(
-            save_dir / "labelled_dataset.parquet", index=False
-        )
+        self.get_labelled_dataset().to_parquet(save_dir / "labelled_dataset.parquet", index=False)
 
     """
     Main methods
@@ -207,7 +209,7 @@ class ActiveDataModule(DataModule):
         self._df.loc[mask, SpecialKeys.IS_LABELLED] = True
         self._df.loc[mask, SpecialKeys.LABELLING_ROUND] = round_idx
 
-        if validation_perc is not None and validation_perc > 0.:
+        if validation_perc is not None and validation_perc > 0.0:
             n_val = round(validation_perc * len(indices)) or 1  # at least add one
             current_df = self._df.loc[mask, [SpecialKeys.ID, InputKeys.TARGET]]
             val_indices = self.sample(

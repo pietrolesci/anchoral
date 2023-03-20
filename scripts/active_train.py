@@ -1,7 +1,8 @@
 import logging
 from pathlib import Path
-import pandas as pd
+
 import hydra
+import pandas as pd
 from datasets import load_from_disk
 from hydra.utils import get_original_cwd, instantiate
 from lightning.fabric import seed_everything
@@ -121,10 +122,10 @@ def main(cfg: DictConfig) -> None:
     hparams = OmegaConf.to_container(cfg.fit)
     if cfg.replay_path is not None:
         hparams = {
-             **hparams, 
-             "reinit_model": cfg.active_fit.reinit_model,
-             "limit_pool_batches": cfg.active_fit.limit_pool_batches,
-             "limit_test_batches": cfg.active_fit.limit_test_batches,
+            **hparams,
+            "reinit_model": cfg.active_fit.reinit_model,
+            "limit_pool_batches": cfg.active_fit.limit_pool_batches,
+            "limit_test_batches": cfg.active_fit.limit_test_batches,
         }
         fit_out = estimator.replay_active_fit(active_datamodule=datamodule, **hparams)
     else:
@@ -134,7 +135,7 @@ def main(cfg: DictConfig) -> None:
 
     # TODO:
     datamodule.save_labelled_dataset("./")
-    
+
     ##################################################
     # ============ STEP 6: save outputs ============ #
     ##################################################
