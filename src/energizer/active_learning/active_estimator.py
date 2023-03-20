@@ -199,7 +199,7 @@ class ActiveEstimator(Estimator):
             )
 
             self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=out)
-            
+
             output.append(out)
 
             # update progress
@@ -281,9 +281,13 @@ class ActiveEstimator(Estimator):
         # test
         if active_datamodule.has_test_data:
             output.test = self.run_evaluation(model, test_loader, RunningStage.TEST)
-        
+
         # query and label
-        if not replay and active_datamodule.pool_size(num_round) > query_size and not self.progress_tracker.is_last_round:
+        if (
+            not replay
+            and active_datamodule.pool_size(num_round) > query_size
+            and not self.progress_tracker.is_last_round
+        ):
             self.run_annotation(model, active_datamodule, query_size, validation_perc, validation_sampling)
 
         if replay:
