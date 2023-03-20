@@ -119,12 +119,7 @@ def main(cfg: DictConfig) -> None:
     }
     OmegaConf.save(cfg, "./hparams.yaml")
 
-    metrics = {
-        # last validation loop of the last validation epoch
-        **{f"hparams/validation_{k}": v for k, v in fit_out[-1].validation[-1][OutputKeys.METRICS].items()},
-        # test epoch
-        **{f"hparams/test_{k}": v for k, v in test_out[OutputKeys.METRICS].items()},
-    }
+    metrics = {f"hparams/test_{k}": v for k, v in test_out[OutputKeys.METRICS].items()}
 
     # log hparams and test results to tensorboard
     if isinstance(estimator.fabric.logger, TensorBoardLogger):

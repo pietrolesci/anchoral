@@ -7,7 +7,7 @@
 # That is, the DataModule is only used to feed data to the model during training
 # and evaluation.
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple, Union, Iterable
 
 import hnswlib as hb
 import numpy as np
@@ -58,13 +58,15 @@ class DataModule(HyperparametersMixin):
         self.seed = seed
         self.replacement = replacement
 
-        self._rng = check_random_state(self.seed)
-
         self.save_hyperparameters(ignore=self._hparams_ignore)
+        self.reset_rng()
         self.setup()
 
     def setup(self) -> None:
         pass
+
+    def reset_rng(self) -> None:
+        self._rng = check_random_state(self.seed)
 
     @property
     def index(self) -> Optional[hb.Index]:
@@ -102,8 +104,8 @@ class DataModule(HyperparametersMixin):
     def get_collate_fn(self, stage: Optional[str] = None) -> Optional[Callable]:
         return None
 
-    def get_loader(self, stage: str) -> Optional[DataLoader]:
-        dataset = getattr(self, f"{stage}_dataset", None)
+    def get_loader(self, stage: str, dataset: Optional[Iterable] = None) -> Optional[DataLoader]:
+        dataset = dataset or getattr(self, f"{stage}_dataset", None)
         if dataset is None:
             return
 

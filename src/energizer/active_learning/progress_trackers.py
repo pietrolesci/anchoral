@@ -40,7 +40,8 @@ class BudgetTracker(Tracker):
         self.total = initial_budget
 
     def max_reached(self) -> bool:
-        return self.max < self.query_size + self.total
+        if self.max is not None:
+            return self.max < self.query_size + self.total
 
 
 @dataclass

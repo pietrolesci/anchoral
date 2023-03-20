@@ -18,10 +18,11 @@ from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
 class RandomStrategy(ActiveEstimator):
     def __init__(self, *args, seed: Optional[int], **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        self.seed = seed
         self.rng = check_random_state(seed)  # reproducibility
 
-    def run_query(self, model, active_datamodule: ActiveDataModule, query_size: int) -> List[int]:
-        pool_indices = active_datamodule.pool_indices
+    def run_query(self, _, active_datamodule: ActiveDataModule, query_size: int) -> List[int]:
+        pool_indices = active_datamodule.pool_indices()
         return self.rng.choice(pool_indices, size=query_size, replace=False).tolist()
 
 

@@ -116,9 +116,11 @@ class ProgressTracker:
         return (self.global_batch + 1) % self.log_interval == 0
 
     def should_validate(self) -> bool:
-        if self.validation_tracker.max is None:
-            return False
-        return self.is_done() or self.train_tracker.current in self.validation_interval
+        return (
+            self.validation_tracker.max is None 
+            and self.has_validation 
+            and (self.is_done() or self.train_tracker.current in self.validation_interval)
+        )
 
     """Outer loops"""
 
@@ -152,7 +154,7 @@ class ProgressTracker:
         self.current_stage = stage
         self.get_stage_tracker().reset()
 
-        if self.enable_progress_bar:
+        if self.get_stage_tracker().progress_bar is not None:
             self.get_stage_tracker().progress_bar.set_postfix_str("")
 
             if self.current_stage == RunningStage.TRAIN:
