@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from lightning.fabric.wrappers import _FabricModule
+from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule
 from torch.utils.data import DataLoader
 
 from src.energizer.active_learning.data import ActiveDataModule
@@ -268,9 +268,17 @@ class ActiveEstimator(Estimator):
             limit_pool_batches=limit_pool_batches if not replay else None,
         )
 
+        # loaders
         train_loader = self.configure_dataloader(active_datamodule.train_loader(num_round))
         validation_loader = self.configure_dataloader(active_datamodule.validation_loader(num_round))
         test_loader = self.configure_dataloader(active_datamodule.test_loader())
+        pool_loader = (
+            self.configure_dataloader(active_datamodule.pool_loader(num_round))
+            if self.progress_tracker.has_pool
+            else None
+        )
+
+        # optimization
         optimizer = self.configure_optimizer(optimizer, learning_rate, optimizer_kwargs)
         scheduler = self.configure_scheduler(scheduler, optimizer, scheduler_kwargs)
         model, optimizer = self.fabric.setup(self.model, optimizer)
@@ -292,8 +300,10 @@ class ActiveEstimator(Estimator):
             and not self.progress_tracker.is_last_round  # last round is used only to test
             and active_datamodule.pool_size(num_round) > query_size  # not enough instances
         ):
-            n_labelled = self.run_annotation(model, active_datamodule, query_size, validation_perc, validation_sampling)
-        
+            n_labelled = self.run_annotation(
+                model, pool_loader, active_datamodule, query_size, validation_perc, validation_sampling
+            )
+
         self.progress_tracker.increment_budget(n_labelled)
 
         return output
@@ -301,6 +311,7 @@ class ActiveEstimator(Estimator):
     def run_annotation(
         self,
         model: _FabricModule,
+        pool_loader: Optional[_FabricDataLoader],
         active_datamodule: ActiveDataModule,
         query_size: int,
         validation_perc: Optional[float],
@@ -310,7 +321,7 @@ class ActiveEstimator(Estimator):
         # query
         self.fabric.call("on_query_start", estimator=self, model=model)
 
-        indices = self.run_query(model, active_datamodule, query_size)
+        indices = self.run_query(model, pool_loader, active_datamodule=active_datamodule, query_size=query_size)
 
         self.fabric.call("on_query_end", estimator=self, model=model, output=indices)
 
@@ -328,18 +339,20 @@ class ActiveEstimator(Estimator):
 
         return n_labelled
 
-    """
-    Query loop
-    """
+    def run_query(
+        self,
+        model: _FabricModule,
+        pool_loader: Optional[_FabricDataLoader],
+        active_datamodule: ActiveDataModule,
+        query_size: int,
+    ) -> List[int]:
+        raise NotImplementedError
 
     def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Any:
         return output
 
     def round_epoch_end(self, output: RoundOutput, datamodule: ActiveDataModule) -> ROUND_OUTPUT:
         return output
-
-    def run_query(self, model: _FabricModule, active_datamodule: ActiveDataModule, query_size: int) -> List[int]:
-        raise NotImplementedError
 
     """
     Methods
