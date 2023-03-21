@@ -13,7 +13,8 @@ from typing import Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
 from datasets import Dataset
-from sklearn.utils import resample
+from numpy.random import RandomState
+from sklearn.utils import check_random_state, resample
 from torch.utils.data import DataLoader
 
 from src.energizer.data import DataModule
@@ -194,6 +195,7 @@ class ActiveDataModule(DataModule):
         round_idx: Optional[int] = None,
         validation_perc: Optional[float] = None,
         validation_sampling: Optional[str] = None,
+        random_state: Optional[RandomState] = None,
     ) -> int:
         """Moves instances at index `pool_idx` from the `pool_fold` to the `train_fold`.
 
@@ -212,11 +214,12 @@ class ActiveDataModule(DataModule):
         if validation_perc is not None and validation_perc > 0.0:
             n_val = round(validation_perc * len(indices)) or 1  # at least add one
             current_df = self._df.loc[mask, [SpecialKeys.ID, InputKeys.TARGET]]
-            val_indices = self.sample(
+            val_indices = sample(
                 indices=current_df[SpecialKeys.ID].tolist(),
                 size=n_val,
                 labels=current_df[InputKeys.TARGET],
                 sampling=validation_sampling,
+                random_state=random_state or self._rng,
             )
             self._df.loc[self._df[SpecialKeys.ID].isin(val_indices), SpecialKeys.IS_VALIDATION] = True
 
@@ -235,47 +238,25 @@ class ActiveDataModule(DataModule):
         seed: Optional[int] = None,
     ) -> None:
         df = self._df.loc[(self._df[SpecialKeys.IS_LABELLED] == False), [SpecialKeys.ID, InputKeys.TARGET]]
+        _rng = check_random_state(seed) if seed else self._rng
+
         # sample from the pool
-        indices = self.sample(
+        indices = sample(
             indices=df[SpecialKeys.ID].tolist(),
             size=budget,
             labels=df[InputKeys.TARGET].tolist(),
             sampling=sampling,
-            seed=seed,
+            random_state=_rng,
         )
 
         # actually label
-        self.label(indices=indices, round_idx=0, validation_perc=validation_perc, validation_sampling=sampling)
-
-    def sample(
-        self,
-        indices: List[int],
-        size: int,
-        labels: Optional[List[int]],
-        sampling: Optional[str] = None,
-        # seed: Optional[int] = None,
-    ) -> List[int]:
-        """Makes sure to seed everything consistently."""
-        # _rng = check_random_state(seed)
-
-        if sampling is None or sampling == "random":
-            sample = self._rng.choice(indices, size=size, replace=False)
-
-        elif sampling == "stratified" and labels is not None:
-            sample = resample(
-                indices,
-                replace=False,
-                stratify=labels,
-                n_samples=size,
-                random_state=self._rng,
-            )
-
-        else:
-            raise ValueError("Only `random` and `stratified` are supported by default.")
-
-        assert len(set(sample)) == size
-
-        return sample
+        self.label(
+            indices=indices,
+            round_idx=0,
+            validation_perc=validation_perc,
+            validation_sampling=sampling,
+            random_state=_rng,
+        )
 
     """
     DataLoaders
@@ -316,3 +297,35 @@ class ActiveDataModule(DataModule):
         )
 
         return self.get_loader(RunningStage.POOL, dataset)
+
+
+"""Utils"""
+
+
+def sample(
+    indices: List[int],
+    size: int,
+    random_state: RandomState,
+    labels: Optional[List[int]],
+    sampling: Optional[str] = None,
+) -> List[int]:
+    """Makes sure to seed everything consistently."""
+
+    if sampling is None or sampling == "random":
+        sample = random_state.choice(indices, size=size, replace=False)
+
+    elif sampling == "stratified" and labels is not None:
+        sample = resample(
+            indices,
+            replace=False,
+            stratify=labels,
+            n_samples=size,
+            random_state=random_state,
+        )
+
+    else:
+        raise ValueError("Only `random` and `stratified` are supported by default.")
+
+    assert len(set(sample)) == size
+
+    return sample
