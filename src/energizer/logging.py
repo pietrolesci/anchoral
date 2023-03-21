@@ -25,7 +25,11 @@ Define the logger
 
 
 def get_logger(
-    name: str, log_level: str = "debug", color: bool = True, stream: bool = True, filepath: Optional[Union[str, Path]] = None
+    name: str,
+    log_level: str = "debug",
+    color: bool = True,
+    stream: bool = True,
+    filepath: Optional[Union[str, Path]] = None,
 ) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.handlers = []

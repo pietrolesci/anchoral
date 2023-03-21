@@ -85,10 +85,10 @@ class ModelCheckpoint(CallbackWithMonitor):
     def epoch_end(self, estimator: Estimator, output: EPOCH_OUTPUT, stage: RunningStage) -> None:
         if stage != self.stage:
             return
-        
+
         current = self._get_monitor(output)
 
-        if self._check_should_save(stage, current):            
+        if self._check_should_save(stage, current):
             # checkpoint
             name = self._get_name(estimator, stage, current)
             estimator.save_state_dict(self.dirpath, name)
@@ -109,7 +109,6 @@ class ModelCheckpoint(CallbackWithMonitor):
                     append=True,
                     append_new_line=False,
                 )
-
 
     def _check_should_save(self, stage: RunningStage, current: Optional[float]) -> bool:
         should_save = False

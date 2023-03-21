@@ -1,4 +1,4 @@
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import torch
@@ -12,7 +12,8 @@ from src.energizer.active_learning.active_estimator import ActiveEstimator
 from src.energizer.active_learning.data import ActiveDataModule
 from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.energizer.registries import SCORING_FUNCTIONS
-from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
+from src.energizer.types import BATCH_OUTPUT, METRIC
+from src.energizer.utilities import ld_to_dl
 
 
 class RandomStrategy(ActiveEstimator):
@@ -29,52 +30,61 @@ class RandomStrategy(ActiveEstimator):
 class UncertaintyBasedStrategy(ActiveEstimator):
     _scoring_fn_registry = SCORING_FUNCTIONS
 
-    def __init__(self, score_fn: Union[str, Callable], *args, **kwargs) -> None:
+    def __init__(self, *args, score_fn: Union[str, Callable], **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.score_fn = score_fn if isinstance(score_fn, Callable) else self._scoring_fn_registry[score_fn]
 
-    def query_loop(self, model: _FabricModule, loader: _FabricDataLoader, query_size: int, **kwargs) -> List[int]:
-        """Note that since this relies on the `run_evaluation` method it automatically calls some hooks.
+    def run_query(
+        self,
+        model: _FabricModule,
+        pool_loader: Optional[_FabricDataLoader],
+        active_datamodule: ActiveDataModule,
+        query_size: int,
+    ) -> List[int]:
+        # calls the evaluation step that we override
+        output = self.run_evaluation(model, pool_loader, RunningStage.POOL)  
 
-        In particular:
-            - configure_metrics
-            - on_pool_epoch_start
-            - on_pool_batch_start
-            - pool_step
-            - on_pool_batch_end
-            - pool_epoch_end
-        """
-        output = self.run_evaluation(None, model, loader, RunningStage.POOL)
-        topk_scores, indices = self._topk(output, query_size)
+        # if user does not aggregate, try to automatically convert List[Dict] to Dict[List]
+        if not isinstance(output, Dict):
+            try:
+                output = ld_to_dl(output)
 
-        # output = QueryOutput(
-        #     topk_scores=topk_scores,
-        #     indices=indices,
-        #     output=output,
-        # )
+                assert (
+                    OutputKeys.SCORES in output
+                ), f"The pool output must include the {OutputKeys.SCORES}. Consider updating `pool_step`."
+                for key in (OutputKeys.SCORES, SpecialKeys.ID):
+                    if isinstance(output[key], List):
+                        output[key] = np.concatenate(output.pop(key))
+            except:
+                raise ValueError(
+                    f"The pool output must be a Dict[List], not {type(output)}, consider updating "
+                    "`pool_step` and `pool_epoch_end`. Automatic conversion failed."
+                )
 
-        return output
+        # compute topk
+        topk_ids = output[OutputKeys.SCORES].argsort()[-query_size:][::-1]
 
+        return output[SpecialKeys.ID][topk_ids].tolist()
+    
     def evaluation_step(
         self,
-        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         model: _FabricModule,
         batch: Any,
         batch_idx: int,
+        loss_fn: Optional[Union[torch.nn.Module, Callable]],
         metrics: Optional[METRIC],
         stage: RunningStage,
-    ) -> BATCH_OUTPUT:
+    ) -> Union[BATCH_OUTPUT, Dict]:
         if stage != RunningStage.POOL:
-            return super().evaluation_step(loss_fn, model, batch, batch_idx, metrics, stage)
+            return super().evaluation_step(model, batch, batch_idx, loss_fn, metrics, stage)
 
         ids = batch[InputKeys.ON_CPU][SpecialKeys.ID]
-
         pool_out = self.pool_step(model, batch, batch_idx, metrics)
 
         if isinstance(pool_out, torch.Tensor):
             pool_out = {OutputKeys.SCORES: pool_out}
         else:
-            assert isinstance(pool_out, dict) and "scores" in pool_out, (
+            assert isinstance(pool_out, dict) and OutputKeys.SCORES in pool_out, (
                 "In `pool_step` you must return a Tensor with the scores per each element in the batch "
                 f"or a Dict with a '{OutputKeys.SCORES}' key and the Tensor of scores as the value."
             )
@@ -82,10 +92,6 @@ class UncertaintyBasedStrategy(ActiveEstimator):
         pool_out[SpecialKeys.ID] = np.array(ids)
 
         return pool_out
-
-    """
-    Methods
-    """
 
     def pool_step(
         self,
@@ -96,28 +102,8 @@ class UncertaintyBasedStrategy(ActiveEstimator):
     ) -> BATCH_OUTPUT:
         raise NotImplementedError
 
-    def pool_epoch_end(self, output: EPOCH_OUTPUT, metrics: Optional[METRIC]) -> EPOCH_OUTPUT:
+    def pool_epoch_end(self, output: List[Dict[str, Any]], metrics: Optional[METRIC]) -> Dict[str, List[Any]]:
         return output
-
-    """
-    Utilities
-    """
-
-    def _topk(self, output: EPOCH_OUTPUT, query_size: int) -> Tuple[np.ndarray, List[int]]:
-        # get all scores
-        # all_scores, all_ids = zip(*((out["scores"], out[SpecialKeys.ID]) for out in output))
-        # all_scores = np.concatenate(all_scores)
-        # all_ids = np.concatenate(all_ids)
-        all_scores = output[OutputKeys.SCORES]
-        all_ids = output[SpecialKeys.ID]
-
-        # compute topk
-        topk_ids = all_scores.argsort()[-query_size:][::-1]
-
-        topk_scores = all_scores[topk_ids]
-        indices = all_ids[topk_ids].tolist()
-
-        return topk_scores, indices
 
 
 """

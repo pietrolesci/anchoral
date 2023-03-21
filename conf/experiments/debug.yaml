@@ -1,8 +1,9 @@
 # @package _global_
 defaults:
   - /callbacks:
-    - model_checkpoint
     - early_stopping
+#     - model_checkpoint
+#     - save_outputs
 
 fit:
   min_steps: null

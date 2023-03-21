@@ -2,13 +2,13 @@ from pathlib import Path
 from typing import Any, Optional, Tuple, Union
 
 import numpy as np
+import srsly
 from lightning.fabric.wrappers import _FabricModule
 
 from src.energizer.callbacks.base import CallbackWithMonitor
 from src.energizer.enums import Interval, RunningStage
 from src.energizer.estimator import Estimator
 from src.energizer.types import BATCH_OUTPUT, EPOCH_OUTPUT, METRIC
-import srsly
 
 
 class EarlyStopping(CallbackWithMonitor):
@@ -81,7 +81,11 @@ class EarlyStopping(CallbackWithMonitor):
         self, estimator: Estimator, output: Union[BATCH_OUTPUT, EPOCH_OUTPUT], stage: RunningStage, interval: Interval
     ) -> None:
         if (self.stage == stage and self.interval == interval) and estimator.progress_tracker.is_fitting:
-            step = estimator.progress_tracker.safe_global_epoch if interval == Interval.EPOCH else estimator.progress_tracker.global_batch
+            step = (
+                estimator.progress_tracker.safe_global_epoch
+                if interval == Interval.EPOCH
+                else estimator.progress_tracker.global_batch
+            )
             should_stop, reason = self._check_stopping_criteria(output, step)
             if should_stop:
                 estimator.progress_tracker.set_stop_training(True)

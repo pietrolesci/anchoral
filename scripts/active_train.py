@@ -48,7 +48,7 @@ def main(cfg: DictConfig) -> None:
         log.critical("!!! DEBUGGING !!!")
 
     if cfg.replay_path is not None:
-        log.critical(f"Replaying the run from {cfg.replay_path}")
+        log.warning(f"Replaying the run from {cfg.replay_path}")
 
     # seed everything
     seed_everything(cfg.seed)
@@ -69,9 +69,9 @@ def main(cfg: DictConfig) -> None:
     )
 
     if cfg.replay_path:
+        # load labelled dataset
         df = pd.read_parquet(cfg.replay_path)
         datamodule.set_labelled_dataset(df)
-
     else:
         # define initial budget
         if cfg.active_data.budget is not None and cfg.active_data.budget > 0:
@@ -123,7 +123,7 @@ def main(cfg: DictConfig) -> None:
     if cfg.replay_path is not None:
         hparams = {
             **hparams,
-            "reinit_model": cfg.active_fit.reinit_model,
+            "reinit_model": cfg.active_fit.reinit_model,  # only need these
             "limit_pool_batches": cfg.active_fit.limit_pool_batches,
             "limit_test_batches": cfg.active_fit.limit_test_batches,
         }
@@ -131,10 +131,8 @@ def main(cfg: DictConfig) -> None:
     else:
         hparams = {**hparams, **OmegaConf.to_container(cfg.active_fit)}
         fit_out = estimator.active_fit(active_datamodule=datamodule, **hparams)
-    log.info(f"Labelled dataset size: {datamodule.train_size}")
 
-    # TODO:
-    datamodule.save_labelled_dataset("./")
+    log.info(f"Labelled dataset size: {datamodule.train_size}")
 
     ##################################################
     # ============ STEP 6: save outputs ============ #
