@@ -6,3 +6,4 @@ model_checkpoint:
   mode: max
   save_last: true
   save_top_k: 1
+  verbose: true

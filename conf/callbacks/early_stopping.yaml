@@ -8,5 +8,4 @@ early_stopping:
   patience: 20
   stopping_threshold: null
   divergence_threshold: null
-  verbose: false
-
+  verbose: true

@@ -131,10 +131,10 @@ class SequenceClassificationMixin:
         aggregated_metrics = move_to_cpu(metrics.compute())  # NOTE: metrics are still on device
         aggregated_loss = round(np.mean(data[OutputKeys.LOSS]), 6)
         logs = {OutputKeys.LOSS: aggregated_loss, **aggregated_metrics}
-
         logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
         self.log_dict(logs, step=self.progress_tracker.safe_global_epoch)
 
+        # if active_fit log with budget on the x-axis
         if stage == RunningStage.TEST and hasattr(self.progress_tracker, "global_budget"):
             logs = {f"{k}_vs_budget": v for k, v in logs.items()}
             self.log_dict(logs, step=self.progress_tracker.global_budget)
@@ -154,9 +154,6 @@ class SequenceClassificationMixin:
         #     datamodule.data_statistics(self.progress_tracker.global_round),
         # )
         logs = {
-            # "check": len(datamodule.train_loader(self.progress_tracker.global_round).dataset)
-            # if datamodule.train_loader(self.progress_tracker.global_round)
-            # else 0,
             "max_epochs": self.progress_tracker.epoch_tracker.max,
             "num_train_batches": self.progress_tracker.train_tracker.max,
             "num_validation_batches": self.progress_tracker.validation_tracker.max,
@@ -190,7 +187,7 @@ class SequenceClassificationMixin:
         if stage == RunningStage.POOL:
             return
         num_classes = self.model.num_labels
-        task = "multiclass"  # if num_classes > 2 else "binary"
+        task = "multiclass"
 
         # NOTE: you are in charge of moving it to the correct device
         return MetricCollection(
@@ -202,15 +199,21 @@ class SequenceClassificationMixin:
                 "f1_micro": F1Score(task, num_classes=num_classes, average="micro"),
                 "precision_micro": Precision(task, num_classes=num_classes, average="micro"),
                 "recall_micro": Recall(task, num_classes=num_classes, average="micro"),
-                # "brier_score": MeanSquaredError(),
             }
         ).to(self.device)
 
 
+# normal training
 class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator):
     ...
 
 
+# random strategy
+class RandomStrategyForSequenceClassification(SequenceClassificationMixin, RandomStrategy):
+    ...
+
+
+# uncertainty strategy
 class UncertaintyBasedStrategyForSequenceClassification(SequenceClassificationMixin, UncertaintyBasedStrategy):
     def pool_step(
         self,
@@ -225,7 +228,3 @@ class UncertaintyBasedStrategyForSequenceClassification(SequenceClassificationMi
         scores = self.score_fn(logits)
 
         return {OutputKeys.SCORES: scores, OutputKeys.LOGITS: logits}
-
-
-class RandomStrategyForSequenceClassification(SequenceClassificationMixin, RandomStrategy):
-    ...

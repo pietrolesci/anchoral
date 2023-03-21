@@ -1,6 +1,8 @@
 import logging
 import os
 import warnings
+from pathlib import Path
+from typing import Optional, Union
 
 import colorlog
 from hydra.core.hydra_config import HydraConfig
@@ -22,34 +24,49 @@ Define the logger
 """
 
 
-def get_logger(name: str, log_level: str = "info") -> logging.Logger:
+def get_logger(
+    name: str, log_level: str = "debug", color: bool = True, stream: bool = True, filepath: Optional[Union[str, Path]] = None
+) -> logging.Logger:
     logger = logging.getLogger(name)
-    formatter = colorlog.ColoredFormatter(
-        "%(log_color)s[%(asctime)s - %(levelname)s%(reset)s] - %(bold_yellow)s%(module)s:%(lineno)s%(reset)s$ %(message_log_color)s%(message)s",  # noqa: E501
-        datefmt="%Y-%m-%dT%H:%M:%S",
-        # reset=True,
-        log_colors={
-            "DEBUG": "bold_cyan",
-            "INFO": "bold_green",
-            "WARNING": "bold_yellow",
-            "ERROR": "bold_red",
-            "CRITICAL": "bold_red,bg_white",
-        },
-        secondary_log_colors={
-            "message": {
-                "DEBUG": "white",
-                "INFO": "white",
-                "WARNING": "white",
-                "ERROR": "white",
-                "CRITICAL": "bg_red,white",
-            }
-        },
-        style="%",
-    )
+    logger.handlers = []
 
-    handler = colorlog.StreamHandler()
+    if color:
+        formatter = colorlog.ColoredFormatter(
+            "%(log_color)s[%(asctime)s - %(levelname)s%(reset)s] - %(bold_yellow)s%(module)s:%(lineno)s%(reset)s$ %(message_log_color)s%(message)s",  # noqa: E501
+            datefmt="%Y-%m-%dT%H:%M:%S",
+            # reset=True,
+            log_colors={
+                "DEBUG": "bold_cyan",
+                "INFO": "bold_green",
+                "WARNING": "bold_yellow",
+                "ERROR": "bold_red",
+                "CRITICAL": "bold_red,bg_white",
+            },
+            secondary_log_colors={
+                "message": {
+                    "DEBUG": "white",
+                    "INFO": "white",
+                    "WARNING": "white",
+                    "ERROR": "white",
+                    "CRITICAL": "bg_red,white",
+                }
+            },
+            style="%",
+        )
+    else:
+        formatter = logging.Formatter(
+            "[%(asctime)s][%(levelname)s][%(levelname)s] - %(message)s",  # noqa: E501
+            datefmt="%Y-%m-%dT%H:%M:%S",
+        )
+    if stream:
+        handler = colorlog.StreamHandler()
+        logger.addHandler(handler)
+    if filepath:
+        handler = logging.FileHandler(Path(filepath))
+        handler.setLevel(LOGGING_LEVELS_MAPPING.get(log_level))
+        logger.addHandler(handler)
+
     handler.setFormatter(formatter)
-    logger.addHandler(handler)
     logger.setLevel(LOGGING_LEVELS_MAPPING.get(log_level))
 
     return logger

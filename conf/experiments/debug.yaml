@@ -1,4 +1,8 @@
 # @package _global_
+defaults:
+  - /callbacks:
+    - model_checkpoint
+    - early_stopping
 
 fit:
   min_steps: null
@@ -11,7 +15,7 @@ active_fit:
 
 active_data:
   budget: null
-  validation_perc: null
+  validation_perc: 0.4
 
 dataset_name: agnews_bert_tiny
 experiment_group: dry_run

@@ -24,6 +24,7 @@ class ModelCheckpoint(CallbackWithMonitor):
         mode: str = "min",
         save_last: Optional[bool] = None,
         save_top_k: int = 1,
+        verbose: bool = False,
     ):
         super().__init__()
         self.dirpath = Path(dirpath)
@@ -32,6 +33,7 @@ class ModelCheckpoint(CallbackWithMonitor):
         self.mode = mode
         self.save_last = save_last
         self.save_top_k = save_top_k
+        self.verbose = verbose
 
     @property
     def best_model_path(self) -> str:
@@ -61,51 +63,53 @@ class ModelCheckpoint(CallbackWithMonitor):
         if self.monitor is not None:
             estimator.load_state_dict(self.dirpath, self.best_model_path)
 
-            logs = {
-                "selected": self.best_model_path,
-                "step": estimator.progress_tracker.safe_global_epoch,
-            }
-            if hasattr(estimator.progress_tracker, "global_round"):
-                logs["round"] = getattr(estimator.progress_tracker, "global_round")
+            if self.verbose:
+                logs = {
+                    "selected": self.best_model_path,
+                    "step": estimator.progress_tracker.safe_global_epoch,
+                }
+                if hasattr(estimator.progress_tracker, "global_round"):
+                    logs["round"] = getattr(estimator.progress_tracker, "global_round")
 
-            srsly.write_jsonl(
-                self.dirpath / "checkpoint_logs.jsonl",
-                [make_dict_json_serializable(logs)],
-                append=True,
-                append_new_line=False,
-            )
-            # print(self.best_model_path)
+                srsly.write_jsonl(
+                    self.dirpath / "checkpoint_logs.jsonl",
+                    [make_dict_json_serializable(logs)],
+                    append=True,
+                    append_new_line=False,
+                )
 
     """
     Helpers
     """
 
     def epoch_end(self, estimator: Estimator, output: EPOCH_OUTPUT, stage: RunningStage) -> None:
+        if stage != self.stage:
+            return
+        
         current = self._get_monitor(output)
-        if self._check_should_save(stage, current):
+
+        if self._check_should_save(stage, current):            
+            # checkpoint
             name = self._get_name(estimator, stage, current)
-
             estimator.save_state_dict(self.dirpath, name)
-
             self._update_best_models(name, current)
 
-            logs = {
-                "stage": stage,
-                "step": estimator.progress_tracker.safe_global_epoch,
-                **self._best_k_models,
-            }
+            # log
+            if self.verbose:
+                logs = {
+                    "stage": stage,
+                    "step": estimator.progress_tracker.safe_global_epoch,
+                    **self._best_k_models,
+                }
+                if hasattr(estimator.progress_tracker, "global_round"):
+                    logs["round"] = getattr(estimator.progress_tracker, "global_round", None)
+                srsly.write_jsonl(
+                    self.dirpath / "checkpoint_logs.jsonl",
+                    [make_dict_json_serializable(logs)],
+                    append=True,
+                    append_new_line=False,
+                )
 
-            if hasattr(estimator.progress_tracker, "global_round"):
-                logs["round"] = getattr(estimator.progress_tracker, "global_round")
-
-            srsly.write_jsonl(
-                self.dirpath / "checkpoint_logs.jsonl",
-                [make_dict_json_serializable(logs)],
-                append=True,
-                append_new_line=False,
-            )
-
-        # print(sorted(list(self._best_k_models.values())))
 
     def _check_should_save(self, stage: RunningStage, current: Optional[float]) -> bool:
         should_save = False
