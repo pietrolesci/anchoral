@@ -198,6 +198,9 @@ class ActiveEstimator(Estimator):
                 **kwargs,
             )
 
+            # method to possibly aggregate
+            output = self.round_epoch_end(output, active_datamodule)
+
             self.fabric.call("on_round_end", estimator=self, datamodule=active_datamodule, output=out)
 
             output.append(out)
@@ -207,7 +210,7 @@ class ActiveEstimator(Estimator):
 
             # check
             if not self.progress_tracker.is_last_round:
-                print(self.progress_tracker.round_tracker)
+                # print(self.progress_tracker.round_tracker)
                 total_budget = active_datamodule.total_labelled_size(self.progress_tracker.global_round)
                 assert (
                     self.progress_tracker.budget_tracker.current == total_budget
@@ -283,18 +286,15 @@ class ActiveEstimator(Estimator):
             output.test = self.run_evaluation(model, test_loader, RunningStage.TEST)
 
         # query and label
+        n_labelled = None
         if (
-            not replay
-            and active_datamodule.pool_size(num_round) > query_size
-            and not self.progress_tracker.is_last_round
+            not replay  # do not annotate in reply
+            and not self.progress_tracker.is_last_round  # last round is used only to test
+            and active_datamodule.pool_size(num_round) > query_size  # not enough instances
         ):
-            self.run_annotation(model, active_datamodule, query_size, validation_perc, validation_sampling)
-
-        if replay:
-            self.progress_tracker.increment_budget()
-
-        # method to possibly aggregate
-        output = self.round_epoch_end(output, active_datamodule)
+            n_labelled = self.run_annotation(model, active_datamodule, query_size, validation_perc, validation_sampling)
+        
+        self.progress_tracker.increment_budget(n_labelled)
 
         return output
 
@@ -305,7 +305,7 @@ class ActiveEstimator(Estimator):
         query_size: int,
         validation_perc: Optional[float],
         validation_sampling: Optional[str],
-    ) -> None:
+    ) -> int:
 
         # query
         self.fabric.call("on_query_start", estimator=self, model=model)
@@ -323,9 +323,10 @@ class ActiveEstimator(Estimator):
             validation_perc=validation_perc,
             validation_sampling=validation_sampling,
         )
-        self.progress_tracker.increment_budget(n_labelled)
 
         self.fabric.call("on_label_end", estimator=self, datamodule=active_datamodule)
+
+        return n_labelled
 
     """
     Query loop

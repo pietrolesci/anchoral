@@ -1,0 +1,17 @@
+# @package _global_
+
+fit:
+  min_steps: null
+  validation_interval: 1
+
+active_fit:
+  max_rounds: 5
+  validation_perc: null
+  query_size: 25
+
+active_data:
+  budget: null
+  validation_perc: null
+
+dataset_name: agnews_bert_tiny
+experiment_group: dry_run
