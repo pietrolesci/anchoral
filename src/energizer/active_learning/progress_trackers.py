@@ -144,14 +144,6 @@ class ActiveProgressTracker(ProgressTracker):
             max=max_budget, total=initial_budget, current=initial_budget, query_size=query_size
         )
 
-        # # in the first iteration we might not fit since we might start with an
-        # # empty training set. In those cases we want the first testing to start at -1
-        # # however if we are fitting in the first iteration, we want the counter to be at 0
-        # print(self.round_tracker)
-        # if initial_budget > 0:
-        #     self.round_tracker.increment()
-        # print(self.round_tracker)
-
         self.has_validation = has_validation
         self.has_pool = has_pool
         self.has_test = has_test
