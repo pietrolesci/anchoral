@@ -117,7 +117,7 @@ class ProgressTracker:
 
     def should_validate(self) -> bool:
         return (
-            self.validation_tracker.max is None
+            self.validation_tracker.max is not None
             and self.has_validation
             and (self.is_done() or self.train_tracker.current in self.validation_interval)
         )
