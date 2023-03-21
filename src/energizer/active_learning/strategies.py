@@ -21,7 +21,7 @@ class RandomStrategy(ActiveEstimator):
         self.seed = seed
         self.rng = check_random_state(seed)  # reproducibility
 
-    def run_query(self, _, active_datamodule: ActiveDataModule, query_size: int) -> List[int]:
+    def run_query(self, *_, active_datamodule: ActiveDataModule, query_size: int) -> List[int]:
         pool_indices = active_datamodule.pool_indices()
         return self.rng.choice(pool_indices, size=query_size, replace=False).tolist()
 
