@@ -1,7 +1,7 @@
 from typing import Any, Callable, List, Optional, Union
 
 import numpy as np
-from lightning.fabric.wrappers import _FabricModule
+from lightning.fabric.wrappers import _FabricModule, _FabricOptimizer
 from torch.optim import Optimizer
 
 from src.energizer.enums import OutputKeys
@@ -83,6 +83,12 @@ class Callback:
     def on_test_batch_end(
         self, estimator: Estimator, model: _FabricModule, output: BATCH_OUTPUT, batch: Any, batch_idx: int
     ) -> None:
+        ...
+
+    def on_before_optimizer_step(self, estimator: Estimator, model: _FabricModule, optimizer: _FabricOptimizer) -> None:
+        ...
+
+    def on_after_optimizer_step(self, estimator: Estimator, model: _FabricModule, optimizer: _FabricOptimizer) -> None:
         ...
 
 

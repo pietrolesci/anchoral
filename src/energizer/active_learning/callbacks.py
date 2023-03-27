@@ -54,13 +54,6 @@ class ActiveLearningCallbackMixin:
 
 
 class Timer(ActiveLearningCallbackMixin, Timer):
-    def _batch_step(self, progress_tracker: ActiveProgressTracker, stage: RunningStage) -> int:
-        return getattr(progress_tracker, f"total_{stage}_batches") + getattr(progress_tracker, f"num_{stage}_batches")
-
-    def _epoch_step(self, progress_tracker: ActiveProgressTracker, stage: RunningStage) -> int:
-        if stage == RunningStage.TEST:
-            return progress_tracker.round_tracker.current
-        return getattr(progress_tracker, "total_epochs") + getattr(progress_tracker, "max_epochs")
 
     def on_active_fit_start(self, *args, **kwargs) -> None:
         self.active_fit_start = time.perf_counter()
