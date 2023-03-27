@@ -12,6 +12,7 @@ fit:
   validation_interval: 5
 
 active_fit:
+  max_rounds: null
   max_budget: 5000
   validation_perc: 0.2
   query_size: 25
@@ -21,4 +22,5 @@ active_data:
   validation_perc: 0.5
 
 dataset_name: agnews_bert_tiny
-experiment_group: debug
+experiment_group: dataset_reuse
+enable_progress_bar: true
