@@ -116,9 +116,6 @@ class SequenceClassificationMixin:
     def epoch_end(self, output: List[Dict], metrics: MetricCollection, stage: RunningStage) -> Dict:
         """Aggregate and log metrics after each train/validation/test/pool epoch."""
         # print(self.progress_tracker.current_stage, self.progress_tracker.round_tracker.current)
-
-        if stage == RunningStage.POOL:
-            return output  # automatic conversion
         
         data = ld_to_dl(output)
 
@@ -126,6 +123,9 @@ class SequenceClassificationMixin:
         logits = np.concatenate(data.pop(OutputKeys.LOGITS))
         unique_ids = np.concatenate(data.pop(SpecialKeys.ID))
         out = {OutputKeys.LOGITS: logits, SpecialKeys.ID: unique_ids}
+        if stage == RunningStage.POOL:
+            out[OutputKeys.SCORES] = np.concatenate(data.pop(OutputKeys.SCORES))
+            return out
 
         # aggregate and log epoch-level metrics
         aggregated_metrics = move_to_cpu(metrics.compute())  # NOTE: metrics are still on device
