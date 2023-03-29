@@ -84,7 +84,7 @@ class DataModule(HyperparametersMixin):
         # because the query itself is returned as the most similar element and we need to remove it
         query_size = query_size + 1 if query_in_set else query_size
 
-        indices, distances = self.index.knn_query(query, query_size)
+        indices, distances = self.index.knn_query(data=query, k=query_size)
 
         if query_in_set:
             # remove the first element retrieved if the query is in the set since it's the element itself

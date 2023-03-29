@@ -21,6 +21,7 @@ from src.energizer.data import DataModule
 from src.energizer.enums import InputKeys, RunningStage, SpecialKeys
 
 
+
 class ActiveDataModule(DataModule):
     _df: pd.DataFrame = None
 
@@ -28,14 +29,9 @@ class ActiveDataModule(DataModule):
     Properties
     """
 
-    def _resolve_round(self, round: Optional[int] = None) -> Union[float, int]:
-        if round is None:
-            return float("Inf")
-        return round
-
     def _labelled_mask(self, round: Optional[int] = None) -> pd.Series:
         return (self._df[SpecialKeys.IS_LABELLED] == True) & (
-            self._df[SpecialKeys.LABELLING_ROUND] <= self._resolve_round(round)
+            self._df[SpecialKeys.LABELLING_ROUND] <= _resolve_round(round)
         )
 
     def _train_mask(self, round: Optional[int] = None) -> pd.Series:
@@ -46,7 +42,7 @@ class ActiveDataModule(DataModule):
 
     def _pool_mask(self, round: Optional[int] = None) -> pd.Series:
         return (self._df[SpecialKeys.IS_LABELLED] == False) | (
-            self._df[SpecialKeys.LABELLING_ROUND] > self._resolve_round(round)
+            self._df[SpecialKeys.LABELLING_ROUND] > _resolve_round(round)
         )
 
     @property
@@ -137,29 +133,6 @@ class ActiveDataModule(DataModule):
         # check consistency of the index
         assert self._df[SpecialKeys.ID].nunique() == len(self._df)
 
-    def mask_train_from_index(self) -> None:
-        if self.index is None:
-            return
-        train_ids = self.train_indices
-        for i in train_ids:
-            self.index.mark_deleted(i)
-
-    def unmask_train_from_index(self) -> None:
-        if self.index is None:
-            return
-        train_ids = self.train_indices
-        for i in train_ids:
-            self.index.unmark_deleted(i)
-
-    def get_train_embeddings(self) -> np.ndarray:
-        self.unmask_train_from_index()
-        embeddings = self.index.get_items(self.train_indices)
-        self.mask_train_from_index()
-        return embeddings
-
-    def get_pool_embeddings(self) -> np.ndarray:
-        return self.index.get_items(self.pool_indices)
-
     def get_labelled_dataset(self) -> pd.DataFrame:
         cols = [i for i in SpecialKeys] + [InputKeys.TARGET]
         return self._df.loc[self._df[SpecialKeys.IS_LABELLED] == True, cols]
@@ -186,13 +159,45 @@ class ActiveDataModule(DataModule):
         self.get_labelled_dataset().to_parquet(save_dir / "labelled_dataset.parquet", index=False)
 
     """
+    Index
+    """
+
+    def _mask_train_from_index(self, round: Optional[int] = None) -> None:
+        if self.index is not None:
+            train_ids = self.train_indices(round)
+            for i in train_ids:
+                self.index.mark_deleted(i)
+
+    def _unmask_train_from_index(self, round: Optional[int] = None) -> None:
+        if self.index is not None:
+            train_ids = self.train_indices(round)
+            for i in train_ids:
+                self.index.unmark_deleted(i)
+
+    def get_train_embeddings(self, round: Optional[int] = None) -> np.ndarray:
+        self._unmask_train_from_index(round)
+        embeddings = self.index.get_items(self.train_indices(round))
+        self._mask_train_from_index(round)
+        return np.array(embeddings)
+    
+    def get_embeddings(self, indices: Optional[List[int]] = None) -> np.ndarray:
+        indices = indices or np.array(self.index.get_ids_list())
+        self._unmask_train_from_index()
+        embeddings = self.index.get_items(indices)
+        self._mask_train_from_index()
+        return np.array(embeddings)
+
+    def get_pool_embeddings(self, round: Optional[int] = None) -> np.ndarray:
+        return np.array(self.index.get_items(self.pool_indices(round)))
+    
+    """
     Main methods
     """
 
     def label(
         self,
         indices: List[int],
-        round_idx: Optional[int] = None,
+        round_idx: int,
         validation_perc: Optional[float] = None,
         validation_sampling: Optional[str] = None,
         random_state: Optional[RandomState] = None,
@@ -263,7 +268,7 @@ class ActiveDataModule(DataModule):
     """
 
     def train_loader(self, round: Optional[int] = None) -> Optional[DataLoader]:
-        round = self._resolve_round(round)
+        round = _resolve_round(round)
         if self.train_size(round) > 0:
             df = self._df.loc[self._train_mask(round)]
             dataset = Dataset.from_pandas(df, preserve_index=False)
@@ -271,7 +276,7 @@ class ActiveDataModule(DataModule):
             return self.get_loader(RunningStage.TRAIN, dataset)
 
     def validation_loader(self, round: Optional[int] = None) -> Optional[DataLoader]:
-        round = self._resolve_round(round)
+        round = _resolve_round(round)
         if self.validation_size(round) > 0:
             df = self._df.loc[self._validation_mask(round)]
             dataset = Dataset.from_pandas(df, preserve_index=False)
@@ -329,3 +334,9 @@ def sample(
     assert len(set(sample)) == size
 
     return sample
+
+
+def _resolve_round(round: Optional[int] = None) -> Union[float, int]:
+    if round is None:
+        return float("Inf")
+    return round
