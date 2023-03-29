@@ -270,11 +270,6 @@ class ActiveEstimator(Estimator):
         train_loader = self.configure_dataloader(active_datamodule.train_loader(num_round))
         validation_loader = self.configure_dataloader(active_datamodule.validation_loader(num_round))
         test_loader = self.configure_dataloader(active_datamodule.test_loader())
-        pool_loader = (
-            self.configure_dataloader(active_datamodule.pool_loader(num_round))
-            if self.progress_tracker.has_pool
-            else None
-        )
 
         # optimization
         optimizer = self.configure_optimizer(optimizer, learning_rate, optimizer_kwargs)
@@ -292,24 +287,22 @@ class ActiveEstimator(Estimator):
             output.test = self.run_evaluation(model, test_loader, RunningStage.TEST)
 
         # query and label
-        n_labelled = None
         if (
             not replay  # do not annotate in replay
             and not self.progress_tracker.is_last_round  # last round is used only to test
             and active_datamodule.pool_size(num_round) > query_size  # enough instances
         ):
             n_labelled = self.run_annotation(
-                model, pool_loader, active_datamodule, query_size, validation_perc, validation_sampling
+                model, active_datamodule, query_size, validation_perc, validation_sampling
             )
 
-        self.progress_tracker.increment_budget(n_labelled)
+            self.progress_tracker.increment_budget(n_labelled)
 
         return output
 
     def run_annotation(
         self,
         model: _FabricModule,
-        pool_loader: Optional[_FabricDataLoader],
         active_datamodule: ActiveDataModule,
         query_size: int,
         validation_perc: Optional[float],
@@ -319,7 +312,7 @@ class ActiveEstimator(Estimator):
         # query
         self.fabric.call("on_query_start", estimator=self, model=model)
 
-        indices = self.run_query(model, pool_loader, active_datamodule=active_datamodule, query_size=query_size)
+        indices = self.run_query(model, active_datamodule=active_datamodule, query_size=query_size)
         if self.progress_tracker.budget_tracker.remaining_budget < query_size:
             indices = indices[:self.progress_tracker.budget_tracker.remaining_budget]
 
@@ -339,13 +332,7 @@ class ActiveEstimator(Estimator):
 
         return n_labelled
 
-    def run_query(
-        self,
-        model: _FabricModule,
-        pool_loader: Optional[_FabricDataLoader],
-        active_datamodule: ActiveDataModule,
-        query_size: int,
-    ) -> List[int]:
+    def run_query(self, model: _FabricModule, active_datamodule: ActiveDataModule, query_size: int) -> List[int]:
         raise NotImplementedError
 
     def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Any:
