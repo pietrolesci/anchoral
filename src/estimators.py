@@ -12,7 +12,7 @@ from transformers import AutoModelForSequenceClassification
 
 from src.energizer.active_learning.active_estimator import RoundOutput
 from src.energizer.active_learning.data import ActiveDataModule
-from src.energizer.active_learning.strategies import RandomStrategy, UncertaintyBasedStrategy
+from src.energizer.active_learning.strategies import RandomStrategy, UncertaintyBasedStrategy, SimilaritySearchStrategy, SimilaritySearchStrategyWithUncertainty
 from src.energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from src.energizer.estimator import Estimator
 from src.energizer.types import ROUND_OUTPUT, Dict
@@ -22,7 +22,12 @@ from src.energizer.utilities import ld_to_dl, move_to_cpu
 def resolve_strategy_name(s: str) -> str:
     if "UncertaintyBasedStrategyForSequenceClassification" in s["_target_"]:
         return s["score_fn"]
-    return "random"
+    elif "RandomStrategyForSequenceClassification" in s["_target_"]:
+        return "random"
+    elif "SimilaritySearchStrategyForSequenceClassification" in s["_target_"]:
+        return "dissimilarity" if s["inverse"] else "similarity"
+    elif "SimilaritySearchStrategyWithUncertaintyForSequenceClassification" in s["_target_"]:
+        return "similarity_with_entropy"
 
 
 class SequenceClassificationMixin:
@@ -212,9 +217,28 @@ class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator)
 class RandomStrategyForSequenceClassification(SequenceClassificationMixin, RandomStrategy):
     ...
 
+# similarity strategy
+class SimilaritySearchStrategyForSequenceClassification(SequenceClassificationMixin, SimilaritySearchStrategy):
+    ...
 
 # uncertainty strategy
 class UncertaintyBasedStrategyForSequenceClassification(SequenceClassificationMixin, UncertaintyBasedStrategy):
+    def pool_step(
+        self,
+        model: _FabricModule,
+        batch: Dict,
+        batch_idx: int,
+        metrics: Optional[MetricCollection] = None,
+    ) -> Dict:
+        _ = batch.pop(InputKeys.ON_CPU)  # this is already handled in the `evaluation_step`
+
+        logits = model(**batch).logits
+        scores = self.score_fn(logits)
+
+        return {OutputKeys.SCORES: scores, OutputKeys.LOGITS: logits}
+
+# similarity with uncertainty
+class SimilaritySearchStrategyWithUncertaintyForSequenceClassification(SequenceClassificationMixin, SimilaritySearchStrategyWithUncertainty):
     def pool_step(
         self,
         model: _FabricModule,

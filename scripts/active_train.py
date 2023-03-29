@@ -67,6 +67,10 @@ def main(cfg: DictConfig) -> None:
     datamodule = ClassificationActiveDataModule.from_dataset_dict(
         dataset_dict, tokenizer=tokenizer, **OmegaConf.to_container(cfg.data)
     )
+    
+    # load index
+    if "Similarity" in cfg.strategy._target_:
+        datamodule.load_index(metadata["hnsw_index_path"], embedding_dim=metadata["embedding_dim"])
 
     if cfg.replay_path:
         # load labelled dataset
