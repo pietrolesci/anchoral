@@ -1,11 +1,5 @@
 defaults:
   - _self_
-  # - callbacks:
-  #   # - pytorch_profiler
-  #   - save_outputs
-  #   - timer
-  #   - model_checkpoint
-  #   - early_stopping
   - loggers:
     - tensorboard
   - optional strategy: null
