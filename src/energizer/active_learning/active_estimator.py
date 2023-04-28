@@ -120,7 +120,7 @@ class ActiveEstimator(Estimator):
             max_rounds=active_datamodule.last_labelling_round,
             max_budget=None,
             initial_budget=active_datamodule.initial_budget,
-            query_size=active_datamodule.query_size,
+            query_size=active_datamodule.query_size(1),
             has_validation=active_datamodule.has_validation_data(),
             has_test=active_datamodule.has_test_data,
             has_pool=False,
@@ -295,8 +295,10 @@ class ActiveEstimator(Estimator):
             n_labelled = self.run_annotation(
                 model, active_datamodule, query_size, validation_perc, validation_sampling
             )
+        elif replay:
+            n_labelled = active_datamodule.query_size(num_round)
 
-            self.progress_tracker.increment_budget(n_labelled)
+        self.progress_tracker.increment_budget(n_labelled)
 
         return output
 

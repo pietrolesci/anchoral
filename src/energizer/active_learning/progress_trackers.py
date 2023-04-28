@@ -143,10 +143,10 @@ class ActiveProgressTracker(ProgressTracker):
 
         self.round_tracker.reset()
         self.budget_tracker.reset()
-        
-        assert max_budget - initial_budget > 0, ValueError("`max_budget` must be bigger than `initial_budget`.")
-        if (max_budget - initial_budget) > 0:
-            max_rounds = min(max_rounds, math.ceil((max_budget - initial_budget) / query_size))        
+        if max_budget is not None:
+            assert max_budget - initial_budget > 0, ValueError("`max_budget` must be bigger than `initial_budget`.")
+            if (max_budget - initial_budget) > 0:
+                max_rounds = min(max_rounds, math.ceil((max_budget - initial_budget) / query_size))        
         self.round_tracker.max = max_rounds + 1
         self.budget_tracker = BudgetTracker(
             max=max_budget, total=initial_budget, current=initial_budget, query_size=query_size

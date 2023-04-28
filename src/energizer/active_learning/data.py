@@ -61,14 +61,14 @@ class ActiveDataModule(DataModule):
         return int(self._df[SpecialKeys.LABELLING_ROUND].max())
 
     @property
-    def query_size(self) -> int:
-        last = len(self._df.loc[self._df[SpecialKeys.LABELLING_ROUND] <= self.last_labelling_round])
-        prev = len(self._df.loc[self._df[SpecialKeys.LABELLING_ROUND] <= self.last_labelling_round - 1])
-        return last - prev
-
-    @property
     def initial_budget(self) -> int:
         return (self._df[SpecialKeys.LABELLING_ROUND] == 0).sum()
+
+    def query_size(self, round: Optional[int] = None) -> int:
+        round = min(_resolve_round(round), self.last_labelling_round)
+        last = len(self._df.loc[self._df[SpecialKeys.LABELLING_ROUND] <= round])
+        prev = len(self._df.loc[self._df[SpecialKeys.LABELLING_ROUND] <= round - 1])
+        return last - prev
 
     def train_size(self, round: Optional[int] = None) -> int:
         return self._train_mask(round).sum()

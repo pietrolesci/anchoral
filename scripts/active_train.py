@@ -136,8 +136,6 @@ def main(cfg: DictConfig) -> None:
         hparams = {**hparams, **OmegaConf.to_container(cfg.active_fit)}
         fit_out = estimator.active_fit(active_datamodule=datamodule, **hparams)
 
-    log.info(f"Labelled dataset size: {datamodule.train_size}")
-
     ##################################################
     # ============ STEP 6: save outputs ============ #
     ##################################################
