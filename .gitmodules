@@ -1,0 +1,4 @@
+[submodule "energizer"]
+	path = energizer
+	url = https://github.com/pietrolesci/energizer.git
+	branch = fabric

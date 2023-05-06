@@ -1,0 +1,4 @@
+grad_norm:
+  _target_: energizer.callbacks.grad_norm.GradNorm
+  norm_type: 2
+  group_separator: '/'

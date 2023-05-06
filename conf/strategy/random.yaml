@@ -1,2 +1,2 @@
-_target_: src.estimators.RandomStrategyForSequenceClassification
+_target_: src.estimators.RandomStrategy
 seed: 42

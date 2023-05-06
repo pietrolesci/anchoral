@@ -1,2 +1,2 @@
-_target_: src.estimators.UncertaintyBasedStrategyForSequenceClassification
-score_fn: entropy
+_target_: src.estimators.UncertaintyBasedStrategy
+score_fn: least_confidence

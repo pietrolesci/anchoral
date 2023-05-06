@@ -1,11 +1,5 @@
 defaults:
   - _self_
-  # - callbacks:
-  #   # - pytorch_profiler
-  #   - save_outputs
-  #   - timer
-  #   - model_checkpoint
-  #   - early_stopping
   - loggers:
     - tensorboard
   - optional strategy: null
@@ -103,3 +97,4 @@ train_val_split: null
 dataset_name: '???'
 seed: 42
 experiment_group: dry_run
+replay_path: null
