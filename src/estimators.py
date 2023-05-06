@@ -4,6 +4,7 @@ import numpy as np
 from lightning.fabric.wrappers import _FabricModule
 from torchmetrics import MetricCollection
 from torchmetrics.classification import AUROC, Accuracy, AveragePrecision, F1Score, Precision, Recall
+from torchmetrics.aggregation import MeanMetric
 
 from energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from energizer.estimators import Estimator as _Estimator
@@ -17,25 +18,33 @@ class SequenceClassificationMixin:
     def configure_metrics(self, *_) -> MetricCollection:
         num_classes = self.model.num_labels  # type: ignore
         task = "multiclass"
-        return MetricCollection(
+        metrics = MetricCollection(
             {
                 "accuracy_macro": Accuracy(task, num_classes=num_classes, average="macro"),
                 "f1_macro": F1Score(task, num_classes=num_classes, average="macro"),
                 "precision_macro": Precision(task, num_classes=num_classes, average="macro"),
                 "recall_macro": Recall(task, num_classes=num_classes, average="macro"),
-                "average_precision_macro": AveragePrecision(task, num_classes=num_classes, average="macro"),
-                "auroc": AUROC(task, num_classes=num_classes, average="macro"),
+                # "average_precision_macro": AveragePrecision(task, num_classes=num_classes, average="macro", warn_only=True),
+                # "auroc": AUROC(task, num_classes=num_classes, average="macro", warn_only=True),
                 "accuracy_micro": Accuracy(task, num_classes=num_classes, average="micro"),
                 "f1_micro": F1Score(task, num_classes=num_classes, average="micro"),
                 "precision_micro": Precision(task, num_classes=num_classes, average="micro"),
                 "recall_micro": Recall(task, num_classes=num_classes, average="micro"),
             }
-        ).to(
-            self.device
-        )  # type: ignore
+        )
+        return metrics.to(self.device)  # type: ignore
 
-    def step(self, model: _FabricModule, batch: Dict, metrics: MetricCollection, stage: RunningStage) -> Dict:
-        ids = batch.pop(InputKeys.ON_CPU, None)
+    def step(
+        self,
+        stage: RunningStage,
+        model: _FabricModule,
+        batch: Dict,
+        batch_idx: int,
+        loss_fn,
+        metrics: MetricCollection,
+    ) -> Dict:
+        
+        on_cpu = batch.pop(InputKeys.ON_CPU, None)
         out = model(**batch)
         out_metrics = metrics(out.logits, batch[InputKeys.TARGET])
 
@@ -43,22 +52,25 @@ class SequenceClassificationMixin:
             logs = {OutputKeys.LOSS: out.loss, **out_metrics}
             self.log_dict({f"{stage}/{k}": v for k, v in logs.items()}, step=self.progress_tracker.global_batch)  # type: ignore
 
-        return {
+        output = {
             OutputKeys.LOSS: out.loss,
             OutputKeys.LOGITS: out.logits,
-            OutputKeys.METRICS: out_metrics,
-            SpecialKeys.ID: ids,
         }
+        if on_cpu is not None and SpecialKeys.ID in on_cpu:
+            output[SpecialKeys.ID] = on_cpu[SpecialKeys.ID]  # type: ignore
+        return output
 
-    def epoch_end(self, output: List[Dict], metrics: MetricCollection, stage: RunningStage) -> Dict:
+    def epoch_end(self, stage: RunningStage, output: List[Dict], metrics: MetricCollection) -> Dict:
         """Aggregate and log metrics after each train/validation/test/pool epoch."""
 
         data = ld_to_dl(output)
 
         # aggregate instance-level metrics
-        logits = np.concatenate(data.pop(OutputKeys.LOGITS))
-        unique_ids = np.concatenate(data.pop(SpecialKeys.ID))
-        out = {OutputKeys.LOGITS: logits, SpecialKeys.ID: unique_ids}
+        out = {OutputKeys.LOGITS: np.concatenate(data.pop(OutputKeys.LOGITS))}
+        
+        if SpecialKeys.ID in data:
+            out[SpecialKeys.ID] = np.concatenate(data.pop(SpecialKeys.ID))  # type: ignore
+        
         if stage == RunningStage.POOL:
             out[OutputKeys.SCORES] = np.concatenate(data.pop(OutputKeys.SCORES))
             return out
@@ -77,18 +89,18 @@ class SequenceClassificationMixin:
 
         return {OutputKeys.LOSS: aggregated_loss, **out}
 
-    def round_epoch_end(self, output: Dict, *args, **kwargs) -> ROUND_OUTPUT:
-        """Log round-level statistics."""
-        logs = {
-            "max_epochs": self.progress_tracker.epoch_tracker.max,  # type: ignore
-            "num_train_batches": self.progress_tracker.train_tracker.max,  # type: ignore
-            "num_validation_batches": self.progress_tracker.validation_tracker.max,  # type: ignore
-            "global_train_steps": self.progress_tracker.step_tracker.total,  # type: ignore
-        }
-        logs = {f"round_stats/{k}": v for k, v in logs.items()}
-        self.log_dict(logs, step=self.progress_tracker.global_round)  # type: ignore
+    # def round_epoch_end(self, output: Dict, *args, **kwargs) -> ROUND_OUTPUT:
+    #     """Log round-level statistics."""
+    #     logs = {
+    #         "max_epochs": self.progress_tracker.epoch_tracker.max,  # type: ignore
+    #         "num_train_batches": self.progress_tracker.train_tracker.max,  # type: ignore
+    #         "num_validation_batches": self.progress_tracker.validation_tracker.max,  # type: ignore
+    #         "global_train_steps": self.progress_tracker.step_tracker.total,  # type: ignore
+    #     }
+    #     logs = {f"round_stats/{k}": v for k, v in logs.items()}
+    #     self.log_dict(logs, step=self.progress_tracker.global_round)  # type: ignore
 
-        return output
+    #     return output
 
     def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:
         """Log metrics at the end of training."""

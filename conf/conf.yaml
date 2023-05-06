@@ -25,7 +25,7 @@ hydra:
     dir: ./outputs/multirun/${experiment_group}/${dataset_name}_${now:%Y-%m-%d}T${now:%H-%M-%S}
     subdir: ${hydra.job.override_dirname}
 
-strategy: null
+strategy: '???'
 
 estimator:
   accelerator: gpu
@@ -35,12 +35,8 @@ estimator:
 callbacks: null
 loggers: null
 
-model:
-  name_or_path: null
-  seed: ${seed}
-
 data:
-  batch_size: 64
+  batch_size: 32
   eval_batch_size: 256
   num_workers: 32
   pin_memory: true
@@ -49,7 +45,7 @@ data:
   shuffle: true
   seed: ${seed}
   replacement: false
-  max_source_length: 512
+  max_length: 512
 
 # this is incremental to `data` above
 active_data:
@@ -64,13 +60,13 @@ fit:
   learning_rate: 0.0002
   optimizer: adamw
   optimizer_kwargs: null
-  scheduler: constant_schedule
+  scheduler: null
   scheduler_kwargs: null
   log_interval: ${log_interval}
   enable_progress_bar: ${enable_progress_bar}
+  num_validation_per_epoch: 1
   limit_train_batches: ${limit_batches}
   limit_validation_batches: ${limit_batches}
-  validation_interval: 1
 
 # this is incremental to `fit` above
 active_fit:
@@ -97,4 +93,3 @@ train_val_split: null
 dataset_name: '???'
 seed: 42
 experiment_group: dry_run
-replay_path: null
