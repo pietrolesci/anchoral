@@ -1,6 +1,6 @@
 pytorch_profiler:
-  _target_: src.energizer.callbacks.pytorch_profiler.PytorchTensorboardProfiler
-  dirpath: tensorboard_logs
+  _target_: energizer.callbacks.pytorch_profiler.PytorchTensorboardProfiler
+  dirpath: tb_logs
   wait: 1
   warmup: 1
   active: 1

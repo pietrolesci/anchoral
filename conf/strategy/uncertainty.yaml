@@ -1,0 +1,2 @@
+_target_: src.estimators.UncertaintyBasedStrategy
+score_fn: least_confidence

@@ -2,4 +2,4 @@ tensorboard:
   _target_: lightning.fabric.loggers.TensorBoardLogger
   root_dir: ./
   name: tb_logs
-  version: v0
+  version: null

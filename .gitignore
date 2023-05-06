@@ -136,3 +136,6 @@ outputs
 tests
 .DS_Store
 .model_cache
+
+examples/*/
+examples/*.json*
