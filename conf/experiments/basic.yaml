@@ -1,4 +1,12 @@
 # @package _global_
+defaults:
+  - /callbacks:
+    - early_stopping
+    - model_checkpoint
+    - timer
+    - grad_norm
+    # - save_outputs
+
 hydra:
   sweep:
     dir: ./outputs/multirun/${experiment_group}/${dataset_name}/${get_name:${strategy}}/reinit=${active_fit.reinit_model}
@@ -6,16 +14,24 @@ hydra:
 
 fit:
   min_steps: 100
-  validation_interval: 5
 
 active_fit:
   max_rounds: 100
-  validation_perc: 0.4
-  query_size: 25
+  query_size: 50
+  validation_perc: null
 
 active_data:
   budget: 100
-  validation_perc: 0.5
 
-dataset_name: imdb_bert_tiny
+callbacks:
+  model_checkpoint:
+    stage: train
+    mode: max
+    monitor: f1_macro
+  early_stopping:
+    stage: train
+    mode: max
+    monitor: f1_macro
+
+dataset_name: agnews_binarised_bert-tiny
 experiment_group: dry_run

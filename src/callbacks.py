@@ -35,7 +35,9 @@ class SaveOutputs(Callback):
         # instance-level output
         if self.instance_level:
             data = pd.DataFrame(columns=[f"logit_{i}" for i in range(model.num_labels)], data=output[OutputKeys.LOGITS])
-            data[SpecialKeys.ID] = output[SpecialKeys.ID]
+            if SpecialKeys.ID in output:  # FIXME: enforce the ID column in every data store
+                data[SpecialKeys.ID] = output[SpecialKeys.ID]
+
             data[Interval.EPOCH] = estimator.progress_tracker.safe_global_epoch
 
             # if we are active learning

@@ -7,8 +7,9 @@ from lightning.fabric import seed_everything
 from lightning.fabric.loggers import TensorBoardLogger
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForSequenceClassification
-from energizer.datastores import PandasDataStoreForSequenceClassification
 from transformers.utils.logging import set_verbosity_warning
+
+from energizer.datastores import PandasDataStoreForSequenceClassification
 
 # set logging
 set_verbosity_warning()
@@ -37,11 +38,15 @@ def main(cfg: DictConfig) -> None:
     # load data
     data_path = Path(get_original_cwd()) / "data" / "prepared" / cfg.dataset_name
     datastore = PandasDataStoreForSequenceClassification.load(data_path)
-    
+
     # define initial budget
     if cfg.active_data.budget is not None and cfg.active_data.budget > 0:
-        ids = datastore.sample_from_pool(size=cfg.active_data.budget, mode="stratified", random_state=cfg.active_data.seed)
-        datastore.label(ids, -1, validation_perc=cfg.active_data.validation_perc, validation_sampling=cfg.active_data.sampling)
+        ids = datastore.sample_from_pool(
+            size=cfg.active_data.budget, mode="stratified", random_state=cfg.active_data.seed
+        )
+        datastore.label(
+            ids, -1, validation_perc=cfg.active_data.validation_perc, validation_sampling=cfg.active_data.sampling
+        )
         log.info(
             f"Initial budget set: labelling {cfg.active_data.budget or 0} samples "
             f"in a {cfg.active_data.sampling} way using seed {cfg.active_data.seed}. "
@@ -57,7 +62,7 @@ def main(cfg: DictConfig) -> None:
     # seed everything
     seed_everything(cfg.seed)
     log.info(f"Seed enabled: {cfg.seed}")
-    
+
     # load model using data properties
     model = AutoModelForSequenceClassification.from_pretrained(
         datastore.tokenizer.name_or_path,  # type: ignore
