@@ -3,6 +3,7 @@ defaults:
   - loggers:
     - tensorboard
   - optional strategy: null
+  - optional dataset: null
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
 
@@ -10,7 +11,7 @@ hydra:
   job:
     chdir: true
   run:
-    dir: ./outputs/${experiment_group}/${dataset_name}_${now:%Y-%m-%d}T${now:%H-%M-%S}
+    dir: ./outputs/${experiment_group}/${dataset.short_name}/${get_name_strategy:${strategy}}_${now:%Y-%m-%d}T${now:%H-%M-%S}
   job_logging:
     formatters:
       colorlog:
@@ -22,10 +23,8 @@ hydra:
           ERROR: red
           CRITICAL: bold_red
   sweep:
-    dir: ./outputs/multirun/${experiment_group}/${dataset_name}_${now:%Y-%m-%d}T${now:%H-%M-%S}
-    subdir: ${hydra.job.override_dirname}
-
-strategy: '???'
+    dir: ./outputs/multirun/${experiment_group}/${dataset.short_name}/
+    subdir: ${get_name_strategy:strategy}_${now:%Y-%m-%d}T${now:%H-%M-%S}
 
 estimator:
   accelerator: gpu
@@ -53,6 +52,7 @@ active_data:
   validation_perc: ${active_fit.validation_perc}
   sampling: ${active_fit.validation_sampling}
   seed: ${seed}
+  positive_budget: null
 
 fit:
   max_epochs: 3
@@ -84,12 +84,14 @@ test:
   enable_progress_bar: ${enable_progress_bar}
   limit_batches: ${limit_batches}
 
+strategy: '???'
+model: '???'
+embedding_model: null
+dataset: '???'
+
 # global settings
 log_interval: 1
 enable_progress_bar: true
 limit_batches: null
-train_val_split: null
-
-dataset_name: '???'
 seed: 42
 experiment_group: dry_run

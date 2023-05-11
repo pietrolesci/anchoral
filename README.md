@@ -27,18 +27,6 @@ conda init zsh
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-Then add this to your ~/.zshrc
-
-```bash
-export PATH="/home/lescipi/.local/bin:$PATH"
-
-# add convenience tmux shortcuts to ~/.zshrc (optional)
-alias tn="tmux new-session -s"
-alias ta="tmux attach-session -t"
-alias tls="tmux list-sessions"
-alias tk="tmux kill-session -t"
-```
-
 ### Install dependencies
 Use poetry to install the environment (if you don't have poetry run )
 
@@ -46,13 +34,6 @@ Use poetry to install the environment (if you don't have poetry run )
 conda create -n allset python=3.9 -y
 conda activate allset
 poetry install --sync --with dev
-```
-
-### Add git user and email
-
-```bash
-git config --global user.name "<user>"
-git config --global user.email "<email>"
 ```
 
 

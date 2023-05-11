@@ -24,7 +24,12 @@ class SaveOutputs(Callback):
         self.epoch_level = epoch_level
 
     def on_epoch_end(
-        self, stage: RunningStage, estimator: ActiveEstimator, model: _FabricModule, output: Dict, metrics: METRIC
+        self,
+        stage: Union[str, RunningStage],
+        estimator: ActiveEstimator,
+        model: _FabricModule,
+        output: Dict,
+        metrics: METRIC,
     ) -> None:
 
         # output directory setup

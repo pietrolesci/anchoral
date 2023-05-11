@@ -1,2 +1,0 @@
-_target_: src.estimators.SimilaritySearchStrategyWithUncertaintyForSequenceClassification
-score_fn: entropy

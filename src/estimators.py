@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import numpy as np
 import torch
@@ -13,9 +13,9 @@ from energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from energizer.estimators import Estimator as _Estimator
 from energizer.strategies import RandomStrategy as _RandomStrategy
 from energizer.strategies import UncertaintyBasedStrategy as _UncertaintyBasedStrategy
-from energizer.strategies.uncertainty import UncertaintyBasedStrategySEALS as _UncertaintyBasedStrategySEALS
 from energizer.types import ROUND_OUTPUT
 from energizer.utilities import ld_to_dl, move_to_cpu
+from src.strategies import UncertaintyBasedStrategySEALS as _UncertaintyBasedStrategySEALS
 
 
 class SequenceClassificationMixin:
@@ -40,7 +40,7 @@ class SequenceClassificationMixin:
 
     def step(
         self,
-        stage: RunningStage,
+        stage: Union[str, RunningStage],
         model: _FabricModule,
         batch: Dict,
         batch_idx: int,
@@ -64,7 +64,7 @@ class SequenceClassificationMixin:
             output[SpecialKeys.ID] = on_cpu[SpecialKeys.ID]  # type: ignore
         return output
 
-    def epoch_end(self, stage: RunningStage, output: List[Dict], metrics: MetricCollection) -> Dict:
+    def epoch_end(self, stage: Union[str, RunningStage], output: List[Dict], metrics: MetricCollection) -> Dict:
         """Aggregate and log metrics after each train/validation/test/pool epoch."""
 
         data = ld_to_dl(output)

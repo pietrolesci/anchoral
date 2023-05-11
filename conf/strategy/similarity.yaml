@@ -1,3 +1,0 @@
-_target_: src.estimators.SimilaritySearchStrategyForSequenceClassification
-seed: 42
-inverse: false

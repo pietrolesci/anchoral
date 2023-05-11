@@ -7,10 +7,6 @@ defaults:
     - grad_norm
     # - save_outputs
 
-hydra:
-  sweep:
-    dir: ./outputs/multirun/${experiment_group}/${dataset_name}/${get_name:${strategy}}/reinit=${active_fit.reinit_model}
-    subdir: data=${data.seed}_model=${model.seed}_${now:%Y-%m-%d}T${now:%H-%M-%S}
 
 fit:
   min_steps: 100
@@ -22,6 +18,8 @@ active_fit:
 
 active_data:
   budget: 100
+  positive_budget: 5
+  sampling: stratified
 
 callbacks:
   model_checkpoint:
@@ -33,5 +31,5 @@ callbacks:
     mode: max
     monitor: f1_macro
 
-dataset_name: agnews_binarised_bert-tiny
+model: 'google/bert_uncased_L-2_H-128_A-2'
 experiment_group: dry_run
