@@ -3,6 +3,7 @@ label_column: labels
 uid_column: uid
 absolute_path: pietrolesci/dbpedia_14_indexed
 positive_class: 0
-downsample_proportion: 0.05
+downsample_proportion: null
 need_binarize: true
 test_set_size: null
+short_name: dbpedia_14

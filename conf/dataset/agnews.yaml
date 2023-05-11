@@ -6,3 +6,4 @@ positive_class: 0
 downsample_proportion: 0.05
 need_binarize: true
 test_set_size: null
+short_name: agnews

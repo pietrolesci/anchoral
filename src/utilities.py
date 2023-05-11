@@ -144,4 +144,8 @@ def get_initial_budget(
         validation_perc=validation_perc,
         validation_sampling=sampling,
     )
-    logger.info(f"Initial budget {datastore.labelled_size()}")
+    logger.info(
+        f"Labelled size: {datastore.labelled_size()} "
+        f"Pool size: {datastore.pool_size()} "
+        f"Test size: {datastore.test_size()}"
+    )

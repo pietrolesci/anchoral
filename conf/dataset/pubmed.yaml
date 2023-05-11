@@ -1,8 +1,9 @@
-text_column: content
+text_column: text
 label_column: labels
 uid_column: uid
 absolute_path: pietrolesci/pubmed_20k_rct_indexed
-positive_class: 0
-downsample_proportion: 0.05
+positive_class: 1
+downsample_proportion: null
 need_binarize: true
 test_set_size: null
+short_name: pubmed

@@ -2,8 +2,8 @@ text_column: text
 label_column: l1
 uid_column: uid
 absolute_path: pietrolesci/DBPedia_Classes_indexed
-positive_class: 7  #5
+positive_class: 5
 downsample_proportion: null
 need_binarize: true
-test_set_size: null
+test_set_size: 10000
 short_name: dbpedia_classes

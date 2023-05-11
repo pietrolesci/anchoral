@@ -80,6 +80,14 @@ class SaveOutputs(Callback):
     ) -> None:
         # save partial results
         datastore.save_labelled_dataset(self.dirpath)
+        estimator.log_dict(
+            {
+                "summary/labelled_size": datastore.labelled_size(),
+                "summary/pool_size": datastore.pool_size(),
+                "summary/test_size": datastore.test_size(),
+            },
+            step=estimator.progress_tracker.global_round,
+        )
 
     def on_active_fit_end(
         self,

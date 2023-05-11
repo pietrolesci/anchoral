@@ -91,7 +91,9 @@ def main(cfg: DictConfig) -> None:
         tokenizer=tokenizer,
     )
     if cfg.embedding_model is not None:
-        datastore.add_index(cfg.embedding_model)
+        emb_col = f"embedding_{cfg.embedding_model}"
+        log.info(f"adding index from {emb_col}")
+        datastore.add_index(emb_col)
 
     # define initial budget
     if cfg.active_data.budget is not None and cfg.active_data.budget > 0:

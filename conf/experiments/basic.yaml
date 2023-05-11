@@ -5,31 +5,16 @@ defaults:
     - model_checkpoint
     - timer
     - grad_norm
-    # - save_outputs
-
-
-fit:
-  min_steps: 100
-
-active_fit:
-  max_rounds: 100
-  query_size: 50
-  validation_perc: null
-
-active_data:
-  budget: 100
-  positive_budget: 5
-  sampling: stratified
+    - save_outputs
 
 callbacks:
   model_checkpoint:
     stage: train
     mode: max
     monitor: f1_macro
-  early_stopping:
-    stage: train
-    mode: max
-    monitor: f1_macro
+  # early_stopping:
+  #   stage: train
+  #   mode: max
+  #   monitor: f1_macro
 
-model: 'google/bert_uncased_L-2_H-128_A-2'
 experiment_group: dry_run

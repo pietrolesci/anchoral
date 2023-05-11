@@ -1,14 +1,16 @@
 from typing import Any, Dict, Generator, List
 
-from datasets import DatasetDict, load_dataset
+from datasets import ClassLabel, DatasetDict, load_dataset
 from sentence_transformers import SentenceTransformer
 
 DATASETS = [
     # ("ag_news", "text", "label", ),
     # ("dbpedia_14", "content", "label"),
     # ("OxAISH-AL-LLM/wiki_toxic", "comment_text", "label"),
-    ("OxAISH-AL-LLM/pubmed_20k_rct", "text", "label"),
-    ("DeveloperOats/DBPedia_Classes", "text", ["l1", "l2", "l3"]),
+    # ("OxAISH-AL-LLM/pubmed_20k_rct", "text", "label"),
+    # ("DeveloperOats/DBPedia_Classes", "text", ["l1", "l2", "l3"]),
+    ("armanc/pubmed-rct20k", "text", "label"),
+    # ("imdb", "text", "label"),
 ]
 
 MODELS = ["all-mpnet-base-v2", "multi-qa-mpnet-base-dot-v1", "all-MiniLM-L12-v2"]
@@ -39,6 +41,8 @@ if __name__ == "__main__":
                 dataset_dict.pop(k)  # type: ignore
 
         if isinstance(label_col, str):
+            if not isinstance(dataset_dict["train"].features[label_col], ClassLabel):
+                dataset_dict = dataset_dict.class_encode_column(label_col)
             dataset_dict = dataset_dict.rename_columns({label_col: "labels"})
         else:
             for label in label_col:
@@ -61,3 +65,4 @@ if __name__ == "__main__":
             name = name.split("/")[1]
 
         dataset_dict.save_to_disk(f"data/processed/{name}")  # type: ignore
+        dataset_dict.push_to_hub(f"{name}_indexed")

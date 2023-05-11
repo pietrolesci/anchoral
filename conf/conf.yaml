@@ -36,7 +36,7 @@ loggers: null
 
 data:
   batch_size: 32
-  eval_batch_size: 256
+  eval_batch_size: 512
   num_workers: 32
   pin_memory: true
   drop_last: false
@@ -48,15 +48,15 @@ data:
 
 # this is incremental to `data` above
 active_data:
-  budget: null
+  budget: 100
+  positive_budget: 5
+  sampling: random
   validation_perc: ${active_fit.validation_perc}
-  sampling: ${active_fit.validation_sampling}
   seed: ${seed}
-  positive_budget: null
 
 fit:
-  max_epochs: 3
-  min_steps: null
+  max_epochs: 10
+  min_steps: 100
   learning_rate: 0.0002
   optimizer: adamw
   optimizer_kwargs: null
@@ -70,11 +70,11 @@ fit:
 
 # this is incremental to `fit` above
 active_fit:
-  max_rounds: 50
+  max_rounds: 100
   max_budget: null
-  query_size: 25
-  validation_perc: 0.3
-  validation_sampling: stratified
+  query_size: 50
+  validation_perc: null
+  validation_sampling: null
   reinit_model: true
   limit_pool_batches: ${limit_batches}
   limit_test_batches: ${limit_batches}
@@ -85,9 +85,9 @@ test:
   limit_batches: ${limit_batches}
 
 strategy: '???'
-model: '???'
-embedding_model: null
+model: 'google/bert_uncased_L-2_H-128_A-2'
 dataset: '???'
+embedding_model: null
 
 # global settings
 log_interval: 1

@@ -1,8 +1,9 @@
-text_column: content
+text_column: comment_text
 label_column: labels
 uid_column: uid
 absolute_path: pietrolesci/wiki_toxic_indexed
-positive_class: 0
-downsample_proportion: 0.05
-need_binarize: true
+positive_class: 1
+downsample_proportion: null
+need_binarize: false
 test_set_size: null
+short_name: wiki_toxic
