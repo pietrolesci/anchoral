@@ -1,2 +1,2 @@
-_target_: src.estimators.RandomStrategy
+_target_: src.strategies.RandomStrategy
 seed: 42

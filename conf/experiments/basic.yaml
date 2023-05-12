@@ -12,9 +12,9 @@ callbacks:
     stage: train
     mode: max
     monitor: f1_macro
-  # early_stopping:
-  #   stage: train
-  #   mode: max
-  #   monitor: f1_macro
+  early_stopping:
+    stage: train
+    mode: max
+    monitor: f1_macro
 
 experiment_group: dry_run

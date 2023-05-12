@@ -7,7 +7,7 @@ from lightning.fabric.wrappers import _FabricModule
 
 from energizer.callbacks import Callback
 from energizer.datastores import PandasDataStoreForSequenceClassification
-from energizer.enums import Interval, OutputKeys, RunningStage, SpecialKeys
+from energizer.enums import InputKeys, Interval, OutputKeys, RunningStage, SpecialKeys
 from energizer.estimators.active_estimator import ActiveEstimator
 from energizer.types import METRIC, ROUND_OUTPUT
 from energizer.utilities import make_dict_json_serializable, move_to_cpu
@@ -38,7 +38,7 @@ class SaveOutputs(Callback):
             path.mkdir(exist_ok=True, parents=True)
 
         # instance-level output
-        if self.instance_level:
+        if self.instance_level and stage == RunningStage.TEST:
             data = pd.DataFrame(columns=[f"logit_{i}" for i in range(model.num_labels)], data=output[OutputKeys.LOGITS])
             if SpecialKeys.ID in output:  # FIXME: enforce the ID column in every data store
                 data[SpecialKeys.ID] = output[SpecialKeys.ID]
@@ -60,7 +60,7 @@ class SaveOutputs(Callback):
             )
 
         # epoch-level output
-        if self.epoch_level and stage != RunningStage.POOL:
+        if self.epoch_level and stage == RunningStage.TEST:
             data = {
                 "stage": stage,
                 Interval.EPOCH: estimator.progress_tracker.safe_global_epoch,
@@ -80,11 +80,13 @@ class SaveOutputs(Callback):
     ) -> None:
         # save partial results
         datastore.save_labelled_dataset(self.dirpath)
+
+        counts = dict(datastore.data.loc[datastore._train_mask(), InputKeys.TARGET].value_counts())
         estimator.log_dict(
             {
+                **{f"summary/count_class_{k}": v for k, v in counts.items()},
                 "summary/labelled_size": datastore.labelled_size(),
                 "summary/pool_size": datastore.pool_size(),
-                "summary/test_size": datastore.test_size(),
             },
             step=estimator.progress_tracker.global_round,
         )

@@ -1,4 +1,0 @@
-_target_: src.estimators.UncertaintyBasedStrategyGradSub
-score_fn: least_confidence
-num_neighbours: 100
-num_influential: 10

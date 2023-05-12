@@ -5,18 +5,18 @@ import numpy as np
 import torch
 from lightning.fabric.wrappers import _FabricModule
 from sklearn.utils import check_random_state
-from sympy import hessian
 from torch import Tensor
 from torch.func import functional_call, grad, vmap  # type: ignore
 from tqdm.auto import tqdm
 
 from energizer.datastores import PandasDataStoreForSequenceClassification
 from energizer.enums import InputKeys, SpecialKeys
-from energizer.strategies import RandomStrategy, UncertaintyBasedStrategy
+from energizer.strategies import RandomStrategy as _RandomStrategy
+from energizer.strategies import UncertaintyBasedStrategy
 from src.estimators import SequenceClassificationMixin
 
 
-class RandomStrategy(SequenceClassificationMixin, RandomStrategy):
+class RandomStrategy(SequenceClassificationMixin, _RandomStrategy):
     ...
 
 
@@ -26,6 +26,8 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
         self.num_neighbours = num_neighbours
         self.pool_subset_ids = []
         self.rng = check_random_state(seed)
+
+        # TODO: compute the influence score of all the training instances at the beginning of training
 
     def run_query(
         self, model: _FabricModule, datastore: PandasDataStoreForSequenceClassification, query_size: int
@@ -37,7 +39,11 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
         if len(train_ids) == 0:
             return datastore.sample_from_pool(size=query_size, mode="uniform", random_state=self.rng)
 
+        # TODO: log data that have been used as query and their influence score
+
         # SEARCH
+        # datastore.embedding_name = "embedding_all-mpnet-base-v2"  # FIXME
+
         train_embeddings = datastore.get_embeddings(train_ids)
         ids, dists = self.search_pool(datastore, train_embeddings, self.num_neighbours)
 
@@ -57,6 +63,7 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
         ids, uid_index = np.unique(ids, return_index=True)
         dists = dists[uid_index]
         return ids, dists
+        # return np.stack([datastore.sample_from_pool(num_neighbours, "uniform") for _ in range(query.shape[0])]).flatten(), None  # FIXME
 
     def select(
         self,
@@ -66,13 +73,20 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
         distances: np.ndarray,
         query_size: int,
     ) -> List[int]:
-        pool_loader = self.configure_dataloader(datastore.pool_loader(with_indices=ids))
+        pool_loader = self.configure_dataloader(datastore.pool_loader(with_indices=ids.tolist()))
         self.progress_tracker.pool_tracker.max = len(pool_loader)  # type: ignore
         return self.compute_most_uncertain(model, pool_loader, query_size)  # type: ignore
 
 
 class SEALS(UncertaintyBasedStrategyPoolSubset):
     pool_subset_ids: List[int] = []
+    to_search: List[int] = []
+
+    def get_train_ids(self, model: _FabricModule, datastore: PandasDataStoreForSequenceClassification) -> List[int]:
+        # we will only search the currently added train_ids sinces the others are cached into pool_subset_ids
+        if len(self.to_search) == 0:
+            self.to_search = datastore.get_train_ids()
+        return self.to_search
 
     def select(
         self,
@@ -82,14 +96,19 @@ class SEALS(UncertaintyBasedStrategyPoolSubset):
         distances: np.ndarray,
         query_size: int,
     ) -> List[int]:
-        self.pool_subset_ids = list(set(self.pool_subset_ids + ids))
+        # add the NNs of the current train_ids to the pool
+        self.pool_subset_ids = list(set(self.pool_subset_ids + ids.tolist()))
 
+        # select the ids that need to be labelled
         pool_loader = self.configure_dataloader(datastore.pool_loader(with_indices=self.pool_subset_ids))
         self.progress_tracker.pool_tracker.max = len(pool_loader)  # type: ignore
         annotated_ids = self.compute_most_uncertain(model, pool_loader, query_size)  # type: ignore
 
-        # remove those that are annotated
-        self.pool_subset_ids = list(set(self.pool_subset_ids).difference(annotated_ids))
+        # remove those ids that are annotated
+        self.pool_subset_ids = list(set(self.pool_subset_ids).difference(set(annotated_ids)))
+
+        # overwrite with the train_ids that need to be searched
+        self.to_search = annotated_ids
 
         return annotated_ids
 

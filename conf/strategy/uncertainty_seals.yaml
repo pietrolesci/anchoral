@@ -1,3 +1,0 @@
-_target_: src.estimators.UncertaintyBasedStrategySEALS
-score_fn: least_confidence
-num_neighbours: 100

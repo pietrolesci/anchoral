@@ -1,4 +1,5 @@
 import logging
+from calendar import c
 
 import hydra
 from datasets import DatasetDict, load_dataset
@@ -25,6 +26,7 @@ def main(cfg: DictConfig) -> None:
     # resolve interpolation
     OmegaConf.resolve(cfg)
     log.info(f"\n{OmegaConf.to_yaml(cfg)}\n{SEP_LINE}")
+    OmegaConf.save(cfg, "./hparams.yaml")
 
     # logging
     log.info(f"Running active learning with strategy {cfg.strategy}")
@@ -37,6 +39,7 @@ def main(cfg: DictConfig) -> None:
 
     # load data
     dataset_dict: DatasetDict = load_dataset(cfg.dataset.absolute_path)  # type: ignore
+    dataset_dict.pop("validation", None)  # remove validation
 
     # maybe binarise label
     positive_class = cfg.dataset.positive_class
@@ -90,7 +93,7 @@ def main(cfg: DictConfig) -> None:
         uid_name=cfg.dataset.uid_column,
         tokenizer=tokenizer,
     )
-    if cfg.embedding_model is not None:
+    if cfg.embedding_model is not None and "RandomStrategy" not in cfg.strategy._target_:
         emb_col = f"embedding_{cfg.embedding_model}"
         log.info(f"adding index from {emb_col}")
         datastore.add_index(emb_col)
@@ -149,25 +152,13 @@ def main(cfg: DictConfig) -> None:
     #############################################
     # ============ active learning ============ #
     #############################################
-    hparams = {**OmegaConf.to_container(cfg.fit), **OmegaConf.to_container(cfg.active_fit)}  # type: ignore
-    fit_out = estimator.active_fit(datastore, **hparams)
+    fit_hparams = {**OmegaConf.to_container(cfg.fit), **OmegaConf.to_container(cfg.active_fit)}  # type: ignore
+    hparams = {**fit_hparams, **OmegaConf.to_container(cfg.active_data)}  # type: ignore
+    estimator.fabric.logger.log_hyperparams(params=hparams)
 
-    ##########################################
-    # ============ save outputs ============ #
-    ##########################################
-    hparams = {
-        **hparams,
-        **OmegaConf.to_container(cfg.active_data),  # type: ignore
-        "limit_batches": cfg.limit_batches,
-    }
-    OmegaConf.save(cfg, "./hparams.yaml")
+    fit_out = estimator.active_fit(datastore, **fit_hparams)
+    estimator.fabric.logger.log_hyperparams(params=hparams, metrics=fit_out)
 
-    # log hparams and test results to tensorboard
-    if isinstance(estimator.fabric.logger, TensorBoardLogger):
-        estimator.fabric.logger.log_hyperparams(
-            params=hparams,
-            metrics=fit_out,
-        )
     log.info(estimator.progress_tracker)
 
 

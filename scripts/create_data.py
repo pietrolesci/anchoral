@@ -4,13 +4,17 @@ from datasets import ClassLabel, DatasetDict, load_dataset
 from sentence_transformers import SentenceTransformer
 
 DATASETS = [
-    # ("ag_news", "text", "label", ),
-    # ("dbpedia_14", "content", "label"),
-    # ("OxAISH-AL-LLM/wiki_toxic", "comment_text", "label"),
-    # ("OxAISH-AL-LLM/pubmed_20k_rct", "text", "label"),
-    # ("DeveloperOats/DBPedia_Classes", "text", ["l1", "l2", "l3"]),
+    (
+        "ag_news",
+        "text",
+        "label",
+    ),
+    ("imdb", "text", "label"),
+    ("OxAISH-AL-LLM/wiki_toxic", "comment_text", "label"),
     ("armanc/pubmed-rct20k", "text", "label"),
-    # ("imdb", "text", "label"),
+    # ("OxAISH-AL-LLM/pubmed_20k_rct", "text", "label"),
+    # ("dbpedia_14", "content", "label"),
+    # ("DeveloperOats/DBPedia_Classes", "text", ["l1", "l2", "l3"]),
 ]
 
 MODELS = ["all-mpnet-base-v2", "multi-qa-mpnet-base-dot-v1", "all-MiniLM-L12-v2"]

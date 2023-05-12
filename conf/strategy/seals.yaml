@@ -1,0 +1,4 @@
+_target_: src.strategies.SEALS
+score_fn: least_confidence
+num_neighbours: 100
+seed: 42
