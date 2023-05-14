@@ -1,0 +1,41 @@
+# @package _global_
+defaults:
+  - /callbacks:
+    - early_stopping
+    - model_checkpoint
+    - timer
+    - grad_norm
+    - save_outputs
+  - override /hydra/launcher: submitit_slurm
+
+callbacks:
+  model_checkpoint:
+    stage: train
+    mode: max
+    monitor: f1_macro
+  early_stopping:
+    stage: train
+    mode: max
+    monitor: f1_macro
+
+experiment_group: dry_run
+
+hydra:
+  launcher:
+    timeout_min: 60
+    # cpus_per_task: 12
+    # gpus_per_node: 1
+    # tasks_per_node: 1
+    gres: gpu:1
+    # mem_gb: 32
+    nodes: 1
+    name: ${hydra.job.name}
+    partition: ampere
+    account: VLACHOS-SL3-GPU
+    # comment: null
+    # constraint: null
+    # exclude: null
+    # signal_delay_s: 120
+    # max_num_timeout: 0
+    # additional_parameters: {}
+    # array_parallelism: 256
