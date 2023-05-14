@@ -87,6 +87,7 @@ class SaveOutputs(Callback):
                 **{f"summary/count_class_{k}": v for k, v in counts.items()},
                 "summary/labelled_size": datastore.labelled_size(),
                 "summary/pool_size": datastore.pool_size(),
+                "summary/minority_ratio": counts[1]/counts[0],
             },
             step=estimator.progress_tracker.global_round,
         )

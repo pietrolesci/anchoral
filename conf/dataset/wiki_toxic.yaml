@@ -3,7 +3,7 @@ label_column: labels
 uid_column: uid
 absolute_path: pietrolesci/wiki_toxic_indexed
 positive_class: 1
-downsample_proportion: null
+downsample_proportion: 0.05
 need_binarize: false
 test_set_size: null
 short_name: wiki_toxic

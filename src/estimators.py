@@ -98,13 +98,13 @@ class SequenceClassificationMixin:
 
     #     return output
 
-    def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:
-        """Log metrics at the end of training."""
-        logs = ld_to_dl([out[RunningStage.TEST][OutputKeys.METRICS] for out in output])
-        return {
-            **{f"hparams/test_{k}": v[-1].item() for k, v in logs.items()},
-            **{f"hparams/test_{k}_auc": np.trapz(v) for k, v in logs.items()},
-        }
+    # def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:
+    #     """Log metrics at the end of training."""
+    #     logs = ld_to_dl([out[RunningStage.TEST][OutputKeys.METRICS] for out in output])
+    #     return {
+    #         **{f"hparams/test_{k}": v[-1].item() for k, v in logs.items()},
+    #         **{f"hparams/test_{k}_auc": np.trapz(v) for k, v in logs.items()},
+    #     }
 
     def pool_step(
         self,
