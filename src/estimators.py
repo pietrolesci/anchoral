@@ -38,6 +38,15 @@ class SequenceClassificationMixin:
                 ),
                 MetricCollection(
                     {
+                        "accuracy": Accuracy(task, num_classes=num_classes, average="macro"),
+                        "f1": F1Score(task, num_classes=num_classes, average="macro"),
+                        "precision": Precision(task, num_classes=num_classes, average="macro"),
+                        "recall": Recall(task, num_classes=num_classes, average="macro"),
+                    },
+                    postfix="_macro",
+                ),
+                MetricCollection(
+                    {
                         "loss": MeanMetric(),
                         "auroc": AUROC("multiclass", thresholds=20, num_classes=num_classes, average="macro"),
                     }
@@ -89,27 +98,6 @@ class SequenceClassificationMixin:
             self.log_dict({f"{k}_vs_budget": v for k, v in _metrics.items()}, step=self.progress_tracker.global_budget)  # type: ignore
 
         return {**out, **_metrics}
-
-    # def round_epoch_end(self, output: Dict, *args, **kwargs) -> ROUND_OUTPUT:
-    #     """Log round-level statistics."""
-    #     logs = {
-    #         "max_epochs": self.progress_tracker.epoch_tracker.max,  # type: ignore
-    #         "num_train_batches": self.progress_tracker.train_tracker.max,  # type: ignore
-    #         "num_validation_batches": self.progress_tracker.validation_tracker.max,  # type: ignore
-    #         "global_train_steps": self.progress_tracker.step_tracker.total,  # type: ignore
-    #     }
-    #     logs = {f"round_stats/{k}": v for k, v in logs.items()}
-    #     self.log_dict(logs, step=self.progress_tracker.global_round)  # type: ignore
-
-    #     return output
-
-    # def active_fit_end(self, output: List[ROUND_OUTPUT]) -> Dict:
-    #     """Log metrics at the end of training."""
-    #     logs = ld_to_dl([out[RunningStage.TEST][OutputKeys.METRICS] for out in output])
-    #     return {
-    #         **{f"hparams/test_{k}": v[-1].item() for k, v in logs.items()},
-    #         **{f"hparams/test_{k}_auc": np.trapz(v) for k, v in logs.items()},
-    #     }
 
     def pool_step(
         self,

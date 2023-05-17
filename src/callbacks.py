@@ -6,7 +6,6 @@ from lightning.fabric.wrappers import _FabricModule
 
 from energizer.callbacks import Callback
 from energizer.datastores import PandasDataStoreForSequenceClassification
-from energizer.datastores.base import Datastore
 from energizer.enums import InputKeys, Interval, OutputKeys, RunningStage, SpecialKeys
 from energizer.estimators.active_estimator import ActiveEstimator
 from energizer.types import METRIC, ROUND_OUTPUT
