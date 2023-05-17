@@ -11,10 +11,10 @@ callbacks:
   model_checkpoint:
     stage: train
     mode: max
-    monitor: f1_macro
+    monitor: train/f1_class1
   early_stopping:
     stage: train
     mode: max
-    monitor: f1_macro
+    monitor: train/f1_class1
 
 experiment_group: dry_run
