@@ -153,12 +153,11 @@ def main(cfg: DictConfig) -> None:
     # ============ active learning ============ #
     #############################################
     fit_hparams = {**OmegaConf.to_container(cfg.fit), **OmegaConf.to_container(cfg.active_fit)}  # type: ignore
-    hparams = {**fit_hparams, **OmegaConf.to_container(cfg.active_data)}  # type: ignore
-    estimator.fabric.logger.log_hyperparams(params=hparams)
+    estimator.fabric.logger.log_hyperparams(params={**fit_hparams, **OmegaConf.to_container(cfg.active_data)})  # type: ignore
 
-    fit_out = estimator.active_fit(datastore, **fit_hparams)
-    estimator.fabric.logger.log_hyperparams(params=hparams, metrics=fit_out)
+    estimator.active_fit(datastore, **fit_hparams)
 
+    estimator.fabric.logger.finalize()
     log.info(estimator.progress_tracker)
 
 
