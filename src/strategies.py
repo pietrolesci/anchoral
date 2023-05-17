@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -58,7 +58,7 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get neighbours of training instances from the pool."""
         ids, dists = datastore.search(query=query, query_size=num_neighbours, query_in_set=False)
-        ids, dists = np.concatenate(ids).flatten(), np.concatenate(dists).flatten()
+        ids, dists = ids.flatten(), dists.flatten()
 
         ids, uid_index = np.unique(ids, return_index=True)
         dists = dists[uid_index]
@@ -70,12 +70,25 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
         model: _FabricModule,
         datastore: PandasDataStoreForSequenceClassification,
         ids: np.ndarray,
-        distances: np.ndarray,
+        distances: Optional[np.ndarray],
         query_size: int,
     ) -> List[int]:
         pool_loader = self.configure_dataloader(datastore.pool_loader(with_indices=ids.tolist()))
         self.progress_tracker.pool_tracker.max = len(pool_loader)  # type: ignore
         return self.compute_most_uncertain(model, pool_loader, query_size)  # type: ignore
+
+
+class RandomSubset(UncertaintyBasedStrategyPoolSubset):
+    def __init__(self, *args, subset_size: int, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.subset_size = subset_size
+
+    def run_query(
+        self, model: _FabricModule, datastore: PandasDataStoreForSequenceClassification, query_size: int
+    ) -> List[int]:
+        subset_size = min(datastore.pool_size(), self.subset_size)
+        ids = datastore.sample_from_pool(size=subset_size, mode="uniform", random_state=self.rng)
+        return self.select(model, datastore, np.array(ids), None, query_size)
 
 
 class SEALS(UncertaintyBasedStrategyPoolSubset):
@@ -125,6 +138,17 @@ class IGALRandom(UncertaintyBasedStrategyPoolSubset):
         return train_ids
 
 
+def _grad_norm(grads: Dict, norm_type: int) -> Tensor:
+    """This is a good way of computing the norm for all parameters across the network.
+
+    Check [here](https://github.com/viking-sudo-rm/norm-growth/blob/bca0576242c21de0ee06cdc3561dd27aa88a7040/finetune_trans.py#L89)
+    for confirmation: they return the same results but this implementation is more convenient
+    because we apply the norm layer-wise first and then we further aggregate.
+    """
+    norms = [g.norm(norm_type).unsqueeze(0) for g in grads.values() if g is not None]
+    return torch.concat(norms).norm(norm_type)
+
+
 class IGALGradNorm(UncertaintyBasedStrategyPoolSubset):
     def __init__(self, *args, num_influential: int = 10, norm_type: int = 2, **kwargs) -> None:
         super().__init__(*args, **kwargs)  # type: ignore
@@ -141,10 +165,6 @@ class IGALGradNorm(UncertaintyBasedStrategyPoolSubset):
         ) -> torch.Tensor:
             inp, att, lab = input_ids.unsqueeze(0), attention_mask.unsqueeze(0), labels.unsqueeze(0)
             return functional_call(_model, (params, buffers), (inp, att), kwargs={"labels": lab}).loss
-
-        def _grad_norm(grads: Dict, norm_type: int) -> Tensor:
-            norms = [g.norm(norm_type).unsqueeze(0) for g in grads.values() if g is not None]
-            return torch.concat(norms).norm(norm_type)
 
         grad_norm = partial(_grad_norm, norm_type=self.norm_type)
 
@@ -187,10 +207,6 @@ class IGAL(UncertaintyBasedStrategyPoolSubset):
         ) -> torch.Tensor:
             inp, att, lab = input_ids.unsqueeze(0), attention_mask.unsqueeze(0), labels.unsqueeze(0)
             return functional_call(_model, (params, buffers), (inp, att), kwargs={"labels": lab}).loss
-
-        def _grad_norm(grads: Dict, norm_type: int) -> Tensor:
-            norms = [g.norm(norm_type).unsqueeze(0) for g in grads.values() if g is not None]
-            return torch.concat(norms).norm(norm_type)
 
         grad_norm = partial(_grad_norm, norm_type=self.norm_type)
 
