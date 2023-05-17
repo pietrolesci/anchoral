@@ -1,9 +1,10 @@
+from pprint import pprint as print
 from typing import Dict, List, Optional, Union
 
 import numpy as np
 from lightning.fabric.wrappers import _FabricModule
-from torchmetrics import MetricCollection
-from torchmetrics.classification import Accuracy, F1Score, Precision, Recall
+from torchmetrics import MeanMetric, MetricCollection
+from torchmetrics.classification import AUROC, Accuracy, F1Score, Precision, Recall
 
 from energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from energizer.types import ROUND_OUTPUT
@@ -11,22 +12,38 @@ from energizer.utilities import ld_to_dl, move_to_cpu
 
 
 class SequenceClassificationMixin:
-    def configure_metrics(self, *_) -> MetricCollection:
+    def configure_metrics(self, stage: Optional[Union[str, RunningStage]] = None) -> MetricCollection:
         num_classes = self.model.num_labels  # type: ignore
         task = "multiclass"
+
         metrics = MetricCollection(
-            {
-                "accuracy_macro": Accuracy(task, num_classes=num_classes, average="macro"),
-                "f1_macro": F1Score(task, num_classes=num_classes, average="macro"),
-                "precision_macro": Precision(task, num_classes=num_classes, average="macro"),
-                "recall_macro": Recall(task, num_classes=num_classes, average="macro"),
-                # "average_precision_macro": AveragePrecision(task, num_classes=num_classes, average="macro", warn_only=True),
-                # "auroc": AUROC(task, num_classes=num_classes, average="macro", warn_only=True),
-                "accuracy_micro": Accuracy(task, num_classes=num_classes, average="micro"),
-                "f1_micro": F1Score(task, num_classes=num_classes, average="micro"),
-                "precision_micro": Precision(task, num_classes=num_classes, average="micro"),
-                "recall_micro": Recall(task, num_classes=num_classes, average="micro"),
-            }
+            [
+                MetricCollection(
+                    {
+                        "accuracy": Accuracy(task, num_classes=num_classes, average="none"),
+                        "f1": F1Score(task, num_classes=num_classes, average="none"),
+                        "precision": Precision(task, num_classes=num_classes, average="none"),
+                        "recall": Recall(task, num_classes=num_classes, average="none"),
+                    },
+                    postfix="_class",
+                ),
+                MetricCollection(
+                    {
+                        "accuracy": Accuracy(task, num_classes=num_classes, average="micro"),
+                        "f1": F1Score(task, num_classes=num_classes, average="micro"),
+                        "precision": Precision(task, num_classes=num_classes, average="micro"),
+                        "recall": Recall(task, num_classes=num_classes, average="micro"),
+                    },
+                    postfix="_micro",
+                ),
+                MetricCollection(
+                    {
+                        "loss": MeanMetric(),
+                        "auroc": AUROC("multiclass", thresholds=20, num_classes=num_classes, average="macro"),
+                    }
+                ),
+            ],  # type: ignore
+            prefix=f"{stage}/",
         )
         return metrics.to(self.device)  # type: ignore
 
@@ -40,50 +57,38 @@ class SequenceClassificationMixin:
         metrics: MetricCollection,
     ) -> Dict:
 
-        on_cpu = batch.pop(InputKeys.ON_CPU, None)
+        uid = batch.pop(InputKeys.ON_CPU)[SpecialKeys.ID]
         out = model(**batch)
-        out_metrics = metrics(out.logits, batch[InputKeys.TARGET])
 
-        if stage == RunningStage.TRAIN:
-            logs = {OutputKeys.LOSS: out.loss, **out_metrics}
-            self.log_dict({f"{stage}/{k}": v for k, v in logs.items()}, step=self.progress_tracker.global_batch)  # type: ignore
+        # update metrics
+        metrics(preds=out.logits, target=batch[InputKeys.TARGET], value=out.loss.detach())
 
-        output = {
+        return {
             OutputKeys.LOSS: out.loss,
             OutputKeys.LOGITS: out.logits,
+            SpecialKeys.ID: uid,
         }
-        if on_cpu is not None and SpecialKeys.ID in on_cpu:
-            output[SpecialKeys.ID] = on_cpu[SpecialKeys.ID]  # type: ignore
-        return output
 
     def epoch_end(self, stage: Union[str, RunningStage], output: List[Dict], metrics: MetricCollection) -> Dict:
         """Aggregate and log metrics after each train/validation/test/pool epoch."""
 
         data = ld_to_dl(output)
+        data.pop(OutputKeys.LOSS, None)  # this is already part of the metrics
 
-        # aggregate instance-level metrics
-        out = {OutputKeys.LOGITS: np.concatenate(data.pop(OutputKeys.LOGITS))}
+        out = {k: np.concatenate(v) for k, v in data.items()}
+        _metrics = move_to_cpu(metrics.compute())
 
-        if SpecialKeys.ID in data:
-            out[SpecialKeys.ID] = np.concatenate(data.pop(SpecialKeys.ID))  # type: ignore
+        # flatten per-class metric
+        per_class = {f"{k}{idx}": v[idx] for k, v in _metrics.items() for idx in range(v.size) if k.endswith("_class")}
+        micro = {k: v for k, v in _metrics.items() if not k.endswith("_class")}
+        _metrics = {**per_class, **micro}
 
-        if stage == RunningStage.POOL:
-            out[OutputKeys.SCORES] = np.concatenate(data.pop(OutputKeys.SCORES))
-            return out
-
-        # aggregate and log epoch-level metrics
-        aggregated_metrics = move_to_cpu(metrics.compute())  # NOTE: metrics are still on device
-        aggregated_loss = round(np.mean(data[OutputKeys.LOSS]), 6)
-        logs = {OutputKeys.LOSS: aggregated_loss, **aggregated_metrics}
-        logs = {f"{stage}_end/{k}": v for k, v in logs.items()}
-        self.log_dict(logs, step=self.progress_tracker.safe_global_epoch)  # type: ignore
-
-        # if active_fit log with budget on the x-axis
+        # log
+        self.log_dict(_metrics, step=self.progress_tracker.safe_global_epoch)  # type: ignore
         if stage == RunningStage.TEST and hasattr(self.progress_tracker, "global_budget"):  # type: ignore
-            logs = {f"{k}_vs_budget": v for k, v in logs.items()}
-            self.log_dict(logs, step=self.progress_tracker.global_budget)  # type: ignore
+            self.log_dict({f"{k}_vs_budget": v for k, v in _metrics.items()}, step=self.progress_tracker.global_budget)  # type: ignore
 
-        return {OutputKeys.LOSS: aggregated_loss, **out, **aggregated_metrics}
+        return {**out, **_metrics}
 
     # def round_epoch_end(self, output: Dict, *args, **kwargs) -> ROUND_OUTPUT:
     #     """Log round-level statistics."""

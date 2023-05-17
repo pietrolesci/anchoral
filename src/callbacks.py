@@ -2,15 +2,14 @@ from pathlib import Path
 from typing import Dict, List, Union
 
 import pandas as pd
-import srsly
 from lightning.fabric.wrappers import _FabricModule
 
 from energizer.callbacks import Callback
 from energizer.datastores import PandasDataStoreForSequenceClassification
+from energizer.datastores.base import Datastore
 from energizer.enums import InputKeys, Interval, OutputKeys, RunningStage, SpecialKeys
 from energizer.estimators.active_estimator import ActiveEstimator
 from energizer.types import METRIC, ROUND_OUTPUT
-from energizer.utilities import make_dict_json_serializable, move_to_cpu
 
 
 class SaveOutputs(Callback):
@@ -40,16 +39,8 @@ class SaveOutputs(Callback):
         # instance-level output
         if self.instance_level and stage == RunningStage.TEST:
             data = pd.DataFrame(columns=[f"logit_{i}" for i in range(model.num_labels)], data=output[OutputKeys.LOGITS])
-            if SpecialKeys.ID in output:  # FIXME: enforce the ID column in every data store
-                data[SpecialKeys.ID] = output[SpecialKeys.ID]
-
-            data[Interval.EPOCH] = estimator.progress_tracker.safe_global_epoch
-
-            # if we are active learning
-            if hasattr(estimator.progress_tracker, "global_round"):
-                data[Interval.ROUND] = estimator.progress_tracker.global_round
-                if OutputKeys.SCORES in output:
-                    data[OutputKeys.SCORES] = output[OutputKeys.SCORES]
+            data[SpecialKeys.ID] = output[SpecialKeys.ID]
+            data[Interval.ROUND] = estimator.progress_tracker.global_round
 
             instance_level_path = path / "instance_level.csv"
             data.to_csv(
@@ -59,21 +50,24 @@ class SaveOutputs(Callback):
                 mode="a" if instance_level_path.exists() else "w",
             )
 
-        # epoch-level output
-        if self.epoch_level and stage == RunningStage.TEST:
-            data = {
-                "stage": stage,
-                Interval.EPOCH: estimator.progress_tracker.safe_global_epoch,
-                OutputKeys.LOSS: output[OutputKeys.LOSS],
-                **move_to_cpu(metrics.compute()),
-            }
-            if hasattr(estimator.progress_tracker, "global_round"):
-                data[Interval.ROUND] = estimator.progress_tracker.global_round
+    def on_query_end(
+        self,
+        estimator: ActiveEstimator,
+        model: _FabricModule,
+        datastore: PandasDataStoreForSequenceClassification,
+        indices: List[int],
+    ) -> None:
+        counts = dict(datastore.get_by_ids(indices)[InputKeys.TARGET].value_counts())
+        if 1 not in counts:
+            counts[1] = 0  # type: ignore
 
-            # sanitize inputs for JSON serialization
-            srsly.write_jsonl(
-                path / "epoch_level.jsonl", [make_dict_json_serializable(data)], append=True, append_new_line=False
-            )
+        estimator.log_dict(
+            {
+                **{f"summary/count_class_{k}": v for k, v in counts.items()},
+                "summary/minority_ratio": counts[1] / counts[0],
+            },
+            step=estimator.progress_tracker.global_round,
+        )
 
     def on_round_end(
         self, estimator: ActiveEstimator, datastore: PandasDataStoreForSequenceClassification, output: ROUND_OUTPUT
@@ -82,12 +76,15 @@ class SaveOutputs(Callback):
         datastore.save_labelled_dataset(self.dirpath)
 
         counts = dict(datastore.data.loc[datastore._train_mask(), InputKeys.TARGET].value_counts())
+        if 1 not in counts:
+            counts[1] = 0  # type: ignore
+
         estimator.log_dict(
             {
-                **{f"summary/count_class_{k}": v for k, v in counts.items()},
+                **{f"summary/cumulative_count_class_{k}": v for k, v in counts.items()},
                 "summary/labelled_size": datastore.labelled_size(),
                 "summary/pool_size": datastore.pool_size(),
-                "summary/minority_ratio": counts[1]/counts[0],
+                "summary/cumulative_minority_ratio": counts[1] / counts[0],
             },
             step=estimator.progress_tracker.global_round,
         )
