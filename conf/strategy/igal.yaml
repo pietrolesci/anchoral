@@ -4,3 +4,4 @@ num_neighbours: 100
 num_influential: 10
 norm_type: 2
 seed: 42
+subset_size: 10000

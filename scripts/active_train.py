@@ -157,8 +157,7 @@ def main(cfg: DictConfig) -> None:
 
     estimator.active_fit(datastore, **fit_hparams)
 
-    estimator.fabric.logger.finalize()
-    log.info(estimator.progress_tracker)
+    estimator.fabric.logger.finalize("success")
 
 
 if __name__ == "__main__":

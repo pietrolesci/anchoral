@@ -1,5 +1,5 @@
 _target_: src.strategies.IGALRandom
 score_fn: least_confidence
 num_neighbours: 100
-num_influential: 10
 seed: 42
+subset_size: 10000

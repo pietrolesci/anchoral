@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Union
 import numpy as np
 from lightning.fabric.wrappers import _FabricModule
 from torchmetrics import MeanMetric, MetricCollection
-from torchmetrics.classification import AUROC, Accuracy, F1Score, Precision, Recall
+from torchmetrics.classification import AUROC, Accuracy, F1Score, Precision, Recall, AveragePrecision
 
 from energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from energizer.types import ROUND_OUTPUT
@@ -48,7 +48,8 @@ class SequenceClassificationMixin:
                 MetricCollection(
                     {
                         "loss": MeanMetric(),
-                        "auroc": AUROC("multiclass", thresholds=20, num_classes=num_classes, average="macro"),
+                        "auroc": AUROC("multiclass", thresholds=30, num_classes=num_classes, average="macro"),
+                        "ap": AveragePrecision("multiclass", thresholds=30, num_classes=num_classes, average="macro"),
                     }
                 ),
             ],  # type: ignore

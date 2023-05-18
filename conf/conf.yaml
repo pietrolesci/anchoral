@@ -23,8 +23,8 @@ hydra:
           ERROR: red
           CRITICAL: bold_red
   sweep:
-    dir: ./outputs/multirun/${experiment_group}/${dataset.short_name}/
-    subdir: ${get_name_strategy:${strategy}}_${now:%Y-%m-%d}T${now:%H-%M-%S}
+    dir: ./outputs/multirun/${experiment_group}
+    subdir: ${dataset.short_name}/${get_name_strategy:${strategy}}_${now:%Y-%m-%d}T${now:%H-%M-%S}
 
 estimator:
   accelerator: gpu

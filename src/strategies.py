@@ -8,7 +8,7 @@ from sklearn.utils import check_random_state
 from torch import Tensor
 from torch.func import functional_call, grad, vmap  # type: ignore
 from tqdm.auto import tqdm
-
+import pandas as pd
 from energizer.datastores import PandasDataStoreForSequenceClassification
 from energizer.enums import InputKeys, SpecialKeys
 from energizer.strategies import RandomStrategy as _RandomStrategy
@@ -21,49 +21,55 @@ class RandomStrategy(SequenceClassificationMixin, _RandomStrategy):
 
 
 class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, UncertaintyBasedStrategy):
-    def __init__(self, *args, num_neighbours: int = 100, seed: int, **kwargs) -> None:
+
+    def __init__(self, *args, num_neighbours: int, subset_size: int, seed: int, **kwargs) -> None:
         super().__init__(*args, **kwargs)  # type: ignore
         self.num_neighbours = num_neighbours
-        self.pool_subset_ids = []
+        self.subset_size = subset_size
         self.rng = check_random_state(seed)
+        self.pool_subset_ids = []
 
         # TODO: compute the influence score of all the training instances at the beginning of training
 
     def run_query(
         self, model: _FabricModule, datastore: PandasDataStoreForSequenceClassification, query_size: int
     ) -> List[int]:
-
-        # SUBSET
-        train_ids = self.get_train_ids(model, datastore)
-        # if cold-starting there is no training embedding, fall-back to random sampling
-        if len(train_ids) == 0:
-            return datastore.sample_from_pool(size=query_size, mode="uniform", random_state=self.rng)
-
         # TODO: log data that have been used as query and their influence score
 
-        # SEARCH
-        # datastore.embedding_name = "embedding_all-mpnet-base-v2"  # FIXME
+        train_ids = self.get_train_ids(model, datastore)
+        
+        if len(train_ids) == 0:
+            # if cold-starting there is no training embedding, fall-back to random sampling
+            return datastore.sample_from_pool(size=query_size, mode="uniform", random_state=self.rng)
 
+        # SEARCH
         train_embeddings = datastore.get_embeddings(train_ids)
         ids, dists = self.search_pool(datastore, train_embeddings, self.num_neighbours)
+
+        # SUBSET
+        ids = self.get_pool_ids(ids, dists, train_ids)
 
         # SELECT
         return self.select(model, datastore, ids, dists, query_size)
 
     def get_train_ids(self, model: _FabricModule, datastore: PandasDataStoreForSequenceClassification) -> List[int]:
+        """Get all training ids by default."""
         return datastore.get_train_ids()
 
     def search_pool(
         self, datastore: PandasDataStoreForSequenceClassification, query: np.ndarray, num_neighbours: int
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get neighbours of training instances from the pool."""
-        ids, dists = datastore.search(query=query, query_size=num_neighbours, query_in_set=False)
-        ids, dists = ids.flatten(), dists.flatten()
+        return datastore.search(query=query, query_size=num_neighbours, query_in_set=False)
 
-        ids, uid_index = np.unique(ids, return_index=True)
-        dists = dists[uid_index]
-        return ids, dists
-        # return np.stack([datastore.sample_from_pool(num_neighbours, "uniform") for _ in range(query.shape[0])]).flatten(), None  # FIXME
+    def get_pool_ids(self, ids: np.ndarray, distances: np.ndarray, train_ids: List[int]) -> np.ndarray:
+        """Given all the matches get the subset_size closest."""
+        # order the ids by their distance from a train datapoint (smaller is more similar)
+        ids = ids.flatten()[distances.flatten().argsort()]
+        # deduplicate keeping the order of first appearance
+        _, udx = np.unique(ids, return_index=True)
+        # return the ordered set
+        return ids[np.sort(udx)][:self.subset_size]
 
     def select(
         self,
@@ -79,16 +85,40 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
 
 
 class RandomSubset(UncertaintyBasedStrategyPoolSubset):
-    def __init__(self, *args, subset_size: int, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.subset_size = subset_size
-
     def run_query(
         self, model: _FabricModule, datastore: PandasDataStoreForSequenceClassification, query_size: int
     ) -> List[int]:
         subset_size = min(datastore.pool_size(), self.subset_size)
         ids = datastore.sample_from_pool(size=subset_size, mode="uniform", random_state=self.rng)
         return self.select(model, datastore, np.array(ids), None, query_size)
+
+
+class FullSubset(UncertaintyBasedStrategyPoolSubset):
+    current_pool: pd.DataFrame = pd.DataFrame(columns=["train_ids", "ids", "dists"])
+    to_search: List[int] = []
+
+    def get_train_ids(self, model: _FabricModule, datastore: PandasDataStoreForSequenceClassification) -> List[int]:
+        # we will only search the currently added train_ids sinces the others are cached into pool_subset_ids
+        if len(self.to_search) == 0:
+            # in the first round search everything
+            self.to_search = datastore.get_train_ids()
+        # then only the newly added training points
+        return self.to_search
+    
+    def get_pool_ids(self, ids: np.ndarray, distances: np.ndarray, train_ids: List[int]) -> np.ndarray:
+        new_df = pd.DataFrame({
+            "ids": ids.flatten(), 
+            "dists": distances.flatten(), 
+            "train_ids": np.repeat(train_ids, ids.shape[1], axis=0).flatten(),
+        })        
+        df = pd.concat([self.current_pool, new_df], axis=0, ignore_index=False)
+        
+        # sort by distance (lower first) and then deduplicate keeping the first instance
+        df = df.sort_values("dists", ascending=True).drop_duplicates(subset=["ids"], keep="first")
+        
+        self.current_pool = df.iloc[:self.subset_size]
+        
+        return self.current_pool["ids"].to_numpy()
 
 
 class SEALS(UncertaintyBasedStrategyPoolSubset):
@@ -126,15 +156,17 @@ class SEALS(UncertaintyBasedStrategyPoolSubset):
         return annotated_ids
 
 
+
+
 class IGALRandom(UncertaintyBasedStrategyPoolSubset):
     def __init__(self, *args, num_influential: int = 10, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)  # type: ignore
         self.num_influential = num_influential
 
     def get_train_ids(self, model: _FabricModule, datastore: PandasDataStoreForSequenceClassification) -> List[int]:
         train_ids = datastore.get_train_ids()
         if len(train_ids) > 0:
-            return self.rng.choice(train_ids, size=self.num_influential, replace=False).tolist()
+            return self.rng.choice(train_ids, size=min(self.num_influential, len(train_ids)), replace=False).tolist()
         return train_ids
 
 
