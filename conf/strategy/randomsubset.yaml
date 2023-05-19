@@ -1,4 +1,5 @@
 _target_: src.strategies.RandomSubset
 score_fn: least_confidence
-seed: 42
+num_neighbours: null
 subset_size: 10000
+seed: 42
