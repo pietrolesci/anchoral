@@ -2,13 +2,14 @@ from functools import partial
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import pandas as pd
 import torch
 from lightning.fabric.wrappers import _FabricModule
 from sklearn.utils import check_random_state
 from torch import Tensor
 from torch.func import functional_call, grad, vmap  # type: ignore
 from tqdm.auto import tqdm
-import pandas as pd
+
 from energizer.datastores import PandasDataStoreForSequenceClassification
 from energizer.enums import InputKeys, SpecialKeys
 from energizer.strategies import RandomStrategy as _RandomStrategy
@@ -21,7 +22,6 @@ class RandomStrategy(SequenceClassificationMixin, _RandomStrategy):
 
 
 class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, UncertaintyBasedStrategy):
-
     def __init__(self, *args, num_neighbours: int, subset_size: int, seed: int, **kwargs) -> None:
         super().__init__(*args, **kwargs)  # type: ignore
         self.num_neighbours = num_neighbours
@@ -37,7 +37,7 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
         # TODO: log data that have been used as query and their influence score
 
         train_ids = self.get_train_ids(model, datastore)
-        
+
         if len(train_ids) == 0:
             # if cold-starting there is no training embedding, fall-back to random sampling
             return datastore.sample_from_pool(size=query_size, mode="uniform", random_state=self.rng)
@@ -69,7 +69,7 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
         # deduplicate keeping the order of first appearance
         _, udx = np.unique(ids, return_index=True)
         # return the ordered set
-        return ids[np.sort(udx)][:self.subset_size]
+        return ids[np.sort(udx)][: self.subset_size]
 
     def select(
         self,
@@ -104,20 +104,22 @@ class FullGuide(UncertaintyBasedStrategyPoolSubset):
             self.to_search = datastore.get_train_ids()
         # then only the newly added training points
         return self.to_search
-    
+
     def get_pool_ids(self, ids: np.ndarray, distances: np.ndarray, train_ids: List[int]) -> np.ndarray:
-        new_df = pd.DataFrame({
-            SpecialKeys.ID: ids.flatten(), 
-            "dists": distances.flatten(), 
-            "train_uid": np.repeat(train_ids, ids.shape[1], axis=0).flatten(),
-        })        
+        new_df = pd.DataFrame(
+            {
+                SpecialKeys.ID: ids.flatten(),
+                "dists": distances.flatten(),
+                "train_uid": np.repeat(train_ids, ids.shape[1], axis=0).flatten(),
+            }
+        )
         df = pd.concat([self.current_pool, new_df], axis=0, ignore_index=False)
-        
+
         # sort by distance (lower first) and then deduplicate keeping the first instance
         df = df.sort_values("dists", ascending=True).drop_duplicates(subset=[SpecialKeys.ID], keep="first")
-        
-        self.current_pool = df.iloc[:self.subset_size, :]
-        
+
+        self.current_pool = df.iloc[: self.subset_size, :]
+
         return self.current_pool[SpecialKeys.ID].to_numpy()
 
     def select(
@@ -130,7 +132,7 @@ class FullGuide(UncertaintyBasedStrategyPoolSubset):
     ) -> List[int]:
         # select the ids that need to be labelled
         annotated_ids = super().select(model, datastore, ids, distances, query_size)  # type: ignore
-        
+
         # overwrite with the train_ids that need to be searched at the next round
         self.to_search = annotated_ids
 
@@ -138,11 +140,13 @@ class FullGuide(UncertaintyBasedStrategyPoolSubset):
         annotated_df = self.current_pool.loc[self.current_pool[SpecialKeys.ID].isin(annotated_ids)]
         self.current_pool = self.current_pool.loc[~self.current_pool[SpecialKeys.ID].isin(annotated_ids)]
 
-        # log 
+        # log
         if "train_uid" in datastore.data.columns:
-            already_annotated_df = datastore.data.loc[~datastore.data["train_uid"].isna(), [SpecialKeys.ID, "train_uid", "dists"]]
+            already_annotated_df = datastore.data.loc[
+                ~datastore.data["train_uid"].isna(), [SpecialKeys.ID, "train_uid", "dists"]
+            ]
             annotated_df = pd.concat([annotated_df, already_annotated_df], axis=0, ignore_index=False)
-        
+
         cols = [col for col in datastore.data.columns if col not in ["train_uid", "dists"]]
 
         ol = len(datastore.data)
@@ -150,7 +154,7 @@ class FullGuide(UncertaintyBasedStrategyPoolSubset):
         assert ol == len(datastore.data)
 
         return annotated_ids
-    
+
 
 class RandomGuide(FullGuide):
     def __init__(self, *args, num_influential: int, **kwargs) -> None:
@@ -197,10 +201,6 @@ class SEALS(UncertaintyBasedStrategyPoolSubset):
         self.to_search = annotated_ids
 
         return annotated_ids
-
-
-
-
 
 
 def _grad_norm(grads: Dict, norm_type: int) -> Tensor:
