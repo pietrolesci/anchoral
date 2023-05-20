@@ -1,5 +1,5 @@
+defaults:
+  - defaults
+
 _target_: src.strategies.RandomSubset
-score_fn: least_confidence
 num_neighbours: null
-subset_size: 10000
-seed: 42
