@@ -39,7 +39,7 @@ class SaveOutputs(Callback):
         if self.instance_level and stage == RunningStage.TEST:
             data = pd.DataFrame(columns=[f"logit_{i}" for i in range(model.num_labels)], data=output[OutputKeys.LOGITS])
             data[SpecialKeys.ID] = output[SpecialKeys.ID]
-            data[Interval.ROUND] = estimator.progress_tracker.global_round
+            data[Interval.ROUND] = getattr(estimator.progress_tracker, "global_round", 0)
 
             instance_level_path = path / "instance_level.csv"
             data.to_csv(

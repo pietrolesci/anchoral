@@ -12,6 +12,7 @@ callbacks:
     stage: train
     mode: max
     monitor: train/f1_class1
+    save_last: false
   early_stopping:
     stage: train
     mode: max

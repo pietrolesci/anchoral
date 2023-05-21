@@ -7,6 +7,7 @@ from torchmetrics import MeanMetric, MetricCollection
 from torchmetrics.classification import AUROC, Accuracy, AveragePrecision, F1Score, Precision, Recall
 
 from energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
+from energizer.estimators.estimator import Estimator
 from energizer.types import ROUND_OUTPUT
 from energizer.utilities import ld_to_dl, move_to_cpu
 
@@ -112,3 +113,7 @@ class SequenceClassificationMixin:
         scores = self.score_fn(logits)  # type: ignore
 
         return {OutputKeys.SCORES: scores, OutputKeys.LOGITS: logits}
+
+
+class EstimatorForSequenceClassification(SequenceClassificationMixin, Estimator):
+    ...
