@@ -21,6 +21,10 @@ class RandomStrategy(SequenceClassificationMixin, _RandomStrategy):
     ...
 
 
+class UncertaintyStrategy(SequenceClassificationMixin, UncertaintyBasedStrategy):
+    ...
+
+
 class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, UncertaintyBasedStrategy):
     def __init__(self, *args, num_neighbours: int, subset_size: int, seed: int, **kwargs) -> None:
         super().__init__(*args, **kwargs)  # type: ignore
