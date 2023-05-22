@@ -1,10 +1,11 @@
 from functools import partial
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
 from lightning.fabric.wrappers import _FabricModule
+from scipy.special import softmax
 from sklearn.utils import check_random_state
 from torch import Tensor
 from torch.func import functional_call, grad, vmap  # type: ignore
@@ -48,10 +49,11 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
 
         # SEARCH
         train_embeddings = datastore.get_embeddings(train_ids)
-        ids, dists = self.search_pool(datastore, train_embeddings, self.num_neighbours)
+        ids, dists = self.search_pool(datastore, train_embeddings)
 
         # SUBSET
-        ids = self.get_pool_ids(ids, dists, train_ids)
+        ids = self.get_pool_ids(ids, dists, train_ids, datastore)
+        assert len(ids) == self.subset_size
 
         # SELECT
         return self.select(model, datastore, ids, dists, query_size)
@@ -61,12 +63,19 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
         return datastore.get_train_ids()
 
     def search_pool(
-        self, datastore: PandasDataStoreForSequenceClassification, query: np.ndarray, num_neighbours: int
+        self, datastore: PandasDataStoreForSequenceClassification, query: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get neighbours of training instances from the pool."""
+        num_neighbours = max(self.num_neighbours, int(self.subset_size / query.shape[0]))
         return datastore.search(query=query, query_size=num_neighbours, query_in_set=False)
 
-    def get_pool_ids(self, ids: np.ndarray, distances: np.ndarray, train_ids: List[int]) -> np.ndarray:
+    def get_pool_ids(
+        self,
+        ids: np.ndarray,
+        distances: np.ndarray,
+        train_ids: List[int],
+        datastore: PandasDataStoreForSequenceClassification,
+    ) -> np.ndarray:
         """Given all the matches get the subset_size closest."""
         # order the ids by their distance from a train datapoint (smaller is more similar)
         ids = ids.flatten()[distances.flatten().argsort()]
@@ -109,7 +118,13 @@ class FullGuide(UncertaintyBasedStrategyPoolSubset):
         # then only the newly added training points
         return self.to_search
 
-    def get_pool_ids(self, ids: np.ndarray, distances: np.ndarray, train_ids: List[int]) -> np.ndarray:
+    def get_pool_ids(
+        self,
+        ids: np.ndarray,
+        distances: np.ndarray,
+        train_ids: List[int],
+        datastore: PandasDataStoreForSequenceClassification,
+    ) -> np.ndarray:
         new_df = pd.DataFrame(
             {
                 SpecialKeys.ID: ids.flatten(),
@@ -119,10 +134,11 @@ class FullGuide(UncertaintyBasedStrategyPoolSubset):
         )
         df = pd.concat([self.current_pool, new_df], axis=0, ignore_index=False)
 
+        # if the same uid is picked by multiple train_uids, keep the one with the lowest distance
         # sort by distance (lower first) and then deduplicate keeping the first instance
         df = df.sort_values("dists", ascending=True).drop_duplicates(subset=[SpecialKeys.ID], keep="first")
 
-        self.current_pool = df.iloc[: self.subset_size, :]
+        self.current_pool = df.head(self.subset_size)
 
         return self.current_pool[SpecialKeys.ID].to_numpy()
 
@@ -144,20 +160,69 @@ class FullGuide(UncertaintyBasedStrategyPoolSubset):
         annotated_df = self.current_pool.loc[self.current_pool[SpecialKeys.ID].isin(annotated_ids)]
         self.current_pool = self.current_pool.loc[~self.current_pool[SpecialKeys.ID].isin(annotated_ids)]
 
-        # log
+        # add traceability (`dists` and `train_uid` columns) into the datastore
         if "train_uid" in datastore.data.columns:
             already_annotated_df = datastore.data.loc[
                 ~datastore.data["train_uid"].isna(), [SpecialKeys.ID, "train_uid", "dists"]
             ]
             annotated_df = pd.concat([annotated_df, already_annotated_df], axis=0, ignore_index=False)
-
         cols = [col for col in datastore.data.columns if col not in ["train_uid", "dists"]]
+        new_df = pd.merge(datastore.data[cols], annotated_df, on=SpecialKeys.ID, how="left")
+        assert len(new_df) == len(datastore.data), f"{len(new_df)}\n{len(datastore.data)}"
 
-        ol = len(datastore.data)
-        datastore.data = pd.merge(datastore.data[cols], annotated_df, on=SpecialKeys.ID, how="left")
-        assert ol == len(datastore.data)
+        datastore.data = new_df
 
         return annotated_ids
+
+
+class FullGuideWithSampling(FullGuide):
+    def __init__(self, *args, temperatures: List[float], **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.temperatures = temperatures
+
+    def get_pool_ids(
+        self,
+        ids: np.ndarray,
+        distances: np.ndarray,
+        train_ids: List[int],
+        datastore: PandasDataStoreForSequenceClassification,
+    ) -> np.ndarray:
+
+        # add the distances to the current_pool and when the same uid is picked by several train_uids,
+        # just keep the one with the lowest distance. This call updates current_pool
+        _ = super().get_pool_ids(ids, distances, train_ids, datastore)
+
+        # add the label to current_pool in order to sample by class
+        new_df = pd.merge(
+            self.current_pool,
+            datastore.data.loc[datastore._train_mask(), [SpecialKeys.ID, "labels"]],
+            left_on="train_uid",
+            right_on="uid",
+            suffixes=["", "_drop"],
+            how="left",
+        )
+        new_df = new_df.drop(columns=[f"{SpecialKeys.ID}_drop"])
+        # assert len(self.temperatures) == new_df["labels"].nunique()
+
+        # since for cosine distances lowest is better, change it to higher is better
+        new_df["scores"] = 1 - new_df["dists"]
+
+        # sample per class
+        samples = []
+        for c, df in new_df.groupby("labels"):
+            if c == 0:
+                continue
+            probs = self.get_probs(df["scores"].values, c)  # type: ignore
+            # size = min(int(self.subset_size / 2), len(df))
+            size = min(int(self.subset_size), len(df))
+            samples += self.rng.choice(df[SpecialKeys.ID].values, size=size, replace=False, p=probs).tolist()  # type: ignore
+
+        return np.array(samples)
+
+    def get_probs(self, scores: np.ndarray, class_idx: int) -> np.ndarray:
+        temp = self.temperatures[class_idx]
+        scores = scores / temp
+        return softmax(scores, axis=0)
 
 
 class RandomGuide(FullGuide):
@@ -172,54 +237,8 @@ class RandomGuide(FullGuide):
         return train_ids
 
 
-class SEALS(UncertaintyBasedStrategyPoolSubset):
-    pool_subset_ids: List[int] = []
-    to_search: List[int] = []
-
-    def get_train_ids(self, model: _FabricModule, datastore: PandasDataStoreForSequenceClassification) -> List[int]:
-        # we will only search the currently added train_ids sinces the others are cached into pool_subset_ids
-        if len(self.to_search) == 0:
-            self.to_search = datastore.get_train_ids()
-        return self.to_search
-
-    def select(
-        self,
-        model: _FabricModule,
-        datastore: PandasDataStoreForSequenceClassification,
-        ids: np.ndarray,
-        distances: np.ndarray,
-        query_size: int,
-    ) -> List[int]:
-        # add the NNs of the current train_ids to the pool
-        self.pool_subset_ids = list(set(self.pool_subset_ids + ids.tolist()))
-
-        # select the ids that need to be labelled
-        pool_loader = self.configure_dataloader(datastore.pool_loader(with_indices=self.pool_subset_ids))
-        self.progress_tracker.pool_tracker.max = len(pool_loader)  # type: ignore
-        annotated_ids = self.compute_most_uncertain(model, pool_loader, query_size)  # type: ignore
-
-        # remove those ids that are annotated
-        self.pool_subset_ids = list(set(self.pool_subset_ids).difference(set(annotated_ids)))
-
-        # overwrite with the train_ids that need to be searched
-        self.to_search = annotated_ids
-
-        return annotated_ids
-
-
-def _grad_norm(grads: Dict, norm_type: int) -> Tensor:
-    """This is a good way of computing the norm for all parameters across the network.
-
-    Check [here](https://github.com/viking-sudo-rm/norm-growth/blob/bca0576242c21de0ee06cdc3561dd27aa88a7040/finetune_trans.py#L89)
-    for confirmation: they return the same results but this implementation is more convenient
-    because we apply the norm layer-wise first and then we further aggregate.
-    """
-    norms = [g.norm(norm_type).unsqueeze(0) for g in grads.values() if g is not None]
-    return torch.concat(norms).norm(norm_type)
-
-
-class IGALGradNorm(UncertaintyBasedStrategyPoolSubset):
-    def __init__(self, *args, num_influential: int = 10, norm_type: int = 2, **kwargs) -> None:
+class GradNormGuide(FullGuide):
+    def __init__(self, *args, num_influential: int, norm_type: int, **kwargs) -> None:
         super().__init__(*args, **kwargs)  # type: ignore
         self.num_influential = num_influential
         self.norm_type = norm_type
@@ -228,6 +247,16 @@ class IGALGradNorm(UncertaintyBasedStrategyPoolSubset):
         _model = model.module
         params = {k: v.detach() for k, v in _model.named_parameters()}
         buffers = {k: v.detach() for k, v in _model.named_buffers()}
+
+        def _grad_norm(grads: Dict, norm_type: int) -> Tensor:
+            """This is a good way of computing the norm for all parameters across the network.
+
+            Check [here](https://github.com/viking-sudo-rm/norm-growth/blob/bca0576242c21de0ee06cdc3561dd27aa88a7040/finetune_trans.py#L89)
+            for confirmation: they return the same results but this implementation is more convenient
+            because we apply the norm layer-wise first and then we further aggregate.
+            """
+            norms = [g.norm(norm_type).unsqueeze(0) for g in grads.values() if g is not None]
+            return torch.concat(norms).norm(norm_type)
 
         def compute_loss(
             params: Dict, buffers: Dict, input_ids: Tensor, attention_mask: Tensor, labels: Tensor
@@ -256,8 +285,56 @@ class IGALGradNorm(UncertaintyBasedStrategyPoolSubset):
 
         norms = np.array(norms)
         ids = np.array(ids)
-        topk_ids = norms.argsort()[-self.num_influential :]  # biggest gradient norm
-        return ids[topk_ids].tolist()
+        topk_ids = ids[norms.argsort()[-self.num_influential :]]  # biggest gradient norm
+        return topk_ids.tolist()
+
+
+class GradNormGuideWithSampling(GradNormGuide):
+    def __init__(self, *args, temperatures: List[float], **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.temperatures = temperatures
+
+    def get_pool_ids(
+        self,
+        ids: np.ndarray,
+        distances: np.ndarray,
+        train_ids: List[int],
+        datastore: PandasDataStoreForSequenceClassification,
+    ) -> np.ndarray:
+
+        # add the distances to the current_pool and when the same uid is picked by several train_uids,
+        # just keep the one with the lowest distance. This call updates current_pool
+        _ = super().get_pool_ids(ids, distances, train_ids, datastore)
+
+        # add the label to current_pool in order to sample by class
+        new_df = pd.merge(
+            self.current_pool,
+            datastore.data.loc[datastore._train_mask(), [SpecialKeys.ID, "labels"]],
+            left_on="train_uid",
+            right_on="uid",
+            suffixes=["", "_drop"],
+            how="left",
+        )
+        new_df = new_df.drop(columns=[f"{SpecialKeys.ID}_drop"])
+        # assert len(self.temperatures) == new_df["labels"].nunique()
+
+        # since for cosine distances lowest is better, change it to higher is better
+        new_df["scores"] = 1 - new_df["dists"]
+
+        # sample per class
+        num_pos = (new_df["labels"] == 1).sum()
+        samples = []
+        for c, df in new_df.groupby("labels"):
+            size = min(self.subset_size - num_pos, len(df)) if c == 0 else num_pos            
+            probs = self.get_probs(df["scores"].values, c)  # type: ignore
+            samples += self.rng.choice(df[SpecialKeys.ID].values, size=size, replace=False, p=probs).tolist()  # type: ignore
+
+        return np.array(samples)
+
+    def get_probs(self, scores: np.ndarray, class_idx: int) -> np.ndarray:
+        temp = self.temperatures[class_idx]
+        scores = scores / temp
+        return softmax(scores, axis=0)
 
 
 class IGAL(UncertaintyBasedStrategyPoolSubset):
@@ -309,3 +386,38 @@ class IGAL(UncertaintyBasedStrategyPoolSubset):
         ids = np.array(ids)
         topk_ids = norms.argsort()[-self.num_influential :]  # biggest gradient norm
         return ids[topk_ids].tolist()
+
+
+class SEALS(UncertaintyBasedStrategyPoolSubset):
+    pool_subset_ids: List[int] = []
+    to_search: List[int] = []
+
+    def get_train_ids(self, model: _FabricModule, datastore: PandasDataStoreForSequenceClassification) -> List[int]:
+        # we will only search the currently added train_ids sinces the others are cached into pool_subset_ids
+        if len(self.to_search) == 0:
+            self.to_search = datastore.get_train_ids()
+        return self.to_search
+
+    def select(
+        self,
+        model: _FabricModule,
+        datastore: PandasDataStoreForSequenceClassification,
+        ids: np.ndarray,
+        distances: np.ndarray,
+        query_size: int,
+    ) -> List[int]:
+        # add the NNs of the current train_ids to the pool
+        self.pool_subset_ids = list(set(self.pool_subset_ids + ids.tolist()))
+
+        # select the ids that need to be labelled
+        pool_loader = self.configure_dataloader(datastore.pool_loader(with_indices=self.pool_subset_ids))
+        self.progress_tracker.pool_tracker.max = len(pool_loader)  # type: ignore
+        annotated_ids = self.compute_most_uncertain(model, pool_loader, query_size)  # type: ignore
+
+        # remove those ids that are annotated
+        self.pool_subset_ids = list(set(self.pool_subset_ids).difference(set(annotated_ids)))
+
+        # overwrite with the train_ids that need to be searched
+        self.to_search = annotated_ids
+
+        return annotated_ids

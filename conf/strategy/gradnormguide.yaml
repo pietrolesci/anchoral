@@ -1,6 +1,6 @@
-_target_: src.strategies.IGALGradNorm
-score_fn: least_confidence
-num_neighbours: 100
-num_influential: 10
+defaults:
+  - defaults
+
+_target_: src.strategies.GradNormGuide
+num_influential: 50
 norm_type: 2
-seed: 42
