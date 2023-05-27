@@ -172,8 +172,6 @@ class FullGuide(UncertaintyBasedStrategyPoolSubset):
         datastore.data = new_df
 
         return annotated_ids
-    
-
 
 
 class RandomGuide(FullGuide):
@@ -188,9 +186,7 @@ class RandomGuide(FullGuide):
         return train_ids
 
 
-
 class PoolSamplingMixin:
-
     def search_pool(
         self, datastore: PandasDataStoreForSequenceClassification, query: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
@@ -207,7 +203,7 @@ class PoolSamplingMixin:
         train_ids: List[int],
         datastore: PandasDataStoreForSequenceClassification,
     ) -> np.ndarray:
-        
+
         new_df = pd.DataFrame(
             {
                 SpecialKeys.ID: ids.flatten(),
@@ -242,7 +238,7 @@ class PoolSamplingMixin:
         pos_df = new_df.loc[new_df["labels"] == 1]
         if len(pos_df) > 0:
             probs = self.get_probs(pos_df["scores"].values, 1)  # type: ignore
-            size = min(int(self.subset_size * 3/4), len(pos_df))  # type: ignore
+            size = min(int(self.subset_size * 3 / 4), len(pos_df))  # type: ignore
             samples += self.rng.choice(pos_df[SpecialKeys.ID].values, size=size, replace=False, p=probs).tolist()  # type: ignore
 
         # sample negative class
@@ -320,9 +316,6 @@ class FullGuideWithSampling(PoolSamplingMixin, FullGuide):
     #     return softmax(scores, axis=0)
 
 
-
-
-
 class GradNormGuide(FullGuide):
     def __init__(self, *args, num_influential: int, norm_type: int, **kwargs) -> None:
         super().__init__(*args, **kwargs)  # type: ignore
@@ -394,7 +387,7 @@ class GradNormGuideWithSampling(PoolSamplingMixin, GradNormGuide):
     #     train_ids: List[int],
     #     datastore: PandasDataStoreForSequenceClassification,
     # ) -> np.ndarray:
-        
+
     #     new_df = pd.DataFrame(
     #         {
     #             SpecialKeys.ID: ids.flatten(),

@@ -1,6 +1,7 @@
 import logging
 
 import hydra
+import torch
 from datasets import DatasetDict, load_dataset
 from hydra.utils import instantiate  # get_original_cwd
 from lightning.fabric import seed_everything
@@ -10,8 +11,8 @@ from transformers.utils.logging import set_verbosity_warning
 
 from energizer.datastores import PandasDataStoreForSequenceClassification
 from src.utilities import SEP_LINE, binarize_labels, downsample_positive_class, downsample_test_set, get_initial_budget
-import torch
-torch.set_float32_matmul_precision('highest')
+
+torch.set_float32_matmul_precision("highest")
 
 set_verbosity_warning()
 log = logging.getLogger("hydra")
@@ -40,6 +41,7 @@ def main(cfg: DictConfig) -> None:
     # load data
     dataset_dict: DatasetDict = load_dataset(cfg.dataset.absolute_path)  # type: ignore
     dataset_dict.pop("validation", None)  # remove validation
+    # dataset_dict = dataset_dict.select_columns([cfg.dataset.label_column, cfg.dataset.text_column, "uid", f"embedding_{cfg.embedding_model}"])
 
     # maybe binarise label
     positive_class = cfg.dataset.positive_class

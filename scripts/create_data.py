@@ -4,13 +4,14 @@ from datasets import ClassLabel, DatasetDict, load_dataset
 from sentence_transformers import SentenceTransformer
 
 DATASETS = [
-    ("ag_news","text","label"),
-    ("imdb", "text", "label"),
-    ("OxAISH-AL-LLM/wiki_toxic", "comment_text", "label"),
-    ("armanc/pubmed-rct20k", "text", "label"),
+    # ("ag_news","text","label"),
+    # ("imdb", "text", "label"),
+    # ("OxAISH-AL-LLM/wiki_toxic", "comment_text", "label"),
+    # ("armanc/pubmed-rct20k", "text", "label"),
     # ("OxAISH-AL-LLM/pubmed_20k_rct", "text", "label"),
     # ("dbpedia_14", "content", "label"),
     # ("DeveloperOats/DBPedia_Classes", "text", ["l1", "l2", "l3"]),
+    ("pietrolesci/pubmed-rct-200k", "text", "labels")
 ]
 
 MODELS = ["all-mpnet-base-v2", "multi-qa-mpnet-base-dot-v1", "all-MiniLM-L12-v2"]
@@ -32,16 +33,9 @@ if __name__ == "__main__":
     embedders = load_models(MODELS)
 
     for name, text_col, label_col in DATASETS:
-
-
-        if isinstance(name, tuple):
-            name, config = name
-        else:
-            config = None
-
         print(f"Processing {name}")
 
-        dataset_dict: DatasetDict = load_dataset(name, config)  # type: ignore
+        dataset_dict: DatasetDict = load_dataset(name)  # type: ignore
         
         for k in list(dataset_dict.keys()):  # type: ignore
             if k not in ("train", "validation", "test"):
