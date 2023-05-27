@@ -2,15 +2,16 @@ import logging
 
 import hydra
 from datasets import DatasetDict, load_dataset
-from hydra.utils import get_original_cwd, instantiate
+from hydra.utils import instantiate  # get_original_cwd
 from lightning.fabric import seed_everything
-from lightning.fabric.loggers import TensorBoardLogger
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from transformers.utils.logging import set_verbosity_warning
 
 from energizer.datastores import PandasDataStoreForSequenceClassification
 from src.utilities import SEP_LINE, binarize_labels, downsample_positive_class, downsample_test_set, get_initial_budget
+import torch
+torch.set_float32_matmul_precision('highest')
 
 set_verbosity_warning()
 log = logging.getLogger("hydra")
