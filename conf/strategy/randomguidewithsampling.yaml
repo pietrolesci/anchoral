@@ -1,0 +1,8 @@
+defaults:
+  - defaults
+
+_target_: src.strategies.RandomGuideWithSampling
+num_influential: 50
+temperatures:
+  - 1.
+  - 1.

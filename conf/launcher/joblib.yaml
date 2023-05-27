@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - override hydra/launcher: joblib
+
+hydra:
+  launcher:
+    n_jobs: 10
+    backend: null
+    prefer: processes
+    require: null
+    verbose: 0
+    timeout: null
+    pre_dispatch: 2*n_jobs
+    batch_size: 2
+    temp_folder: null
+    max_nbytes: null
+    mmap_mode: r

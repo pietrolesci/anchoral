@@ -1,24 +1,6 @@
 # @package _global_
 defaults:
-  - /callbacks:
-    - early_stopping
-    - model_checkpoint
-    - timer
-    - grad_norm
-    - save_outputs
   - override /hydra/launcher: submitit_slurm
-
-callbacks:
-  model_checkpoint:
-    stage: train
-    mode: max
-    monitor: f1_macro
-  early_stopping:
-    stage: train
-    mode: max
-    monitor: f1_macro
-
-experiment_group: dry_run
 
 hydra:
   launcher:

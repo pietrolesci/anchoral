@@ -53,7 +53,6 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
 
         # SUBSET
         ids = self.get_pool_ids(ids, dists, train_ids, datastore)
-        assert len(ids) == self.subset_size
 
         # SELECT
         return self.select(model, datastore, ids, dists, query_size)
@@ -173,56 +172,8 @@ class FullGuide(UncertaintyBasedStrategyPoolSubset):
         datastore.data = new_df
 
         return annotated_ids
+    
 
-
-class FullGuideWithSampling(FullGuide):
-    def __init__(self, *args, temperatures: List[float], **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.temperatures = temperatures
-
-    def get_pool_ids(
-        self,
-        ids: np.ndarray,
-        distances: np.ndarray,
-        train_ids: List[int],
-        datastore: PandasDataStoreForSequenceClassification,
-    ) -> np.ndarray:
-
-        # add the distances to the current_pool and when the same uid is picked by several train_uids,
-        # just keep the one with the lowest distance. This call updates current_pool
-        _ = super().get_pool_ids(ids, distances, train_ids, datastore)
-
-        # add the label to current_pool in order to sample by class
-        new_df = pd.merge(
-            self.current_pool,
-            datastore.data.loc[datastore._train_mask(), [SpecialKeys.ID, "labels"]],
-            left_on="train_uid",
-            right_on="uid",
-            suffixes=["", "_drop"],
-            how="left",
-        )
-        new_df = new_df.drop(columns=[f"{SpecialKeys.ID}_drop"])
-        # assert len(self.temperatures) == new_df["labels"].nunique()
-
-        # since for cosine distances lowest is better, change it to higher is better
-        new_df["scores"] = 1 - new_df["dists"]
-
-        # sample per class
-        samples = []
-        for c, df in new_df.groupby("labels"):
-            if c == 0:
-                continue
-            probs = self.get_probs(df["scores"].values, c)  # type: ignore
-            # size = min(int(self.subset_size / 2), len(df))
-            size = min(int(self.subset_size), len(df))
-            samples += self.rng.choice(df[SpecialKeys.ID].values, size=size, replace=False, p=probs).tolist()  # type: ignore
-
-        return np.array(samples)
-
-    def get_probs(self, scores: np.ndarray, class_idx: int) -> np.ndarray:
-        temp = self.temperatures[class_idx]
-        scores = scores / temp
-        return softmax(scores, axis=0)
 
 
 class RandomGuide(FullGuide):
@@ -235,6 +186,141 @@ class RandomGuide(FullGuide):
         if len(train_ids) > 0:
             return self.rng.choice(train_ids, size=min(self.num_influential, len(train_ids)), replace=False).tolist()
         return train_ids
+
+
+
+class PoolSamplingMixin:
+
+    def search_pool(
+        self, datastore: PandasDataStoreForSequenceClassification, query: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Get neighbours of training instances from the pool."""
+        num_neighbours = max(self.num_neighbours, int(self.subset_size / query.shape[0])) * 10  # type: ignore
+        self.log("summary/num_neighbours", num_neighbours, step=self.progress_tracker.global_round)  # type: ignore
+        # TODO: log query_size.shape[0]
+        return datastore.search(query=query, query_size=num_neighbours, query_in_set=False)
+
+    def get_pool_ids(
+        self,
+        ids: np.ndarray,
+        distances: np.ndarray,
+        train_ids: List[int],
+        datastore: PandasDataStoreForSequenceClassification,
+    ) -> np.ndarray:
+        
+        new_df = pd.DataFrame(
+            {
+                SpecialKeys.ID: ids.flatten(),
+                "dists": distances.flatten(),
+                "train_uid": np.repeat(train_ids, ids.shape[1], axis=0).flatten(),
+            }
+        )
+
+        # add the label to current_pool in order to sample by class
+        new_df = pd.merge(
+            new_df,
+            datastore.data.loc[datastore._train_mask(), [SpecialKeys.ID, "labels"]],
+            left_on="train_uid",
+            right_on="uid",
+            suffixes=["", "_drop"],
+            how="left",
+        )
+        new_df = new_df.drop(columns=[f"{SpecialKeys.ID}_drop"])
+        new_df = (
+            new_df.groupby([SpecialKeys.ID, "labels"])
+            .agg(dists=("dists", "mean"), train_uid=("train_uid", "unique"))
+            .reset_index()
+        )
+        # mean works so far
+        # assert len(self.temperatures) == new_df["labels"].nunique()
+
+        # since for cosine distances lowest is better, change it to higher is better
+        new_df["scores"] = 1 - new_df["dists"]
+
+        samples = []
+        # sample positive class
+        pos_df = new_df.loc[new_df["labels"] == 1]
+        if len(pos_df) > 0:
+            probs = self.get_probs(pos_df["scores"].values, 1)  # type: ignore
+            size = min(int(self.subset_size * 3/4), len(pos_df))  # type: ignore
+            samples += self.rng.choice(pos_df[SpecialKeys.ID].values, size=size, replace=False, p=probs).tolist()  # type: ignore
+
+        # sample negative class
+        neg_df = new_df.loc[(new_df["labels"] == 0) & (~new_df[SpecialKeys.ID].isin(samples))]
+        if len(neg_df) > 0:
+            probs = self.get_probs(neg_df["scores"].values, 0)  # type: ignore
+            size = min(self.subset_size - len(samples), len(neg_df))  # type: ignore
+            samples += self.rng.choice(neg_df[SpecialKeys.ID].values, size=size, replace=False, p=probs).tolist()  # type: ignore
+
+        if len(samples) < self.subset_size:  # type: ignore
+            n = self.subset_size - len(samples)  # type: ignore
+            samples += datastore.sample_from_pool(size=n, mode="uniform", random_state=self.rng)  # type: ignore
+
+        return np.array(samples)
+
+    def get_probs(self, scores: np.ndarray, class_idx: int) -> np.ndarray:
+        temp = self.temperatures[class_idx]  # type: ignore
+        scores = scores / temp
+        return softmax(scores, axis=0)
+
+
+class RandomGuideWithSampling(PoolSamplingMixin, RandomGuide):
+    def __init__(self, *args, temperatures: List[float], **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.temperatures = temperatures
+
+
+class FullGuideWithSampling(PoolSamplingMixin, FullGuide):
+    def __init__(self, *args, temperatures: List[float], **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.temperatures = temperatures
+
+    # def get_pool_ids(
+    #     self,
+    #     ids: np.ndarray,
+    #     distances: np.ndarray,
+    #     train_ids: List[int],
+    #     datastore: PandasDataStoreForSequenceClassification,
+    # ) -> np.ndarray:
+
+    #     # add the distances to the current_pool and when the same uid is picked by several train_uids,
+    #     # just keep the one with the lowest distance. This call updates current_pool
+    #     _ = super().get_pool_ids(ids, distances, train_ids, datastore)
+
+    #     # add the label to current_pool in order to sample by class
+    #     new_df = pd.merge(
+    #         self.current_pool,
+    #         datastore.data.loc[datastore._train_mask(), [SpecialKeys.ID, "labels"]],
+    #         left_on="train_uid",
+    #         right_on="uid",
+    #         suffixes=["", "_drop"],
+    #         how="left",
+    #     )
+    #     new_df = new_df.drop(columns=[f"{SpecialKeys.ID}_drop"])
+    #     # assert len(self.temperatures) == new_df["labels"].nunique()
+
+    #     # since for cosine distances lowest is better, change it to higher is better
+    #     new_df["scores"] = 1 - new_df["dists"]
+
+    #     # sample per class
+    #     samples = []
+    #     for c, df in new_df.groupby("labels"):
+    #         if c == 0:
+    #             continue
+    #         probs = self.get_probs(df["scores"].values, c)  # type: ignore
+    #         # size = min(int(self.subset_size / 2), len(df))
+    #         size = min(int(self.subset_size), len(df))
+    #         samples += self.rng.choice(df[SpecialKeys.ID].values, size=size, replace=False, p=probs).tolist()  # type: ignore
+
+    #     return np.array(samples)
+
+    # def get_probs(self, scores: np.ndarray, class_idx: int) -> np.ndarray:
+    #     temp = self.temperatures[class_idx]
+    #     scores = scores / temp
+    #     return softmax(scores, axis=0)
+
+
+
 
 
 class GradNormGuide(FullGuide):
@@ -289,52 +375,84 @@ class GradNormGuide(FullGuide):
         return topk_ids.tolist()
 
 
-class GradNormGuideWithSampling(GradNormGuide):
+class GradNormGuideWithSampling(PoolSamplingMixin, GradNormGuide):
     def __init__(self, *args, temperatures: List[float], **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.temperatures = temperatures
 
-    def get_pool_ids(
-        self,
-        ids: np.ndarray,
-        distances: np.ndarray,
-        train_ids: List[int],
-        datastore: PandasDataStoreForSequenceClassification,
-    ) -> np.ndarray:
+    # def search_pool(
+    #     self, datastore: PandasDataStoreForSequenceClassification, query: np.ndarray
+    # ) -> Tuple[np.ndarray, np.ndarray]:
+    #     """Get neighbours of training instances from the pool."""
+    #     num_neighbours = max(self.num_neighbours, int(self.subset_size / query.shape[0])) * 10
+    #     return datastore.search(query=query, query_size=num_neighbours, query_in_set=False)
 
-        # add the distances to the current_pool and when the same uid is picked by several train_uids,
-        # just keep the one with the lowest distance. This call updates current_pool
-        _ = super().get_pool_ids(ids, distances, train_ids, datastore)
+    # def get_pool_ids(
+    #     self,
+    #     ids: np.ndarray,
+    #     distances: np.ndarray,
+    #     train_ids: List[int],
+    #     datastore: PandasDataStoreForSequenceClassification,
+    # ) -> np.ndarray:
+        
+    #     new_df = pd.DataFrame(
+    #         {
+    #             SpecialKeys.ID: ids.flatten(),
+    #             "dists": distances.flatten(),
+    #             "train_uid": np.repeat(train_ids, ids.shape[1], axis=0).flatten(),
+    #         }
+    #     )
 
-        # add the label to current_pool in order to sample by class
-        new_df = pd.merge(
-            self.current_pool,
-            datastore.data.loc[datastore._train_mask(), [SpecialKeys.ID, "labels"]],
-            left_on="train_uid",
-            right_on="uid",
-            suffixes=["", "_drop"],
-            how="left",
-        )
-        new_df = new_df.drop(columns=[f"{SpecialKeys.ID}_drop"])
-        # assert len(self.temperatures) == new_df["labels"].nunique()
+    #     # # add the distances to the current_pool and when the same uid is picked by several train_uids,
+    #     # # just keep the one with the lowest distance. This call updates current_pool
+    #     # _ = super().get_pool_ids(ids, distances, train_ids, datastore)
 
-        # since for cosine distances lowest is better, change it to higher is better
-        new_df["scores"] = 1 - new_df["dists"]
+    #     # add the label to current_pool in order to sample by class
+    #     new_df = pd.merge(
+    #         new_df,
+    #         datastore.data.loc[datastore._train_mask(), [SpecialKeys.ID, "labels"]],
+    #         left_on="train_uid",
+    #         right_on="uid",
+    #         suffixes=["", "_drop"],
+    #         how="left",
+    #     )
+    #     new_df = new_df.drop(columns=[f"{SpecialKeys.ID}_drop"])
+    #     new_df = (
+    #         new_df.groupby([SpecialKeys.ID, "labels"])
+    #         .agg(dists=("dists", "mean"), train_uid=("train_uid", "unique"))
+    #         .reset_index()
+    #     )
+    #     # mean works so far
+    #     # assert len(self.temperatures) == new_df["labels"].nunique()
 
-        # sample per class
-        num_pos = (new_df["labels"] == 1).sum()
-        samples = []
-        for c, df in new_df.groupby("labels"):
-            size = min(self.subset_size - num_pos, len(df)) if c == 0 else num_pos            
-            probs = self.get_probs(df["scores"].values, c)  # type: ignore
-            samples += self.rng.choice(df[SpecialKeys.ID].values, size=size, replace=False, p=probs).tolist()  # type: ignore
+    #     # since for cosine distances lowest is better, change it to higher is better
+    #     new_df["scores"] = 1 - new_df["dists"]
 
-        return np.array(samples)
+    #     samples = []
+    #     # sample positive class
+    #     pos_df = new_df.loc[new_df["labels"] == 1]
+    #     if len(pos_df) > 0:
+    #         probs = self.get_probs(pos_df["scores"].values, 1)  # type: ignore
+    #         size = min(int(self.subset_size * 3/4), len(pos_df))
+    #         samples += self.rng.choice(pos_df[SpecialKeys.ID].values, size=size, replace=False, p=probs).tolist()  # type: ignore
 
-    def get_probs(self, scores: np.ndarray, class_idx: int) -> np.ndarray:
-        temp = self.temperatures[class_idx]
-        scores = scores / temp
-        return softmax(scores, axis=0)
+    #     # sample negative class
+    #     neg_df = new_df.loc[(new_df["labels"] == 0) & (~new_df[SpecialKeys.ID].isin(samples))]
+    #     if len(neg_df) > 0:
+    #         probs = self.get_probs(neg_df["scores"].values, 0)  # type: ignore
+    #         size = min(self.subset_size - len(samples), len(neg_df))
+    #         samples += self.rng.choice(neg_df[SpecialKeys.ID].values, size=size, replace=False, p=probs).tolist()  # type: ignore
+
+    #     if len(samples) < self.subset_size:
+    #         n = self.subset_size - len(samples)
+    #         samples += datastore.sample_from_pool(size=n, mode="uniform", random_state=self.rng)
+
+    #     return np.array(samples)
+
+    # def get_probs(self, scores: np.ndarray, class_idx: int) -> np.ndarray:
+    #     temp = self.temperatures[class_idx]
+    #     scores = scores / temp
+    #     return softmax(scores, axis=0)
 
 
 class IGAL(UncertaintyBasedStrategyPoolSubset):

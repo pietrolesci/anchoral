@@ -4,11 +4,7 @@ from datasets import ClassLabel, DatasetDict, load_dataset
 from sentence_transformers import SentenceTransformer
 
 DATASETS = [
-    (
-        "ag_news",
-        "text",
-        "label",
-    ),
+    ("ag_news","text","label"),
     ("imdb", "text", "label"),
     ("OxAISH-AL-LLM/wiki_toxic", "comment_text", "label"),
     ("armanc/pubmed-rct20k", "text", "label"),
@@ -37,9 +33,16 @@ if __name__ == "__main__":
 
     for name, text_col, label_col in DATASETS:
 
+
+        if isinstance(name, tuple):
+            name, config = name
+        else:
+            config = None
+
         print(f"Processing {name}")
 
-        dataset_dict: DatasetDict = load_dataset(name)  # type: ignore
+        dataset_dict: DatasetDict = load_dataset(name, config)  # type: ignore
+        
         for k in list(dataset_dict.keys()):  # type: ignore
             if k not in ("train", "validation", "test"):
                 dataset_dict.pop(k)  # type: ignore

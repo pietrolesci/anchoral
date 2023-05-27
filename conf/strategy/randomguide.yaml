@@ -2,4 +2,4 @@ defaults:
   - defaults
 
 _target_: src.strategies.RandomGuide
-num_influential: 100
+num_influential: 50
