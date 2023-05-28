@@ -28,6 +28,9 @@ if __name__ == "__main__":
     data_dir = Path(args.data_dir)
     dataset_dict = load_from_disk(data_dir / "processed" / args.dataset)
 
+    # remove validation set
+    dataset_dict.pop("validation", None)  # type: ignore
+    
     # create label
     create_label_fn = LABEL_FN.get(args.dataset, None)
     if create_label_fn is not None:
