@@ -1,18 +1,21 @@
 from logging import Logger
-from typing import List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 import pandas as pd
 from datasets import ClassLabel, Dataset, DatasetDict, Features
 from omegaconf import OmegaConf
+from sentence_transformers import SentenceTransformer
 from sklearn.utils import check_random_state
 from tabulate import tabulate
+from tqdm.auto import tqdm
 
 from energizer.datastores import PandasDataStoreForSequenceClassification
 from energizer.enums import InputKeys, SpecialKeys
 from energizer.utilities import sample
 
 SEP_LINE = f"{'=' * 70}"
-
+import json
+from pathlib import Path
 
 OmegaConf.register_new_resolver("get_name_strategy", lambda x: x["_target_"].split(".")[-1].lower())
 
@@ -149,3 +152,93 @@ def get_initial_budget(
         f"Pool size: {datastore.pool_size()} "
         f"Test size: {datastore.test_size()}"
     )
+
+
+"""
+Datasets
+"""
+
+
+def load_models(names: List[str]) -> Dict[str, SentenceTransformer]:
+    return {name: SentenceTransformer(name) for name in names}
+
+
+def sequential_numbers() -> Generator[int, Any, None]:
+    n = 0
+    while True:
+        yield n
+        n += 1
+
+
+def load_pubmed(path: Path) -> DatasetDict:
+    """Load dataset into DatasetDict and create `text` column."""
+    data = {}
+    for name in ("train", "dev", "test"):
+        data[name] = []
+        with (path / f"{name}.txt").open("r") as fl:
+            for line in tqdm(fl.readlines(), desc="Reading"):
+                if not line.startswith("#") and line.strip() != "":
+                    label, text = line.split("\t")
+                    data[name].append({"labels": label, "text": text})
+    data["validation"] = data.pop("dev")
+
+    ds_dict = DatasetDict({k: Dataset.from_pandas(pd.DataFrame(v), preserve_index=False) for k, v in data.items()})
+    ds_dict = ds_dict.class_encode_column("labels")
+
+    return ds_dict
+
+
+def load_eurlex(path: Path) -> DatasetDict:
+    """Load dataset into DatasetDict and create `text` column."""
+    ds_dict = DatasetDict(
+        {
+            name: Dataset.from_pandas(
+                pd.DataFrame(srsly.read_jsonl(path / f"{name}.jsonl")).assign(  # type: ignore
+                    text=lambda _df: _df["title"] + _df["recitals"],
+                ),
+                preserve_index=False,
+            )
+            for name in ("train", "dev", "test")
+        }
+    )
+    ds_dict["validation"] = ds_dict.pop("dev")
+    return ds_dict
+
+
+def load_amazoncat(path: Path) -> DatasetDict:
+    """Load dataset into DatasetDict and create `text` column."""
+    data = {}
+    for split in ("trn", "tst"):
+        with open(path / f"{split}.json", "r") as fl:
+            data[split] = Dataset.from_pandas(
+                df=(
+                    pd.DataFrame([json.loads(i) for i in fl.readlines()])
+                    .assign(text=lambda _df: _df["title"] + "\n" + _df["content"])
+                    .rename(columns={"uid": "uid_original"})
+                ),
+                preserve_index=False,
+            )
+
+    data["train"] = data.pop("trn")
+    data["test"] = data.pop("tst")
+
+    return DatasetDict(data)
+
+
+def add_features(ds_dict: DatasetDict, text_col: str, models: List[str]) -> DatasetDict:
+    id_generator = sequential_numbers()
+    embedders = load_models(models)
+
+    ds_dict = ds_dict.map(
+        lambda ex: {
+            "uid": [next(id_generator) for _ in range(len(ex[text_col]))],
+            **{f"embedding_{k}": v.encode(ex[text_col], device="cuda", batch_size=512) for k, v in embedders.items()},
+        },
+        batched=True,
+        batch_size=1024,
+    )
+    return ds_dict
+
+
+def process_pubmed(ds_dict: DatasetDict) -> DatasetDict:
+    ...
