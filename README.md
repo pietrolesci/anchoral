@@ -40,16 +40,39 @@ poetry install --sync --with dev
 ---
 
 
-## Download, process, and prepare data
+## Data Preparation
 
-Since it's tricky to download data from Kaggle through the CLI, manually dowload the Civil Comments
-dataset from [here](https://www.kaggle.com/competitions/jigsaw-unintended-bias-in-toxicity-classification/data)
-and unzip it into `./data/raw/civil_comments`. Then,
+### Step 1: Download and process
+
+To download the processed data from the hub run
 
 ```bash
+./bin/download_data_from_hub.sh
+```
+
+To re-process the data locally (this indexes the data with 3 sentence-transformers -- takes a long time)
+
+```bash
+./bin/download_data.sh
 ./bin/process_data.sh
+```
+
+### Step 2: Create local HNSW index
+
+To speed up the experimentation, we create the HNSW index once and save it to disk. For each embedding in the dataset this will save a different `.bin` file. By default it will create indices using the cosine distance, change this file if you want to experiment with different metrics. 
+
+```bash
+./bin/create_index.sh
+```
+
+### Step 3: Prepare data for training
+
+Finally, we tokenize and save the dataset so it is ready to go
+
+```bash
 ./bin/prepare_data.sh
 ```
+
 
 ## Logging (HuggingFace classifier experiments)
 

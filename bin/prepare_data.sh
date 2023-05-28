@@ -4,45 +4,27 @@
 
 set -e
 
-echo 'Preparing AGNEWS'
+
+data_dir=$(pwd)/data
+MODEL=bert-tiny
+
+
+# echo Preparing Agnews
+# poetry run python ./scripts/prepare_data.py \
+#     --data_dir=$data_dir \
+#     --model $MODEL \
+#     --dataset agnews
+
+
+# echo Preparing Eurlex-57k
+# poetry run python ./scripts/prepare_data.py \
+#     --data_dir=$data_dir \
+#     --model $MODEL \
+#     --dataset eurlex-57k
+
+
+echo Preparing Pubmed-200k-rct
 poetry run python ./scripts/prepare_data.py \
-    --dataset_name='agnews' \
-    --input_dir='./data/processed' \
-    --output_dir='./data/prepared' \
-    --name_or_path='google/bert_uncased_L-2_H-128_A-2' \
-    --name_or_path_alias='bert_tiny'
-
-
-echo 'Preparing Civil Comments'
-poetry run python ./scripts/prepare_data.py \
-    --dataset_name=civil_comments \
-    --input_dir='./data/processed/' \
-    --output_dir='./data/prepared/' \
-    --name_or_path='google/bert_uncased_L-2_H-128_A-2' \
-    --name_or_path_alias='bert_tiny'
-
-
-echo 'Preparing IMDB'
-poetry run python ./scripts/prepare_data.py \
-    --dataset_name='imdb' \
-    --input_dir='./data/processed' \
-    --output_dir='./data/prepared' \
-    --name_or_path='google/bert_uncased_L-2_H-128_A-2' \
-    --name_or_path_alias='bert_tiny'
-
-
-
-poetry run python ./scripts/prepare_data.py \
-    --dataset_name='agnews' \
-    --input_dir='./data/processed' \
-    --output_dir='./data/prepared' \
-    --name_or_path='bert-base-uncased' \
-    --name_or_path_alias='bert_base'
-
-
-poetry run python ./scripts/prepare_data.py \
-    --dataset_name='agnews' \
-    --input_dir='./data/processed' \
-    --output_dir='./data/prepared' \
-    --name_or_path='distilbert-base-uncased' \
-    --name_or_path_alias='distilbert_base'
+    --data_dir=$data_dir \
+    --model $MODEL \
+    --dataset pubmed-200k-rct

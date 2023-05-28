@@ -1,33 +1,48 @@
 import argparse
 from pathlib import Path
 
-import srsly
 from datasets import Dataset, DatasetDict, load_from_disk
 from transformers import AutoTokenizer
+from src.utilities import binarize_eurlex, MODELS, binarize_pubmed
+from datasets import disable_caching
+from os import cpu_count
+
+
+LABEL_FN = {
+    "eurlex-57k": binarize_eurlex,
+    "pubmed-200k-rct": binarize_pubmed,
+}
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset_name", type=str)
-    parser.add_argument("--input_dir", type=str)
-    parser.add_argument("--output_dir", type=str)
-    parser.add_argument("--name_or_path", type=str)
-    parser.add_argument("--name_or_path_alias", type=str)
+    parser.add_argument("--data_dir", type=str)
+    parser.add_argument("--dataset", type=str)
+    parser.add_argument("--model", type=str)
     args = parser.parse_args()
 
+    # do not cache dataets
+    disable_caching()
+    
     # load data and metadata
-    input_dir = Path(args.input_dir) / args.dataset_name
-    dataset_dict = load_from_disk(input_dir)
-    meta = srsly.read_yaml(input_dir / "metadata.yaml")
+    data_dir = Path(args.data_dir)
+    dataset_dict = load_from_disk(data_dir / "processed" / args.dataset)
 
-    # define tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(args.name_or_path)
+    # create label
+    create_label_fn = LABEL_FN.get(args.dataset, None)
+    if create_label_fn is not None:
+        dataset_dict = dataset_dict.map(create_label_fn, desc="Binarizing", batched=True, num_proc=cpu_count())
+
+    # select columns
+    dataset_dict = dataset_dict.select_columns(["uid", "labels", "text"])
 
     # tokenize
-    dataset_dict = dataset_dict.map(lambda ex: tokenizer(ex["text"]), batched=True)
+    tokenizer = AutoTokenizer.from_pretrained(MODELS[args.model])
+    dataset_dict = dataset_dict.map(lambda ex: tokenizer(ex["text"], return_token_type_ids=False), batched=True, desc="Tokenizing", num_proc=cpu_count())
 
-    # sort by length
+    # sort by length to optimise inference time -- training set will be shuffled anyway later
     new_dataset_dict = {}
-    for split, dataset in dataset_dict.items():
+    for split, dataset in dataset_dict.items():  # type: ignore
         new_dataset_dict[split] = Dataset.from_pandas(
             df=(
                 dataset.to_pandas()
@@ -40,11 +55,5 @@ if __name__ == "__main__":
         )
     dataset_dict = DatasetDict(new_dataset_dict)
 
-    # update metadata
-    meta["name_or_path"] = args.name_or_path
-    meta["name_or_path_alias"] = args.name_or_path_alias
-
-    # save to disk
-    output_dir = Path(args.output_dir) / f"{args.dataset_name}_{args.name_or_path_alias}"
-    dataset_dict.save_to_disk(output_dir)
-    srsly.write_yaml(output_dir / "metadata.yaml", meta)
+    # save
+    dataset_dict.save_to_disk(data_dir / "prepared" / f"{args.dataset}_{args.model}")

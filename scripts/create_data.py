@@ -36,7 +36,7 @@ if __name__ == "__main__":
         print(f"Processing {name}")
 
         dataset_dict: DatasetDict = load_dataset(name)  # type: ignore
-        
+
         for k in list(dataset_dict.keys()):  # type: ignore
             if k not in ("train", "validation", "test"):
                 dataset_dict.pop(k)  # type: ignore

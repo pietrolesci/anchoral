@@ -1,6 +1,8 @@
 from logging import Logger
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Callable, Dict, Generator, List, Optional
 
+import hnswlib as hb
+import numpy as np
 import pandas as pd
 from datasets import ClassLabel, Dataset, DatasetDict, Features
 from omegaconf import OmegaConf
@@ -16,6 +18,10 @@ from energizer.utilities import sample
 SEP_LINE = f"{'=' * 70}"
 import json
 from pathlib import Path
+
+
+MODELS = {"bert-tiny": "google/bert_uncased_L-2_H-128_A-2"}
+
 
 OmegaConf.register_new_resolver("get_name_strategy", lambda x: x["_target_"].split(".")[-1].lower())
 
@@ -240,5 +246,12 @@ def add_features(ds_dict: DatasetDict, text_col: str, models: List[str]) -> Data
     return ds_dict
 
 
-def process_pubmed(ds_dict: DatasetDict) -> DatasetDict:
-    ...
+def binarize_eurlex(ex: Dict[str, List]) -> Dict:
+    """Make `health control` the target label."""
+    return {"labels": [int("192" in l) for l in ex["eurovoc_concepts"]]}
+
+
+def binarize_pubmed(ex: Dict[str, List]) -> Dict:
+    """Make `OBJECTIVE` the target label."""
+    return {"labels": [int(3 == l) for l in ex["labels"]]}
+
