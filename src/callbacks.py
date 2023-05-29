@@ -74,7 +74,7 @@ class SaveOutputs(Callback):
         # save partial results
         datastore.save_labelled_dataset(self.dirpath)
 
-        counts = dict(datastore.data.loc[datastore._train_mask(), InputKeys.TARGET].value_counts())
+        counts = dict(datastore.data.loc[datastore._labelled_mask(), InputKeys.TARGET].value_counts())
         if 1 not in counts:
             counts[1] = 0  # type: ignore
 
