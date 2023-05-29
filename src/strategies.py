@@ -48,7 +48,7 @@ class UncertaintyBasedStrategyPoolSubset(SequenceClassificationMixin, Uncertaint
             return datastore.sample_from_pool(size=query_size, mode="uniform", random_state=self.rng)
 
         # SEARCH
-        train_embeddings = datastore.get_embeddings(train_ids)
+        train_embeddings = datastore.get_train_embeddings(train_ids)
         ids, dists = self.search_pool(datastore, train_embeddings)
 
         # SUBSET

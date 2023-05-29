@@ -1,4 +1,4 @@
-sources = src scripts
+sources = src scripts energizer
 
 .PHONY: test format lint unittest coverage pre-commit clean
 test: format lint unittest

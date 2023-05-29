@@ -4,6 +4,7 @@ from pathlib import Path
 import hnswlib as hb
 import numpy as np
 import pandas as pd
+import srsly
 from datasets import load_from_disk
 from tqdm.auto import tqdm
 
@@ -30,4 +31,17 @@ if __name__ == "__main__":
         index = hb.Index(space=args.index_metric, dim=emb.shape[1])
         index.set_ef(ef)
         index.init_index(max_elements=emb.shape[0], M=M, ef_construction=ef_construction, random_seed=42)
-        index.save_index(str(data_dir / f"{col.split('embedding_')[1]}_{args.index_metric}.bin"))
+        index.add_items(emb, uid, num_threads=num_threads)
+
+        out_path = str(data_dir / f"{col.split('embedding_')[1]}_{args.index_metric}")
+        index.save_index(f"{out_path}.bin")
+
+        meta = {
+            "ef_construction": ef_construction,
+            "ef": ef,
+            "M": M,
+            "num_threads": num_threads,
+            "dim": emb.shape[1],
+            "metric": args.index_metric,
+        }
+        srsly.write_json(f"{out_path}.json", meta)

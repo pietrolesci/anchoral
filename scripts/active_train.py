@@ -2,7 +2,7 @@ import logging
 
 import hydra
 import torch
-from datasets import DatasetDict, load_dataset
+from datasets import DatasetDict, load_from_disk
 from hydra.utils import instantiate  # get_original_cwd
 from lightning.fabric import seed_everything
 from omegaconf import DictConfig, OmegaConf
@@ -10,7 +10,14 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from transformers.utils.logging import set_verbosity_warning
 
 from energizer.datastores import PandasDataStoreForSequenceClassification
-from src.utilities import SEP_LINE, binarize_labels, downsample_positive_class, downsample_test_set, get_initial_budget
+from src.utilities import (
+    MODELS,
+    SEP_LINE,
+    binarize_labels,
+    downsample_positive_class,
+    downsample_test_set,
+    get_initial_budget,
+)
 
 torch.set_float32_matmul_precision("highest")
 
@@ -39,48 +46,10 @@ def main(cfg: DictConfig) -> None:
     ##########################################
 
     # load data
-    dataset_dict: DatasetDict = load_dataset(cfg.dataset.absolute_path)  # type: ignore
-    dataset_dict.pop("validation", None)  # remove validation
-    # dataset_dict = dataset_dict.select_columns([cfg.dataset.label_column, cfg.dataset.text_column, "uid", f"embedding_{cfg.embedding_model}"])
+    dataset_dict: DatasetDict = load_from_disk(f"{cfg.dataset.prepared_path}_{cfg.model}")  # type: ignore
 
-    # maybe binarise label
-    positive_class = cfg.dataset.positive_class
-    if cfg.dataset.need_binarize is True:
-        dataset_dict = binarize_labels(
-            dataset_dict=dataset_dict,
-            target_name=cfg.dataset.label_column,
-            positive_class=cfg.dataset.positive_class,
-            logger=log,
-        )
-        positive_class = 1  # when we binarize we make the positive class equal to 1
-
-    # maybe downsample positive class
-    if cfg.dataset.downsample_proportion is not None:
-        dataset_dict = downsample_positive_class(
-            dataset_dict=dataset_dict,
-            target_name=cfg.dataset.label_column,
-            positive_class=positive_class,
-            proportion=cfg.dataset.downsample_proportion,
-            seed=cfg.data.seed,
-            logger=log,
-        )
-
-    # maybe downsample the test set
-    if cfg.dataset.test_set_size is not None:
-        dataset_dict = downsample_test_set(
-            dataset_dict=dataset_dict,
-            target_name=cfg.dataset.label_column,
-            positive_class=positive_class,
-            test_set_size=cfg.dataset.test_set_size,
-            seed=cfg.data.seed,
-            logger=log,
-        )
-
-    # load tokenizer and tokenize
-    tokenizer = AutoTokenizer.from_pretrained(cfg.model)
-    dataset_dict = dataset_dict.map(
-        lambda ex: tokenizer(ex[cfg.dataset.text_column]), batched=True, desc="Tokenizing", num_proc=8
-    )
+    # load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(MODELS[cfg.model])
 
     ##############################################
     # ============ data preparation ============ #
@@ -95,10 +64,13 @@ def main(cfg: DictConfig) -> None:
         uid_name=cfg.dataset.uid_column,
         tokenizer=tokenizer,
     )
-    if cfg.embedding_model is not None and "RandomStrategy" not in cfg.strategy._target_:
-        emb_col = f"embedding_{cfg.embedding_model}"
-        log.info(f"adding index from {emb_col}")
-        datastore.add_index(emb_col)
+
+    # load index
+    # if cfg.embedding_model is not None and "RandomStrategy" not in cfg.strategy._target_:
+    index_path = f"{cfg.dataset.processed_path}/{cfg.index_metric}"
+    log.info(f"loading index from {index_path}")
+    index_path, meta_path = f"{index_path}.bin", f"{index_path}.json"
+    datastore.load_index(index_path, meta_path)
 
     # define initial budget
     if cfg.active_data.budget is not None and cfg.active_data.budget > 0:
@@ -106,7 +78,7 @@ def main(cfg: DictConfig) -> None:
             datastore=datastore,
             positive_budget=cfg.active_data.positive_budget,
             total_budget=cfg.active_data.budget,
-            positive_class=positive_class,
+            positive_class=1,
             seed=cfg.active_data.seed,
             validation_perc=cfg.active_data.validation_perc,
             sampling=cfg.active_data.sampling,

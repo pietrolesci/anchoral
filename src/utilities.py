@@ -19,7 +19,6 @@ SEP_LINE = f"{'=' * 70}"
 import json
 from pathlib import Path
 
-
 MODELS = {"bert-tiny": "google/bert_uncased_L-2_H-128_A-2"}
 
 
@@ -248,6 +247,7 @@ def add_features(ds_dict: DatasetDict, text_col: str, models: List[str]) -> Data
 
 def binarize_eurlex(ex: Dict[str, List]) -> Dict:
     """Make `health control` the target label."""
+    # return {"labels": ["health-control" if "192" in l else "others" for l in ex["eurovoc_concepts"]]}
     return {"labels": [int("192" in l) for l in ex["eurovoc_concepts"]]}
 
 
@@ -255,3 +255,12 @@ def binarize_pubmed(ex: Dict[str, List]) -> Dict:
     """Make `OBJECTIVE` the target label."""
     return {"labels": [int(3 == l) for l in ex["labels"]]}
 
+
+def binarize_agnews(ex: Dict[str, List]) -> Dict:
+    """Make `Business` the target label."""
+    return {"labels": [int(2 == l) for l in ex["labels"]]}
+
+
+def binarize_amazon(ex: Dict[str, List]) -> Dict:
+    """Make `Business` the target label."""
+    return {"labels": [int(2 == l) for l in ex["target_ind"]]}
