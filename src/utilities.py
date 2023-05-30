@@ -277,5 +277,6 @@ def binarize_agnews(ex: Dict[str, List]) -> Dict:
 
 
 def binarize_amazon(ex: Dict[str, List]) -> Dict:
-    """Make `Business` the target label."""
-    return {"labels": [int(2 == l) for l in ex["target_ind"]]}
+    """Make `religion` the target label."""
+    cats = [2790, 3241, 3988, 5886, 8445, 8446, 8453, 9904, 9905, 9906, 10371]
+    return {"labels": [int(any(c in l for c in cats)) for l in ex["target_ind"]]}

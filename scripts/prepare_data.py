@@ -8,12 +8,13 @@ from datasets import ClassLabel, Dataset, DatasetDict, Features, disable_caching
 from sklearn.utils import check_random_state
 from transformers import AutoTokenizer
 
-from src.utilities import MODELS, binarize_agnews, binarize_eurlex, binarize_pubmed, get_stats_from_dataframe
+from src.utilities import MODELS, binarize_agnews, binarize_eurlex, binarize_pubmed, get_stats_from_dataframe, binarize_amazon
 
 LABEL_FN = {
     "eurlex-57k": binarize_eurlex,
     "pubmed-200k-rct": binarize_pubmed,
     "agnews": binarize_agnews,
+    "amazoncat-13k": binarize_amazon,
 }
 
 

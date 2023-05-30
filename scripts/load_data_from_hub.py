@@ -7,8 +7,6 @@ from datasets import load_dataset
 MODELS = ["all-mpnet-base-v2", "multi-qa-mpnet-base-dot-v1", "all-MiniLM-L12-v2"]
 
 
-LOADING_FN = ["pubmed-200k-rct", "eurlex-57k", "amazoncat-13k", "agnews"]
-
 
 if __name__ == "__main__":
 
@@ -22,6 +20,9 @@ if __name__ == "__main__":
 
     # downlaod
     ds_dict = load_dataset(args.dataset, cache_dir="data_cache")
+    
+    if "wiki_toxic" in args.dataset:
+        ds_dict = ds_dict.rename_columns({"comment_text": "text"})
 
     # save to appropriate folder
     ds_dict.save_to_disk(data_path)  # type: ignore
