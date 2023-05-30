@@ -22,7 +22,14 @@ from pathlib import Path
 MODELS = {"bert-tiny": "google/bert_uncased_L-2_H-128_A-2"}
 
 
-OmegaConf.register_new_resolver("get_name_strategy", lambda x: x["_target_"].split(".")[-1].lower())
+def parse_name(x: Dict) -> str:
+    name = x["_target_"].split(".")[-1].lower().removesuffix("strategy")
+    if "anchor_strategy" in x:
+        name = f"{x['anchor_strategy']}-{name}-{x['agg_fn']}"
+    return name
+
+
+OmegaConf.register_new_resolver("get_name_strategy", parse_name)
 
 
 def get_stats_from_dataframe(df: pd.DataFrame, target_name: str, names: List[str]) -> str:
