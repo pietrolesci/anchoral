@@ -71,8 +71,11 @@ class SaveOutputs(Callback):
     def on_round_end(
         self, estimator: ActiveEstimator, datastore: PandasDataStoreForSequenceClassification, output: ROUND_OUTPUT
     ) -> None:
+
         # save partial results
         datastore.save_labelled_dataset(self.dirpath)
+        if getattr(estimator, "_reason_df", None) is not None:
+            estimator._reason_df.to_parquet(Path(self.dirpath) / "reason_df.parquet")  # type: ignore
 
         counts = dict(datastore.data.loc[datastore._labelled_mask(), InputKeys.TARGET].value_counts())
         if 1 not in counts:

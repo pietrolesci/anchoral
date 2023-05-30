@@ -1,3 +1,7 @@
+
+poetry run python ./scripts/active_train.py +experiment=basic strategy=randomguide dataset=eurlex experiment_group=debug
+
+
 # check variability due to data ordering and model initialization
 poetry run python ./scripts/train.py \
     experiment_group=seed_variability \

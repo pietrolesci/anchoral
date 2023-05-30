@@ -85,7 +85,9 @@ test:
   limit_batches: ${limit_batches}
 
 strategy: '???'
-model: bert-tiny
+model: 
+  name: bert-tiny
+  seed: 42
 dataset: '???'
 index_metric: all-mpnet-base-v2_cosine
 

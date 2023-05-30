@@ -1,6 +1,0 @@
-defaults:
-  - defaults
-
-_target_: src.strategies.GradNormGuide
-num_influential: 50
-norm_type: 2

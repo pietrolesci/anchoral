@@ -1,0 +1,15 @@
+defaults:
+  - defaults
+
+_target_: src.strategies.AnchorsSubsetWithPerClassSampling
+anchor_strategy: latest
+num_anchors: null
+num_neighbours: 200
+max_search_size: 100000
+agg_fn: mean
+temperatures:
+  - 1.
+  - 1.
+positive_class_subset_prop: 1.
+negative_dissimilar: false
+pad_subset: false

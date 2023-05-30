@@ -1,9 +1,6 @@
+short_name: agnews
 text_column: text
 label_column: labels
 uid_column: uid
-absolute_path: pietrolesci/agnews_indexed
-positive_class: 2
-downsample_proportion: 0.01
-need_binarize: true
-test_set_size: null
-short_name: agnews
+prepared_path: /home/pl487/allset/data/prepared/agnews
+processed_path: /home/pl487/allset/data/processed/agnews
