@@ -1,4 +1,3 @@
-from pprint import pprint as print
 from typing import Dict, List, Optional, Union
 
 import numpy as np
@@ -8,7 +7,6 @@ from torchmetrics.classification import AUROC, Accuracy, AveragePrecision, F1Sco
 
 from energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from energizer.estimators.estimator import Estimator
-from energizer.types import ROUND_OUTPUT
 from energizer.utilities import ld_to_dl, move_to_cpu
 
 

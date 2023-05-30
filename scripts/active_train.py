@@ -10,14 +10,8 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from transformers.utils.logging import set_verbosity_warning
 
 from energizer.datastores import PandasDataStoreForSequenceClassification
-from src.utilities import (
-    MODELS,
-    SEP_LINE,
-    binarize_labels,
-    downsample_positive_class,
-    downsample_test_set,
-    get_initial_budget,
-)
+from energizer.utilities import local_seed
+from src.utilities import MODELS, SEP_LINE, get_initial_budget
 
 torch.set_float32_matmul_precision("highest")
 
@@ -41,15 +35,18 @@ def main(cfg: DictConfig) -> None:
     if cfg.limit_batches is not None:
         log.critical("!!! DEBUGGING !!!")
 
+    seed_everything(cfg.seed)
+    log.info(f"Seed enabled: {cfg.seed}")
+
     ##########################################
     # ============ data loading ============ #
     ##########################################
 
     # load data
-    dataset_dict: DatasetDict = load_from_disk(f"{cfg.dataset.prepared_path}_{cfg.model}")  # type: ignore
+    dataset_dict: DatasetDict = load_from_disk(f"{cfg.dataset.prepared_path}_{cfg.model.name}")  # type: ignore
 
     # load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(MODELS[cfg.model])
+    tokenizer = AutoTokenizer.from_pretrained(MODELS[cfg.model.name])
 
     ##############################################
     # ============ data preparation ============ #
@@ -94,17 +91,15 @@ def main(cfg: DictConfig) -> None:
     #################################################
     # ============ model and estimator ============ #
     #################################################
-    # seed everything
-    seed_everything(cfg.seed)
-    log.info(f"Seed enabled: {cfg.seed}")
 
     # load model using data properties
-    model = AutoModelForSequenceClassification.from_pretrained(
-        datastore.tokenizer.name_or_path,  # type: ignore
-        id2label=datastore.id2label,
-        label2id=datastore.label2id,
-        num_labels=len(datastore.labels),
-    )
+    with local_seed(cfg.model.seed):
+        model = AutoModelForSequenceClassification.from_pretrained(
+            MODELS[cfg.model.name],  # type: ignore
+            id2label=datastore.id2label,
+            label2id=datastore.label2id,
+            num_labels=len(datastore.labels),
+        )
 
     # define callbacks and loggers
     loggers = instantiate(cfg.loggers) or {}

@@ -154,11 +154,11 @@ def get_initial_budget(
     )
 
     stats = get_stats_from_dataframe(
-        df=datastore.data.loc[datastore._labelled_mask()], 
-        target_name=InputKeys.TARGET, 
-        names=['Negative', 'Positive'],
+        df=datastore.data.loc[datastore._labelled_mask()],
+        target_name=InputKeys.TARGET,
+        names=["Negative", "Positive"],
     )
-    
+
     logger.info(
         f"Labelled size: {datastore.labelled_size()} "
         f"Pool size: {datastore.pool_size()} "
