@@ -1,10 +1,6 @@
+short_name: pubmed
 text_column: text
 label_column: labels
 uid_column: uid
-# absolute_path: pietrolesci/pubmed-rct20k_indexed
-absolute_path: pietrolesci/pubmed-rct-200k_indexed
-positive_class: 3
-downsample_proportion: null
-need_binarize: true
-test_set_size: null
-short_name: pubmed
+prepared_path: /home/pl487/allset/data/prepared/pubmed-200k-rct
+processed_path: /home/pl487/allset/data/processed/pubmed-200k-rct

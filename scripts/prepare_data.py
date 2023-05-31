@@ -27,12 +27,16 @@ if __name__ == "__main__":
     parser.add_argument("--downsample_test_size", type=int, default=None)
     args = parser.parse_args()
 
-    # do not cache dataets
-    disable_caching()
+    # do not cache datasets
+    # disable_caching()
 
     # load data and metadata
     data_dir = Path(args.data_dir)
     dataset_dict: DatasetDict = load_from_disk(data_dir / "processed" / args.dataset)  # type: ignore
+
+    cols = [i for i in dataset_dict["train"].features if i.startswith("embedding")]
+    dataset_dict = dataset_dict.remove_columns(cols)
+
 
     # remove validation set
     dataset_dict.pop("validation", None)  # type: ignore

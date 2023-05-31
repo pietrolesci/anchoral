@@ -1,0 +1,6 @@
+short_name: amazon
+text_column: text
+label_column: labels
+uid_column: uid
+prepared_path: /home/pl487/allset/data/prepared/amazoncat-13k
+processed_path: /home/pl487/allset/data/processed/amazoncat-13k
