@@ -1,73 +1,18 @@
 
-poetry run python ./scripts/active_train.py +experiment=basic strategy=randomguide dataset=eurlex experiment_group=debug
-
-
-# check variability due to data ordering and model initialization
-poetry run python ./scripts/train.py \
-    experiment_group=seed_variability \
-    dataset_name=agnews_bert_tiny \
-    train_val_split=0.05 \
-    fit.max_epochs=3 \
-    fit.validation_interval=5 \
-    fit.learning_rate=0.0002 \
-    model.seed=0,42,1994,6006,2023 \
-    data.seed=0,42,1994,6006,2023 \
-    -m
-
-
-poetry run python scripts/active_train.py \
-    dataset_name=agnews_bert_tiny \
-    strategy=random \
-    fit.validation_interval=5 \
-    active_fit.max_rounds=2 \
-    limit_batches=10
+poetry run python ./scripts/active_train.py +experiment=basic strategy=randomsubset dataset=wiki_toxic experiment_group=baselines strategy.subset_size=5000
 
 
 
-# ===========
-# Experiments
-# ===========
 
-set -e
-
-# Civil Comments
-echo 'Training with unweighted loss'
-poetry run python scripts/train.py \
-    dataset_name=civil_comments
-
-echo 'Training with weighted loss'
-poetry run python scripts/train.py \
-    dataset_name=civil_comments \
-    fit.loss_fn=cross_entropy \
-    fit.loss_fn_kwargs='{weight: true}'
-
-
-# AG-News
-echo 'Training with unweighted loss'
-poetry run python scripts/train.py \
-    dataset_name=ag_news
-
-
-#############################
-# ======== TESTING ======== #
-#############################
-poetry run python scripts/train.py \
-    dataset_name=agnews_bert_tiny \
-    limit_batches=10 \
-    fit.validation_interval=1 \
-    +callbacks=model_checkpoint \
-    train_val_split=0.05
-
-
-poetry run python scripts/active_train.py \
-    dataset_name=imdb_bert_tiny \
-    strategy=random \
-    fit.validation_interval=3 \
-    fit.min_steps=50 \
-    active_fit.max_rounds=50 \
-    active_fit.validation_perc=0.1 \
-    active_fit.query_size=25 \
-    +callbacks=model_checkpoint \
-    active_data.budget=100 \
-    active_data.validation_perc=0.5
-
+# ours
+poetry run python ./scripts/active_train.py \
+    +experiment=basic \
+    experiment_group=baselines \
+    dataset=wiki_toxic \
+    strategy=anchorswithperclasssampling \
+    strategy.num_neighbours=2000 \
+    strategy.subset_size=5000 \
+    strategy.negative_dissimilar=false \
+    strategy.pad_subset=false \
+    strategy.positive_class_subset_prop=1. \
+    strategy.temperatures=[0.5,1.]

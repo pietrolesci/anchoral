@@ -26,4 +26,4 @@ data_dir=$(pwd)/data
 
 
 echo Processing WikiToxic
-poetry run python ./scripts/create_index.py --data_dir $data_dir --dataset wiki_toxic --index_metric cosine
+poetry run python ./scripts/create_index.py --data_dir $data_dir --dataset wiki_toxic --index_metric l2

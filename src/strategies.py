@@ -252,7 +252,9 @@ class AnchorsSubsetWithSampling(AnchorsSubset):
         subset_ids = self.pool_rng.choice(df[SpecialKeys.ID].values, size=min(self.subset_size, len(df)), replace=False, p=probs).tolist()  # type: ignore
 
         if self.pad_subset:
-            subset_ids += self._pad_subset(datastore.get_pool_ids(), subset_ids)
+            random_samples = self._pad_subset(datastore.get_pool_ids(), subset_ids)
+            self.log("summary/unique_random_samples", len(set(random_samples)), step=self.progress_tracker.global_round)
+            subset_ids += random_samples
 
         return subset_ids
 
@@ -298,7 +300,12 @@ class AnchorsSubsetWithPerClassSampling(AnchorsSubset):
         )
 
         samples = []
-
+        logs = {
+            "summary/unique_pos_samples": 0,
+            "summary/unique_neg_samples": 0,
+            "summary/unique_random_samples": 0,
+        }
+        
         # sample positive class
         pos_df = df.loc[df[InputKeys.TARGET] == 1]
         if len(pos_df) > 0:
@@ -310,7 +317,11 @@ class AnchorsSubsetWithPerClassSampling(AnchorsSubset):
             probs = softmax(scores / self.temperatures[1], axis=0)
 
             num_samples = min(math.ceil(self.positive_class_subset_prop * self.subset_size), len(pos_df))
-            samples += self.pool_rng.choice(pos_df[SpecialKeys.ID], size=num_samples, replace=False, p=probs).tolist()
+            pos_samples = self.pool_rng.choice(pos_df[SpecialKeys.ID], size=num_samples, replace=False, p=probs).tolist()
+            logs["summary/unique_pos_samples"] = len(set(pos_samples))
+
+            samples += pos_samples
+
 
         # sample negative class
         neg_df = df.loc[(df[InputKeys.TARGET] != 1) & (~df[SpecialKeys.ID].isin(samples))]
@@ -327,10 +338,18 @@ class AnchorsSubsetWithPerClassSampling(AnchorsSubset):
             probs = softmax(scores / self.temperatures[0], axis=0)
 
             num_samples = min(self.subset_size - len(samples), len(neg_df))
-            samples += self.pool_rng.choice(neg_df[SpecialKeys.ID], size=num_samples, replace=False, p=probs).tolist()
-
+            neg_samples = self.pool_rng.choice(neg_df[SpecialKeys.ID], size=num_samples, replace=False, p=probs).tolist()
+            logs["summary/unique_neg_samples"] = len(set(neg_samples))
+            
+            samples += neg_samples
+        
         samples = list(set(samples))
         if self.pad_subset:
-            samples += self._pad_subset(datastore.get_pool_ids(), samples)
+            random_samples = self._pad_subset(datastore.get_pool_ids(), samples)
+            logs["summary/unique_random_samples"] = len(set(random_samples))
+
+            samples += random_samples
+
+        self.log_dict(logs, step=self.progress_tracker.global_round)
 
         return samples

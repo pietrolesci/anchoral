@@ -5,7 +5,7 @@ _target_: src.strategies.AnchorsSubsetWithSampling
 anchor_strategy: latest
 num_anchors: null
 num_neighbours: 200
-max_search_size: 100000
+max_search_size: 1000000
 agg_fn: mean
 temperature: 1.
 pad_subset: false
