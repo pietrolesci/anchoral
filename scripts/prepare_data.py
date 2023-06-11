@@ -8,7 +8,14 @@ from datasets import ClassLabel, Dataset, DatasetDict, Features, disable_caching
 from sklearn.utils import check_random_state
 from transformers import AutoTokenizer
 
-from src.utilities import MODELS, binarize_agnews, binarize_eurlex, binarize_pubmed, get_stats_from_dataframe, binarize_amazon
+from src.utilities import (
+    MODELS,
+    binarize_agnews,
+    binarize_amazon,
+    binarize_eurlex,
+    binarize_pubmed,
+    get_stats_from_dataframe,
+)
 
 LABEL_FN = {
     "eurlex-57k": binarize_eurlex,
@@ -36,7 +43,6 @@ if __name__ == "__main__":
 
     cols = [i for i in dataset_dict["train"].features if i.startswith("embedding")]
     dataset_dict = dataset_dict.remove_columns(cols)
-
 
     # remove validation set
     dataset_dict.pop("validation", None)  # type: ignore
