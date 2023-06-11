@@ -24,7 +24,7 @@ hydra:
           CRITICAL: bold_red
   sweep:
     dir: ./outputs/multirun/${experiment_group}
-    subdir: ${dataset.short_name}/${get_name_strategy:${strategy}}_${now:%Y-%m-%d}T${now:%H-%M-%S}
+    subdir: ${dataset.short_name}/${get_name_strategy:${strategy}}_${now:%Y-%m-%d}T${now:%H-%M-%S}_${hydra.job.id}
 
 estimator:
   accelerator: gpu
