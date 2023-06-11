@@ -6,6 +6,7 @@ from datasets import DatasetDict, load_from_disk
 from hydra.utils import instantiate  # get_original_cwd
 from lightning.fabric import seed_everything
 from omegaconf import DictConfig, OmegaConf
+from tbparse import SummaryReader
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from transformers.utils.logging import set_verbosity_warning
 
@@ -127,6 +128,7 @@ def main(cfg: DictConfig) -> None:
     estimator.active_fit(datastore, **fit_hparams)
 
     estimator.fabric.logger.finalize("success")
+    SummaryReader(str(estimator.fabric.logger.log_dir)).scalars.to_parquet("tb_logs.parquet")
 
 
 if __name__ == "__main__":
