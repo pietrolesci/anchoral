@@ -160,7 +160,12 @@ class AnchorsSubset(SequenceClassificationMixin, UncertaintyMixin, _UncertaintyB
 
         train_ids = datastore.get_train_ids()
 
-        if len(train_ids) == 0 or self.anchor_strategy == "all" or len(self.to_search) == 0:
+        if (
+            len(train_ids) == 0
+            or self.anchor_strategy == "all"
+            or (self.anchor_strategy == "latest" and len(self.to_search) == 0)
+            or (self.num_anchors is not None and len(train_ids) < self.num_anchors)
+        ):
             return train_ids
 
         elif self.anchor_strategy == "latest":
@@ -168,6 +173,46 @@ class AnchorsSubset(SequenceClassificationMixin, UncertaintyMixin, _UncertaintyB
 
         elif self.anchor_strategy == "random":
             return self.rng.choice(train_ids, size=min(self.num_anchors, len(train_ids)), replace=False).tolist()  # type: ignore
+
+        elif self.anchor_strategy == "uncertain":
+            train_loader = self.configure_dataloader(datastore.train_loader())  # type: ignore
+            self.progress_tracker.pool_tracker.max = len(train_loader)  # type: ignore
+            return self.compute_most_uncertain(model, train_loader, self.num_anchors)  # type: ignore
+
+        elif self.anchor_strategy == "all_positive":
+            train_df = datastore.data.loc[(datastore._train_mask()), [SpecialKeys.ID, InputKeys.TARGET]]
+            return train_df.loc[train_df[InputKeys.TARGET] == 1, SpecialKeys.ID].tolist()
+
+        elif self.anchor_strategy == "all_positive_uncertain":
+            pos_train_ids = datastore.data.loc[
+                (datastore._train_mask()) & (datastore.data[InputKeys.TARGET] == 1), SpecialKeys.ID
+            ].tolist()
+
+            train_loader = self.configure_dataloader(datastore.train_loader(with_indices=pos_train_ids))  # type: ignore
+            self.progress_tracker.pool_tracker.max = len(train_loader)  # type: ignore
+            return self.compute_most_uncertain(model, train_loader, self.num_anchors)  # type: ignore
+
+        elif self.anchor_strategy == "kmeans":
+            from sklearn.cluster import KMeans
+            from sklearn.preprocessing import normalize
+
+            embeddings = datastore.get_train_embeddings(train_ids)
+            embeddings: np.ndarray = normalize(embeddings, axis=1)  # type: ignore
+            num_clusters = min(embeddings.shape[0], self.num_anchors)  # type: ignore
+
+            cluster_learner = KMeans(n_clusters=num_clusters, n_init="auto", random_state=self.rng)
+            cluster_learner.fit(embeddings)
+            cluster_idxs = cluster_learner.predict(embeddings)
+
+            # pick instances closest to the cluster centers
+            centers = cluster_learner.cluster_centers_[cluster_idxs]
+            dists = (embeddings - centers) ** 2
+            dists = dists.sum(axis=1)
+            closest_ids = [
+                np.arange(embeddings.shape[0])[cluster_idxs == i][dists[cluster_idxs == i].argmin()].item()
+                for i in range(num_clusters)
+            ]
+            return np.array(train_ids)[closest_ids].tolist()
 
         raise NotImplementedError
 
@@ -261,7 +306,7 @@ class AnchorsSubsetWithSampling(AnchorsSubset):
 
 class AnchorsSubsetWithPerClassSampling(AnchorsSubset):
     def __init__(
-        self, *args, positive_class_subset_prop: float, negative_dissimilar: bool, temperatures: List[float], **kwargs
+        self, *args, positive_class_subset_prop: float, negative_strategy: bool, temperatures: List[float], **kwargs
     ) -> None:
         """Same as AnchorsSubset but adds sampling instead of top-k.
 
@@ -270,14 +315,14 @@ class AnchorsSubsetWithPerClassSampling(AnchorsSubset):
         Args:
             positive_class_subset_prop (float): Proportion of the `subset_size` that needs to be allocated
                 to the positive class.
-            negative_dissimilar (bool): Whether to sample the negative class assigning higher probability
+            negative_strategy (bool): Whether to sample the negative class assigning higher probability
                 to dissimilar instances (higher = most dissimilar).
             temperatures (List[float]): Temperature parameter for each class.
         """
         super().__init__(*args, **kwargs)
         self.positive_class_subset_prop = positive_class_subset_prop
         self.temperatures = temperatures
-        self.negative_dissimilar = negative_dissimilar
+        self.negative_strategy = negative_strategy
         self.pool_rng = check_random_state(self.seed)
 
     def get_pool_ids(self, anchors_df: pd.DataFrame, datastore: PandasDataStoreForSequenceClassification) -> List[int]:
@@ -305,51 +350,47 @@ class AnchorsSubsetWithPerClassSampling(AnchorsSubset):
             "summary/unique_neg_samples": 0,
             "summary/unique_random_samples": 0,
         }
-        
+
         # sample positive class
         pos_df = df.loc[df[InputKeys.TARGET] == 1]
         if len(pos_df) > 0:
-
-            # convert cosine distance in similarity (i.e., higher means more similar)
-            scores = 1 - pos_df["dists"]
-
-            # normalize the scores to probabilities
-            probs = softmax(scores / self.temperatures[1], axis=0)
-
-            num_samples = min(math.ceil(self.positive_class_subset_prop * self.subset_size), len(pos_df))
-            pos_samples = self.pool_rng.choice(pos_df[SpecialKeys.ID], size=num_samples, replace=False, p=probs).tolist()
-            logs["summary/unique_pos_samples"] = len(set(pos_samples))
-
+            num_samples = math.ceil(self.positive_class_subset_prop * self.subset_size)
+            pos_samples = self._sample(pos_df, self.temperatures[1], num_samples, False)
+            logs["summary/unique_pos_samples"] = len(pos_samples)
             samples += pos_samples
-
 
         # sample negative class
         neg_df = df.loc[(df[InputKeys.TARGET] != 1) & (~df[SpecialKeys.ID].isin(samples))]
-        if len(neg_df) > 0:
-
-            if self.negative_dissimilar:
-                # keep cosine distance (higher means more dissimilar)
-                scores = neg_df["dists"]
-            else:
-                # convert cosine distance in similarity (i.e., higher means more similar)
-                scores = 1 - neg_df["dists"]
-
-            # normalize the scores to probabilities
-            probs = softmax(scores / self.temperatures[0], axis=0)
-
+        if len(neg_df) > 0 and self.negative_strategy is not None:
+            dissimilar = self.negative_strategy == "dissimilar"
             num_samples = min(self.subset_size - len(samples), len(neg_df))
-            neg_samples = self.pool_rng.choice(neg_df[SpecialKeys.ID], size=num_samples, replace=False, p=probs).tolist()
-            logs["summary/unique_neg_samples"] = len(set(neg_samples))
-            
+            neg_samples = self._sample(neg_df, self.temperatures[0], num_samples, dissimilar)
+            logs["summary/unique_neg_samples"] = len(neg_samples)
             samples += neg_samples
-        
-        samples = list(set(samples))
-        if self.pad_subset:
-            random_samples = self._pad_subset(datastore.get_pool_ids(), samples)
-            logs["summary/unique_random_samples"] = len(set(random_samples))
+            samples = list(set(samples))
 
+        samples = list(set(samples))
+        if self.pad_subset or len(samples) == 0:
+            random_samples = self._pad_subset(datastore.get_pool_ids(), samples)
+            logs["summary/unique_random_samples"] = len(random_samples)
             samples += random_samples
+            samples = list(set(samples))
 
         self.log_dict(logs, step=self.progress_tracker.global_round)
 
         return samples
+
+    def _sample(
+        self, df: pd.DataFrame, temperature: float, num_samples: int, dissimilar: Optional[bool] = False
+    ) -> List[int]:
+
+        # convert cosine distance in similarity (i.e., higher means more similar)
+        scores = df["dists"] if dissimilar else 1 - df["dists"]
+
+        # normalize the scores to probabilities
+        probs = softmax(scores / temperature, axis=0)
+
+        num_samples = min(num_samples, len(df))
+        samples = self.pool_rng.choice(df[SpecialKeys.ID], size=num_samples, replace=False, p=probs).tolist()
+
+        return list(set(samples))
