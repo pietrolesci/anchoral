@@ -25,6 +25,7 @@ hydra-joblib-launcher = "^1.2.0"
 umap-learn = "^0.5.3"
 hydra-submitit-launcher = "^1.2.0"
 arize-phoenix = "^0.0.19"
+tbparse = "^0.0.7"
 
 [tool.poetry.group.dev]
 optional = true
