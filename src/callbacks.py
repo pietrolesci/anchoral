@@ -59,6 +59,8 @@ class SaveOutputs(Callback):
         counts = dict(datastore.get_by_ids(indices)[InputKeys.TARGET].value_counts())
         if 1 not in counts:
             counts[1] = 0  # type: ignore
+        if 0 not in counts:
+            counts[0] = 0.001
 
         estimator.log_dict(
             {

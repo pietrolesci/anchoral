@@ -181,7 +181,8 @@ class AnchorsSubset(SequenceClassificationMixin, UncertaintyMixin, _UncertaintyB
 
         elif self.anchor_strategy == "all_positive":
             train_df = datastore.data.loc[(datastore._train_mask()), [SpecialKeys.ID, InputKeys.TARGET]]
-            return train_df.loc[train_df[InputKeys.TARGET] == 1, SpecialKeys.ID].tolist()
+            ids = train_df.loc[train_df[InputKeys.TARGET] == 1, SpecialKeys.ID].tolist()
+            return ids if self.num_anchors is None else self.rng.choice(ids, size=min(self.num_anchors, len(ids)), replace=False)  # type: ignore
 
         elif self.anchor_strategy == "all_positive_uncertain":
             pos_train_ids = datastore.data.loc[
