@@ -1,0 +1,5 @@
+defaults:
+  - anchors
+
+anchor_strategy: all
+agg_fn: min  # take the minimum cosine distance

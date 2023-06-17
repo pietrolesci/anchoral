@@ -4,14 +4,14 @@ defaults:
 
 hydra:
   launcher:
-    # n_jobs: 10
+    n_jobs: 8
     # backend: null
     prefer: processes
     # require: null
     verbose: 0
     # timeout: null
     # pre_dispatch: 3
-    batch_size: 4
+    # batch_size: 4
     # temp_folder: null
     # max_nbytes: null
     # mmap_mode: r
