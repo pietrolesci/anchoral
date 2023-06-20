@@ -36,7 +36,7 @@ loggers: null
 
 data:
   batch_size: 32
-  eval_batch_size: 512
+  eval_batch_size: 256
   num_workers: 32
   pin_memory: true
   drop_last: false

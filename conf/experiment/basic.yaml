@@ -18,4 +18,8 @@ callbacks:
     mode: max
     monitor: train/f1_class1
 
-experiment_group: dry_run
+active_fit:
+  query_size: 25
+
+enable_progress_bar: false
+experiment_group: '???'
