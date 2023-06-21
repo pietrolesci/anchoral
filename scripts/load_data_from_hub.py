@@ -27,4 +27,4 @@ if __name__ == "__main__":
     ds_dict.save_to_disk(data_path)  # type: ignore
 
     # remove cache
-    shutil.rmtree("data_cache")
+    shutil.rmtree("data_cache", ignore_errors=True)
