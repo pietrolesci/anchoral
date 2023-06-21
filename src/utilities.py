@@ -19,7 +19,7 @@ SEP_LINE = f"{'=' * 70}"
 import json
 from pathlib import Path
 
-MODELS = {"bert-tiny": "google/bert_uncased_L-2_H-128_A-2"}
+MODELS = {"bert-tiny": "google/bert_uncased_L-2_H-128_A-2", "bert-base": "bert-base-uncased"}
 
 
 def parse_name(x: Dict) -> str:

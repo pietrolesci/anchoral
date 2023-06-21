@@ -6,7 +6,7 @@ set -e
 
 
 data_dir=$(pwd)/data
-MODEL=bert-tiny
+MODEL=bert-base  # bert-tiny
 
 
 echo Preparing Agnews
