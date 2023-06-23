@@ -12,6 +12,8 @@ from energizer.enums import InputKeys, SpecialKeys
 from energizer.strategies import RandomStrategy as _RandomStrategy
 from energizer.strategies import UncertaintyBasedStrategy as _UncertaintyBasedStrategy
 from src.estimators import SequenceClassificationMixin
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import normalize
 
 
 class RandomStrategy(SequenceClassificationMixin, _RandomStrategy):
@@ -194,9 +196,6 @@ class AnchorsSubset(SequenceClassificationMixin, UncertaintyMixin, _UncertaintyB
             return self.compute_most_uncertain(model, train_loader, self.num_anchors)  # type: ignore
 
         elif self.anchor_strategy == "kmeans":
-            from sklearn.cluster import KMeans
-            from sklearn.preprocessing import normalize
-
             embeddings = datastore.get_train_embeddings(train_ids)
             embeddings: np.ndarray = normalize(embeddings, axis=1)  # type: ignore
             num_clusters = min(embeddings.shape[0], self.num_anchors)  # type: ignore
@@ -221,7 +220,8 @@ class AnchorsSubset(SequenceClassificationMixin, UncertaintyMixin, _UncertaintyB
         self, datastore: PandasDataStoreForSequenceClassification, query: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get neighbours of training instances from the pool."""
-        num_neighbours = min(self.num_neighbours, math.floor(self.max_search_size / query.shape[0]))
+        # FIXME: Add timer for search
+        num_neighbours = min(self.num_neighbours, math.floor(self.max_search_size / query.shape[0]))  # FIXME: this can create noise in the experimentss
         return datastore.search(query=query, query_size=num_neighbours, query_in_set=False)
 
     def get_pool_ids(self, anchors_df: pd.DataFrame, datastore: PandasDataStoreForSequenceClassification) -> List[int]:
@@ -328,7 +328,11 @@ class AnchorsSubsetWithPerClassSampling(AnchorsSubset):
 
     def get_pool_ids(self, anchors_df: pd.DataFrame, datastore: PandasDataStoreForSequenceClassification) -> List[int]:
 
-        # bring in the class of the training instances that cause the pool instance to be chosen
+        # bring in the class of the training instances that caused the pool instance to be chosen
+        # FIXME: PAY ATTENTION -- when you use random and kmeans anchor strategies, this part of the implementation
+        # still filters for the candidates that were queries by minority instances. So if you do not fix it, both
+        # these strategies can pick up less minority instances and thus, effectively, use less anchor points!
+        # THIS LOGIC should be moved in get_train_ids because it is effectively affecting which anchors are used
         df = pd.merge(
             anchors_df,
             datastore.data.loc[datastore._train_mask(), [SpecialKeys.ID, InputKeys.TARGET]],

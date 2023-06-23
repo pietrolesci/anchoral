@@ -1,0 +1,13 @@
+defaults:
+  - anchorswithperclasssampling
+
+anchor_strategy: all_positive
+num_anchors: 50
+num_neighbours: 2000
+agg_fn: mean
+temperatures:
+  - 1.
+  - 1.
+positive_class_subset_prop: 1.
+negative_strategy: null  # if null do not sample negatives
+pad_subset: false
