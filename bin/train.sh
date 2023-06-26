@@ -10,45 +10,72 @@ poetry run python ./scripts/active_train.py -m \
     +experiment=basic \
     experiment_group=seed \
     dataset=eurlex,wiki_toxic,agnews,amazon,pubmed \
-    active_data.positive_budget=5 \
-    strategy=anchorswithperclasssampling \
+    strategy=anchoral,random,randomsubset,seals \
     seed=42,0,1994 \
     model.seed=42,0,1994 \
     +launcher=joblib;
 
-# VARIABILITY TO NUMBER OF MINORITY INSTANCES IN THE SEED SET
+# ABLATION: NUMBER OF MINORITY INSTANCES IN THE SEED SET
 poetry run python ./scripts/active_train.py -m \
     +experiment=basic \
     experiment_group=initial_set \
     dataset=eurlex,wiki_toxic,agnews,amazon,pubmed \
     active_data.positive_budget=1 \
-    strategy=anchorswithperclasssampling \
+    strategy=anchoral,random,randomsubset,seals \
     seed=42,0,1994 \
     model.seed=42,0,1994 \
+    active_fit.max_rounds=36 \
     +launcher=joblib;
 
-# VARIABILITY TO THE RETRIEVER
+# ABLATION: RETRIEVER
 poetry run python ./scripts/active_train.py -m \
     +experiment=basic \
     experiment_group=retriever \
     index_metric=all-MiniLM-L12-v2_cosine \
     dataset=eurlex,wiki_toxic,agnews,amazon,pubmed \
-    strategy=anchorswithperclasssampling \
+    strategy=anchoral \
     seed=42,0,1994 \
     model.seed=42,0,1994 \
+    active_fit.max_rounds=36 \
     +launcher=joblib;
 
-# VARIABILITY TO ANCHOR STRATEGY
+# ABLATION: ANCHOR STRATEGY
 poetry run python ./scripts/active_train.py -m \
     +experiment=basic \
     experiment_group=anchor_strategy \
     dataset=eurlex,wiki_toxic,agnews,amazon,pubmed \
-    strategy=anchorswithperclasssampling \
+    strategy=anchoral \
     strategy.anchor_strategy=random,kmeans \
     seed=42,0,1994 \
     model.seed=42,0,1994 \
+    active_fit.max_rounds=36 \
     +launcher=joblib;
 
+# ABLATION: NUMBER OF ANCHORS
+poetry run python ./scripts/active_train.py -m \
+    +experiment=basic \
+    experiment_group=num_anchors \
+    dataset=eurlex,wiki_toxic,agnews,amazon,pubmed \
+    strategy=anchoral \
+    strategy.num_anchors=5,null \
+    seed=42,1994,0 \
+    model.seed=42,1994,0 \
+    hydra.launcher.n_jobs=6 \
+    active_fit.max_rounds=36 \
+    +launcher=joblib;
+
+# ABLATION: SIZE OF THE SUBSET
+poetry run python ./scripts/active_train.py -m \
+    +experiment=basic \
+    experiment_group=subset_size \
+    dataset=amazon,eurlex,agnews,pubmed,wiki_toxic \
+    strategy=anchoral \
+    strategy.subset_size=500,5000 \
+    seed=42,1994,0 \
+    model.seed=42,1994,0 \
+    hydra.launcher.n_jobs=6 \
+    active_fit.max_rounds=36 \
+    +launcher=joblib;
 
 
 
@@ -60,7 +87,7 @@ poetry run python ./scripts/active_train.py -m \
     dataset=pubmed \
     data.eval_batch_size=256 \
     active_fit.query_size=25 \
-    strategy=anchorswithperclasssampling \
+    strategy=anchoral \
     strategy.num_anchors=50 \
     strategy.anchor_strategy=kmeans \
     seed=42,0,1994 \
@@ -75,7 +102,7 @@ poetry run python ./scripts/active_train.py -m \
     dataset=pubmed,amazon,wiki_toxic,eurlex,agnews \
     data.eval_batch_size=256 \
     active_fit.query_size=25 \
-    strategy=anchorswithperclasssampling \
+    strategy=anchoral \
     strategy.num_anchors=50 \
     strategy.anchor_strategy=all_positive \
     seed=42,0,1994 \
@@ -133,7 +160,7 @@ poetry run python ./scripts/active_train.py -m \
     dataset=pubmed \
     data.eval_batch_size=256 \
     active_fit.query_size=25 \
-    strategy=anchorswithperclasssampling \
+    strategy=anchoral \
     strategy.num_anchors=50 \
     strategy.anchor_strategy=kmeans \
     seed=42,0,1994 \
@@ -154,7 +181,7 @@ poetry run python ./scripts/active_train.py \
     +experiment=basic \
     experiment_group=baselines \
     dataset=wiki_toxic \
-    strategy=anchorswithperclasssampling \
+    strategy=anchoral \
     strategy.num_neighbours=2000 \
     strategy.subset_size=5000 \
     strategy.negative_dissimilar=false \
