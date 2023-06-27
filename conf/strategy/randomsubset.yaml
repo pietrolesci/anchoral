@@ -2,3 +2,4 @@ defaults:
   - defaults
 
 _target_: src.strategies.RandomSubset
+subpool_size: 5000

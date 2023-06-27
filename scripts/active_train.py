@@ -1,4 +1,5 @@
 import logging
+import shutil
 
 import hydra
 import torch
@@ -9,7 +10,7 @@ from omegaconf import DictConfig, OmegaConf
 from tbparse import SummaryReader
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from transformers.utils.logging import set_verbosity_warning
-import shutil
+
 from energizer.datastores import PandasDataStoreForSequenceClassification
 from energizer.utilities import local_seed
 from src.utilities import MODELS, SEP_LINE, get_initial_budget

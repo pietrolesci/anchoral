@@ -1,5 +1,6 @@
 defaults:
-  - anchors
+  - defaults
 
-anchor_strategy: all
-agg_fn: min  # take the minimum cosine distance
+_target_: src.strategies.SEALS
+num_neighbours: 50
+max_search_size: null

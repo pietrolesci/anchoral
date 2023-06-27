@@ -1,8 +1,6 @@
 from logging import Logger
-from typing import Any, Callable, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
-import hnswlib as hb
-import numpy as np
 import pandas as pd
 from datasets import ClassLabel, Dataset, DatasetDict, Features
 from omegaconf import OmegaConf
@@ -23,9 +21,19 @@ MODELS = {"bert-tiny": "google/bert_uncased_L-2_H-128_A-2", "bert-base": "bert-b
 
 
 def parse_name(x: Dict) -> str:
-    name = x["_target_"].split(".")[-1].lower().removesuffix("strategy")
-    if "anchor_strategy" in x:
-        name = f"{x['anchor_strategy']}-{name}-{x['agg_fn']}"
+    name = x["_target_"].split(".")[-1].lower()
+    if name == "randomsubset":
+        name +=  f"-{x['subpool_size']}"
+    
+    elif name == "tyrogue":
+        name +=  f"-{x['subpool_size']}-{x['r']}"
+
+    elif name == "anchoral":
+        name += f"-{x['subpool_size']}-{x['subpool_sampling_strategy']}-{x['anchor_strategy']}-{x['only_minority']}-{x['num_anchors']}"
+
+    elif name == "seals":
+        name +=  f"-{x['num_neighbours']}"
+
     return name
 
 

@@ -1,0 +1,6 @@
+defaults:
+  - defaults
+
+_target_: src.strategies.Tyrogue
+subpool_size: 10000
+r: 3
