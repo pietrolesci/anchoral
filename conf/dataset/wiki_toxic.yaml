@@ -2,5 +2,5 @@ short_name: wiki_toxic
 text_column: text
 label_column: labels
 uid_column: uid
-prepared_path: /home/pl487/allset/data/prepared/wiki_toxic
-processed_path: /home/pl487/allset/data/processed/wiki_toxic
+prepared_path: /home/pl487/anchoral/data/prepared/wiki_toxic
+processed_path: /home/pl487/anchoral/data/processed/wiki_toxic

@@ -2,5 +2,5 @@ short_name: eurlex
 text_column: text
 label_column: labels
 uid_column: uid
-prepared_path: /home/pl487/allset/data/prepared/eurlex-57k
-processed_path: /home/pl487/allset/data/processed/eurlex-57k
+prepared_path: /home/pl487/anchoral/data/prepared/eurlex-57k
+processed_path: /home/pl487/anchoral/data/processed/eurlex-57k

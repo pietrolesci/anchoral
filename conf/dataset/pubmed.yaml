@@ -2,5 +2,5 @@ short_name: pubmed
 text_column: text
 label_column: labels
 uid_column: uid
-prepared_path: /home/pl487/allset/data/prepared/pubmed-200k-rct
-processed_path: /home/pl487/allset/data/processed/pubmed-200k-rct
+prepared_path: /home/pl487/anchoral/data/prepared/pubmed-200k-rct
+processed_path: /home/pl487/anchoral/data/processed/pubmed-200k-rct

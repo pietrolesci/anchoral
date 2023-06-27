@@ -54,13 +54,13 @@ mpi_tasks_per_node=$(echo "$SLURM_TASKS_PER_NODE" | sed -e  's/^\([0-9][0-9]*\).
 #! Insert additional module load commands after this line if needed:
 
 #! Full path to application executable: 
-application="poetry run python /home/pl487/allset/scripts/active_train.py"
+application="poetry run python /home/pl487/anchoral/scripts/active_train.py"
 
 #! Run options for the application:
 options="+experiments=submit strategy=randomguide dataset=agnews,wiki_toxic,pubmed experiment_group=debug"
 
 #! Work directory (i.e. where the job will run):
-workdir="/home/pl487/allset/outputs/multirun/prova"  # The value of SLURM_SUBMIT_DIR sets workdir to the directory
+workdir="/home/pl487/anchoral/outputs/multirun/prova"  # The value of SLURM_SUBMIT_DIR sets workdir to the directory
                              # in which sbatch is run.
 
 #! Are you using OpenMP (NB this is unrelated to OpenMPI)? If so increase this

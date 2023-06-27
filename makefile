@@ -7,7 +7,7 @@ format:
 	isort $(sources)
 	black $(sources)
 	nbqa isort notebooks
-	nbqa black notebooks --line-length 85
+	nbqa black notebooks --line-length 100
 
 lint:
 	ruff $(sources)

@@ -2,5 +2,5 @@ short_name: agnews
 text_column: text
 label_column: labels
 uid_column: uid
-prepared_path: /home/pl487/allset/data/prepared/agnews
-processed_path: /home/pl487/allset/data/processed/agnews
+prepared_path: /home/pl487/anchoral/data/prepared/agnews
+processed_path: /home/pl487/anchoral/data/processed/agnews
