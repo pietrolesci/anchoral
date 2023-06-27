@@ -1,5 +1,10 @@
 # AnchorAL
 
+
+```bash
+git clone --recurse-submodules <repo-URL>
+```
+
 ## Environment
 
 ### Install conda
