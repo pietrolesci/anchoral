@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "igal"
-version = "0.1.0"
-description = "active learning via influence functions"
+name = "anchoral"
+version = "0.2.0"
+description = "AnchorAL: Anchored Active Learning for Large Imbalanced Datasets"
 authors = ["Pietro Lesci <pietrolesci@outlook.com>"]
 license = "Apache-2.0"
 readme = "README.md"
@@ -27,6 +27,9 @@ hydra-submitit-launcher = "^1.2.0"
 arize-phoenix = "^0.0.19"
 tbparse = "^0.0.7"
 polars = "^0.18.2"
+duckdb = "^0.8.1"
+plotly = "^5.15.0"
+pygwalker = "^0.1.11"
 
 [tool.poetry.group.dev]
 optional = true
@@ -44,7 +47,7 @@ nvitop = "^1.0.0"
 [tool.black]
 line-length = 120
 skip-string-normalization = false
-target-version = ['py38']
+target-version = ['py39']
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -61,10 +64,6 @@ exclude = '''
 )/
 '''
 
-[tool.ruff]
-line-length = 120
-src = ["src", "test"]
-target-version = "py38"
 
 [tool.isort]
 multi_line_output = 3
@@ -74,6 +73,7 @@ use_parentheses = true
 ensure_newline_before_comments = true
 line_length = 120
 skip_gitignore = true
+
 
 [build-system]
 requires = ["poetry-core"]

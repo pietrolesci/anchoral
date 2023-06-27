@@ -1,4 +1,4 @@
-# ALLSET
+# AnchorAL
 
 ## Environment
 
@@ -31,8 +31,8 @@ curl -sSL https://install.python-poetry.org | python3 -
 Use poetry to install the environment (if you don't have poetry run )
 
 ```bash
-conda create -n allset python=3.9 -y
-conda activate allset
+conda create -n anchoral python=3.9 -y
+conda activate anchoral
 poetry install --sync --with dev
 ```
 
@@ -83,3 +83,18 @@ Logs are split in 3 granularity groups: instance-level, batch-level, epoch-level
 - Batch-level: these are the loss, and the various metrics passes
 
 - Epoch-level: these are the same as batch-level but aggregated across batches
+
+
+
+----
+
+### Utils [DELETE]
+
+```bash
+exp='num_neighbours'
+find ./outputs/multirun/$exp -type d -wholename "*/.model_cache" -exec rm -rf {} +
+find ./outputs/multirun/$exp -type d -wholename "*/logs/train" -exec rm -rf {} +
+find ./outputs/multirun/$exp -type d -wholename "*/logs/test" -exec rm -rf {} +
+find ./outputs/multirun/$exp -type d -wholename "*/logs/pool" -exec rm -rf {} +
+find ./outputs/multirun/$exp -type d -wholename "*/.checkpoints" -exec rm -rf {} +
+```

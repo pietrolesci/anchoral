@@ -32,3 +32,7 @@ clean:
 
 serve_docs:
 	mkdocs serve --watch .
+
+
+clean-poetry-cache:
+	rm -rf ~/.cache/pypoetry/virtualenvs/
