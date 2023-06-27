@@ -11,9 +11,9 @@ poetry run python ./scripts/active_train.py -m \
     strategy=tyrogue,randomsubset,seals,anchoral;
 
 
-poetry run python ./scripts/active_train.py \
-    +experiment=basic \
-    experiment_group=delete \
-    active_fit.max_rounds=36 \
-    dataset=eurlex \
-    strategy=tyrogue
+# poetry run python ./scripts/active_train.py \
+#     +experiment=basic \
+#     experiment_group=delete \
+#     active_fit.max_rounds=36 \
+#     dataset=eurlex \
+#     strategy=tyrogue
