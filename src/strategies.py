@@ -320,7 +320,7 @@ class AnchorAL(BaseSubsetWithSearch):
             .assign(scores=lambda _df: 1 - _df["dists"])
         )
 
-        if self.subpool_sampling_strategy == "top-k":
+        if self.subpool_sampling_strategy == "topk":
             return (
                 agg_df.sort_values("scores", ascending=False)
                 .head(min(self.subpool_size, len(candidate_df)))[SpecialKeys.ID]

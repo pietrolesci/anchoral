@@ -13,4 +13,4 @@ num_anchors: 50
 subpool_size: 10000  # if null returns all unique
 agg_fn: mean 
 temperature: 1.
-subpool_sampling_strategy: importance  # uniform, importance, top-k
+subpool_sampling_strategy: importance  # uniform, importance, topk
