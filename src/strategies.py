@@ -66,6 +66,8 @@ class UncertaintyMixin:
         Returns:
             List[int]: The uids of the selected data points to annotate.
         """
+        if len(subset_ids) <= query_size:
+            return subset_ids
         pool_loader = self.configure_dataloader(datastore.pool_loader(with_indices=subset_ids))  # type: ignore
         self.progress_tracker.pool_tracker.max = len(pool_loader)  # type: ignore
         return self.compute_most_uncertain(model, pool_loader, query_size)  # type: ignore
