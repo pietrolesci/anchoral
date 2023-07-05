@@ -23,16 +23,16 @@ MODELS = {"bert-tiny": "google/bert_uncased_L-2_H-128_A-2", "bert-base": "bert-b
 def parse_name(x: Dict) -> str:
     name = x["_target_"].split(".")[-1].lower()
     if name == "randomsubset":
-        name +=  f"-{x['subpool_size']}"
-    
+        name += f"-{x['subpool_size']}"
+
     elif name == "tyrogue":
-        name +=  f"-{x['subpool_size']}-{x['r']}"
+        name += f"-{x['subpool_size']}-{x['r']}"
 
     elif name == "anchoral":
         name += f"-{x['subpool_size']}-{x['subpool_sampling_strategy']}-{x['anchor_strategy']}-{x['only_minority']}-{x['num_anchors']}"
 
     elif name == "seals":
-        name +=  f"-{x['num_neighbours']}"
+        name += f"-{x['num_neighbours']}"
 
     return name
 
@@ -287,4 +287,9 @@ def binarize_agnews(ex: Dict[str, List]) -> Dict:
 def binarize_amazon(ex: Dict[str, List]) -> Dict:
     """Make `religion` the target label."""
     cats = [2790, 3241, 3988, 5886, 8445, 8446, 8453, 9904, 9905, 9906, 10371]
+    return {"labels": [int(any(c in l for c in cats)) for l in ex["target_ind"]]}
+
+def binarize_amazon_agri(ex: Dict[str, List]) -> Dict:
+    """Make `agricultural sciences` the target label."""
+    cats = [246]
     return {"labels": [int(any(c in l for c in cats)) for l in ex["target_ind"]]}

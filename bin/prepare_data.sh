@@ -6,8 +6,15 @@ set -e
 
 
 data_dir=$(pwd)/data
-MODEL=bert-base  # bert-tiny
+MODEL=bert-tiny
 
+
+echo Preparing AmazonCat-13k
+poetry run python ./scripts/prepare_data.py \
+    --data_dir $data_dir \
+    --model $MODEL \
+    --downsample_test_size 25000 \
+    --dataset amazoncat-13k-agri
 
 echo Preparing Agnews
 poetry run python ./scripts/prepare_data.py \

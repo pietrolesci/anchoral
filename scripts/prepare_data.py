@@ -14,6 +14,7 @@ from src.utilities import (
     binarize_amazon,
     binarize_eurlex,
     binarize_pubmed,
+    binarize_amazon_agri,
     get_stats_from_dataframe,
 )
 
@@ -22,6 +23,7 @@ LABEL_FN = {
     "pubmed-200k-rct": binarize_pubmed,
     "agnews": binarize_agnews,
     "amazoncat-13k": binarize_amazon,
+    "amazoncat-13k-agri": binarize_amazon_agri,
 }
 
 
@@ -39,7 +41,9 @@ if __name__ == "__main__":
 
     # load data and metadata
     data_dir = Path(args.data_dir)
-    dataset_dict: DatasetDict = load_from_disk(data_dir / "processed" / args.dataset)  # type: ignore
+
+    dataset = args.dataset.removesuffix("-agri") if args.dataset == "amazoncat-13k-agri" else args.dataset
+    dataset_dict: DatasetDict = load_from_disk(data_dir / "processed" / dataset)  # type: ignore
 
     cols = [i for i in dataset_dict["train"].features if i.startswith("embedding")]
     dataset_dict = dataset_dict.remove_columns(cols)

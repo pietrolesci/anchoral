@@ -1,0 +1,6 @@
+short_name: amazon_agri
+text_column: text
+label_column: labels
+uid_column: uid
+prepared_path: /home/pl487/anchoral/data/prepared/amazoncat-13k-agri
+processed_path: /home/pl487/anchoral/data/processed/amazoncat-13k
