@@ -96,10 +96,16 @@ Logs are split in 3 granularity groups: instance-level, batch-level, epoch-level
 ### Utils [DELETE]
 
 ```bash
-exp='testing_subpool_sampling_strategy'
+exp='ablations'
 find ./outputs/multirun/$exp -type d -wholename "*/.model_cache" -exec rm -rf {} +
 find ./outputs/multirun/$exp -type d -wholename "*/logs/train" -exec rm -rf {} +
 find ./outputs/multirun/$exp -type d -wholename "*/logs/test" -exec rm -rf {} +
 find ./outputs/multirun/$exp -type d -wholename "*/logs/pool" -exec rm -rf {} +
 find ./outputs/multirun/$exp -type d -wholename "*/.checkpoints" -exec rm -rf {} +
 ```
+
+mv outputs/multirun/test_new_kmeans_sil/agnews/* outputs/multirun/ablations/agnews/
+mv outputs/multirun/test_new_kmeans_sil/amazon/* outputs/multirun/ablations/amazon/
+mv outputs/multirun/test_new_kmeans_sil/pubmed/* outputs/multirun/ablations/pubmed/
+mv outputs/multirun/test_new_kmeans_sil/wiki_toxic/* outputs/multirun/ablations/wiki_toxic/
+mv outputs/multirun/test_new_kmeans_sil/eurlex/* outputs/multirun/ablations/eurlex/

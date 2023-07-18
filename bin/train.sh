@@ -5,15 +5,39 @@
 # OURS #
 ########
 
-# DEFAULT RUN
+poetry run python ./scripts/active_train.py \
+    +experiment=basic \
+    experiment_group=debug \
+    active_fit.max_rounds=36 \
+    dataset=amazon_agri \
+    strategy=anchoral2 \
+    strategy.subpool_size=25;
+
+
+# BASELINES
+# poetry run python ./scripts/active_train.py -m \
+#     +experiment=basic \
+#     experiment_group=seed \
+#     dataset=eurlex,wiki_toxic,agnews,amazon,pubmed \
+#     strategy=anchoral,random,randomsubset,seals \
+#     seed=42,0,1994 \
+#     model.seed=42,0,1994 \
+#     +launcher=joblib;
+
 poetry run python ./scripts/active_train.py -m \
     +experiment=basic \
-    experiment_group=seed \
-    dataset=eurlex,wiki_toxic,agnews,amazon,pubmed \
-    strategy=anchoral,random,randomsubset,seals \
-    seed=42,0,1994 \
-    model.seed=42,0,1994 \
-    +launcher=joblib;
+    experiment_group=baselines \
+    active_fit.max_rounds=36 \
+    data.seed=42,0 \
+    model.seed=42,0 \
+    active_data.seed=42,0 \
+    +launcher=joblib \
+    hydra.launcher.n_jobs=4 \
+    dataset=amazon_agri \
+    strategy=seals,random,randomsubset,tyrogue;
+
+
+
 
 # ABLATION: NUMBER OF MINORITY INSTANCES IN THE SEED SET
 poetry run python ./scripts/active_train.py -m \

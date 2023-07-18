@@ -1,14 +1,46 @@
+# poetry run python ./scripts/active_train.py -m \
+#     +experiment=basic \
+#     experiment_group=ablations \
+#     active_fit.max_rounds=36 \
+#     data.seed=42,0 \
+#     model.seed=42,0 \
+#     active_data.seed=42,0 \
+#     +launcher=joblib \
+#     hydra.launcher.n_jobs=3 \
+#     dataset=amazon_agri \
+#     strategy=anchoral \
+#     strategy.anchor_strategy=diversified,diversified_rampup \
+#     strategy.only_minority=false  \
+#     strategy.subpool_sampling_strategy=topk \
+#     strategy.subpool_size=25;
+
+# poetry run python ./scripts/active_train.py -m \
+#     +experiment=basic \
+#     experiment_group=ablations \
+#     active_fit.max_rounds=36 \
+#     data.seed=42,0 \
+#     model.seed=42,0 \
+#     active_data.seed=42,0 \
+#     +launcher=joblib \
+#     hydra.launcher.n_jobs=3 \
+#     dataset=amazon_agri \
+#     strategy=anchoral \
+#     strategy.anchor_strategy=diversified,diversified_rampup \
+#     strategy.only_minority=false  \
+#     strategy.subpool_sampling_strategy=topk,importance \
+#     strategy.subpool_size=10000;
+
 poetry run python ./scripts/active_train.py -m \
     +experiment=basic \
-    experiment_group=testing_no_uncertainty \
+    experiment_group=ablations \
     active_fit.max_rounds=36 \
     data.seed=42,0 \
     model.seed=42,0 \
     active_data.seed=42,0 \
     +launcher=joblib \
-    hydra.launcher.n_jobs=4 \
-    dataset=eurlex,agnews,pubmed,amazon,wiki_toxic \
-    strategy=anchoral \
-    strategy.anchor_strategy=kmeans,random \
-    strategy.subpool_sampling_strategy=topk \
-    strategy.subpool_size=25;
+    hydra.launcher.n_jobs=3 \
+    dataset=amazon_agri \
+    strategy=anchoral2 \
+    strategy.anchor_strategy_minority=kmeans_sil,uncertainty \
+    strategy.anchor_strategy_majority=kmeans_sil,uncertainty \
+    strategy.subpool_size=25,10000;

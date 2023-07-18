@@ -134,6 +134,29 @@ files = [
 frozenlist = ">=1.1.0"
 
 [[package]]
+name = "altair"
+version = "5.0.1"
+description = "Vega-Altair: A declarative statistical visualization library for Python."
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "altair-5.0.1-py3-none-any.whl", hash = "sha256:9f3552ed5497d4dfc14cf48a76141d8c29ee56eae2873481b4b28134268c9bbe"},
+    {file = "altair-5.0.1.tar.gz", hash = "sha256:087d7033cb2d6c228493a053e12613058a5d47faf6a36aea3ff60305fd8b4cb0"},
+]
+
+[package.dependencies]
+jinja2 = "*"
+jsonschema = ">=3.0"
+numpy = "*"
+pandas = ">=0.18"
+toolz = "*"
+typing-extensions = {version = ">=4.0.1", markers = "python_version < \"3.11\""}
+
+[package.extras]
+dev = ["black (<24)", "hatch", "ipython", "m2r", "mypy", "pandas-stubs", "pytest", "pytest-cov", "ruff", "types-jsonschema", "types-setuptools", "vega-datasets", "vl-convert-python"]
+doc = ["docutils", "geopandas", "jinja2", "myst-parser", "numpydoc", "pillow", "pydata-sphinx-theme", "sphinx", "sphinx-copybutton", "sphinx-design", "sphinxext-altair"]
+
+[[package]]
 name = "ansicon"
 version = "1.89.0"
 description = "Python wrapper for loading Jason Hood's ANSICON"
@@ -465,6 +488,28 @@ files = [
 jinxed = {version = ">=1.1.0", markers = "platform_system == \"Windows\""}
 six = ">=1.9.0"
 wcwidth = ">=0.1.4"
+
+[[package]]
+name = "bokeh"
+version = "3.2.0"
+description = "Interactive plots and applications in the browser from Python"
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "bokeh-3.2.0-py3-none-any.whl", hash = "sha256:e6d168bd024bef7b6e11536610d4767997a910242b73e9dee31c84eea5276f64"},
+    {file = "bokeh-3.2.0.tar.gz", hash = "sha256:cdb3a8c3109d8d91a2814f4cddea045c14d049021f7fb6ce2a6b2c15e224bb17"},
+]
+
+[package.dependencies]
+contourpy = ">=1"
+Jinja2 = ">=2.9"
+numpy = ">=1.16"
+packaging = ">=16.8"
+pandas = ">=1.2"
+pillow = ">=7.1.0"
+PyYAML = ">=3.10"
+tornado = ">=5.1"
+xyzservices = ">=2021.09.1"
 
 [[package]]
 name = "cachetools"
@@ -5159,6 +5204,17 @@ files = [
 ]
 
 [[package]]
+name = "toolz"
+version = "0.12.0"
+description = "List processing tools and functional utilities"
+optional = false
+python-versions = ">=3.5"
+files = [
+    {file = "toolz-0.12.0-py3-none-any.whl", hash = "sha256:2059bd4148deb1884bb0eb770a3cde70e7f954cfbbdc2285f1f2de01fd21eb6f"},
+    {file = "toolz-0.12.0.tar.gz", hash = "sha256:88c570861c440ee3f2f6037c4654613228ff40c93a6c25e0eba70d17282c6194"},
+]
+
+[[package]]
 name = "torch"
 version = "2.0.0+cu118"
 description = "Tensors and Dynamic neural networks in Python with strong GPU acceleration"
@@ -5950,6 +6006,17 @@ files = [
 ]
 
 [[package]]
+name = "xyzservices"
+version = "2023.5.0"
+description = "Source of XYZ tiles providers"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "xyzservices-2023.5.0-py3-none-any.whl", hash = "sha256:53b923518d1f7ba22ee77c955c1da34716524bf1910737b097d3208f893af0fe"},
+    {file = "xyzservices-2023.5.0.tar.gz", hash = "sha256:f0ffaeb7f1c090cff98de6e9a5d4c1c3dde5a8c30f98044dc1e12b11d4576ebc"},
+]
+
+[[package]]
 name = "yarl"
 version = "1.9.2"
 description = "Yet another URL library"
@@ -6054,4 +6121,4 @@ testing = ["big-O", "flake8 (<5)", "jaraco.functools", "jaraco.itertools", "more
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.10"
-content-hash = "f1f5d00da36d9098305bdee3bd12b638b70c296b2f92e0e684efcfc4367f8776"
+content-hash = "406df43019b8d17c3691664c372f3e1208134ab3b2d66eba0814d6ae2c151ee5"

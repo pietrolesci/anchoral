@@ -1,6 +1,6 @@
 import math
 import time
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -8,7 +8,8 @@ from lightning.fabric.wrappers import _FabricModule
 from numpy.random import RandomState
 from scipy.special import softmax
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import normalize
+from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
 from sklearn.utils import check_random_state
 
 from energizer.datastores import PandasDataStoreForSequenceClassification
@@ -18,28 +19,49 @@ from energizer.strategies import UncertaintyBasedStrategy as _UncertaintyBasedSt
 from src.estimators import SequenceClassificationMixin
 
 
-def run_kmeans(
-    datastore: PandasDataStoreForSequenceClassification, ids: List[int], num_clusters: int, rng: RandomState, from_pool: bool = False,
-) -> List[int]:
-    if from_pool:
-        embeddings = datastore.get_pool_embeddings(ids)
-    else:
-        embeddings = datastore.get_train_embeddings(ids)
-    embeddings: np.ndarray = normalize(embeddings, axis=1)  # type: ignore
+def silhouette_k_select(X: np.ndarray, max_k: int, rng: RandomState) -> int:
 
-    num_clusters = min(embeddings.shape[0], num_clusters)
+    silhouette_avg_n_clusters = []
+    options = list(range(2, max_k))
+    for n_clusters in options:
+
+        # Initialize the clusterer with n_clusters value and a random generator
+        clusterer = KMeans(n_clusters=n_clusters, n_init="auto", random_state=rng)
+        cluster_labels = clusterer.fit_predict(X)
+
+        # The silhouette_score gives the average value for all the samples.
+        # This gives a perspective into the density and separation of the formed clusters
+        silhouette_avg = silhouette_score(X, cluster_labels)
+        silhouette_avg_n_clusters.append(silhouette_avg)
+
+    return options[np.argmax(silhouette_avg_n_clusters).item()]
+
+
+def run_kmeans(
+    X: np.ndarray,
+    ids: List[int],
+    num_clusters: int,
+    rng: RandomState,
+    use_silhouette: bool = False,
+) -> List[int]:
+    """Runs k-means and retrieves the indices of the embeddings closest to the centers."""
+
+    X = StandardScaler().fit_transform(X)
+
+    num_clusters = min(X.shape[0], num_clusters)
+    if num_clusters > 1 and use_silhouette:
+        num_clusters = silhouette_k_select(X, max_k=num_clusters, rng=rng)
 
     cluster_learner = KMeans(n_clusters=num_clusters, n_init="auto", random_state=rng)
-    cluster_learner.fit(embeddings)
-    cluster_idxs = cluster_learner.predict(embeddings)
+    cluster_learner.fit(X)
+    cluster_idxs = cluster_learner.predict(X)
 
     # pick instances closest to the cluster centers
     centers = cluster_learner.cluster_centers_[cluster_idxs]
-    dists = (embeddings - centers) ** 2
+    dists = (X - centers) ** 2
     dists = dists.sum(axis=1)
     closest_ids = [
-        np.arange(embeddings.shape[0])[cluster_idxs == i][dists[cluster_idxs == i].argmin()].item()
-        for i in range(num_clusters)
+        np.arange(X.shape[0])[cluster_idxs == i][dists[cluster_idxs == i].argmin()].item() for i in range(num_clusters)
     ]
     return np.array(ids)[closest_ids].tolist()
 
@@ -107,7 +129,8 @@ class Tyrogue(RandomSubset):
             size=min(datastore.pool_size(), self.subpool_size), mode="uniform", random_state=self.rng
         )
         num_clusters = query_size * self.r
-        subpool_ids = run_kmeans(datastore, subpool_ids, num_clusters=num_clusters, rng=self.rng, from_pool=True)
+        embeddings = datastore.get_pool_embeddings(subpool_ids)
+        subpool_ids = run_kmeans(embeddings, subpool_ids, num_clusters=num_clusters, rng=self.rng, use_silhouette=False)
         self.log("summary/subpool_size", len(subpool_ids), step=self.progress_tracker.global_round)
         return self.select(model, datastore, subpool_ids, query_size)
 
@@ -290,8 +313,39 @@ class AnchorAL(BaseSubsetWithSearch):
         elif self.anchor_strategy == "random":
             anchor_ids = self.rng.choice(anchor_ids, size=min(self.num_anchors, len(anchor_ids)), replace=False).tolist()  # type: ignore
 
-        elif self.anchor_strategy == "kmeans":
-            anchor_ids = run_kmeans(datastore, anchor_ids, num_clusters=self.num_anchors, rng=self.rng, from_pool=False)
+        elif self.anchor_strategy in ("kmeans", "kmeans_sil"):
+            embeddings = datastore.get_train_embeddings(anchor_ids)
+            anchor_ids = run_kmeans(
+                embeddings,
+                anchor_ids,
+                num_clusters=self.num_anchors,
+                rng=self.rng,
+                use_silhouette=self.anchor_strategy == "kmeans_sil",
+            )
+
+        elif self.anchor_strategy in ("diversified", "diversified_rampup"):
+            assert self.only_minority is False, "When anchor_strategy == 'diversified', only_minority must be False."
+
+            # get ids
+            train_df = datastore.data.loc[(datastore._train_mask()), [SpecialKeys.ID, InputKeys.TARGET]]
+            min_ids = train_df.loc[train_df[InputKeys.TARGET] == 1, SpecialKeys.ID].tolist()
+            maj_ids = train_df.loc[train_df[InputKeys.TARGET] != 1, SpecialKeys.ID].tolist()
+
+            # select anchors from the minority class
+            num_minority_anchors = self.num_anchors
+            if self.anchor_strategy == "diversified_rampup" and len(min_ids) >= int(self.num_anchors / 2):
+                num_minority_anchors = int(self.num_anchors / 2)
+            min_anchors_ids = self.rng.choice(min_ids, size=min(num_minority_anchors, len(min_ids)), replace=False).tolist()  # type: ignore
+
+            # select anchors from the majority class
+            num_remaining_anchors = self.num_anchors - num_minority_anchors
+            maj_anchors_ids = []
+            if num_remaining_anchors > 0:
+                maj_instance_loader = self.configure_dataloader(datastore.train_loader(with_indices=maj_ids))  # type: ignore
+                self.progress_tracker.pool_tracker.max = len(maj_instance_loader)  # type: ignore
+                maj_anchors_ids = self.compute_most_uncertain(model, maj_instance_loader, num_remaining_anchors)  # type: ignore
+
+            anchor_ids = min_anchors_ids + maj_anchors_ids
 
         else:
             raise NotImplementedError
@@ -343,3 +397,171 @@ class AnchorAL(BaseSubsetWithSearch):
             ).tolist()
 
         raise NotImplementedError
+
+
+class AnchorAL2(BaseSubsetWithSearch):
+    def __init__(
+        self,
+        *args,
+        anchor_strategy_minority: str,
+        anchor_strategy_majority: str,
+        num_anchors: int,
+        subpool_size: int,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore
+        self.rng = check_random_state(self.seed)
+        self.anchor_strategy_minority = anchor_strategy_minority
+        self.anchor_strategy_majority = anchor_strategy_majority
+        self.num_anchors = num_anchors
+        self.subpool_size = subpool_size
+
+    def run_query(
+        self, model: _FabricModule, datastore: PandasDataStoreForSequenceClassification, query_size: int
+    ) -> List[int]:
+
+        # GET ANCHORS
+        anchor_ids = self.get_anchors(model, datastore)
+
+        if all(len(v) == 0 for v in anchor_ids.values()):
+            # if cold-starting there is no training embedding, fall-back to random sampling
+            return datastore.sample_from_pool(size=query_size, mode="uniform", random_state=self.pool_rng)
+
+        # SEARCH ANCHORS
+        subpool_ids = []
+        logs = {}
+        candidates_dfs = []
+        for k, ids in anchor_ids.items():
+            train_embeddings = datastore.get_train_embeddings(ids)
+            candidate_df, search_logs = self.search_pool(datastore, train_embeddings, ids)
+
+            # USE RESULTS TO SUBSET POOL
+            # NOTE: you are doubling the size of the pool (for each class you are taking self.subpool_size instances)
+            subpool_ids += self.get_subpool_ids(candidate_df, datastore)  
+
+            logs = {**logs, **{f"{i}_{k}": j for i, j in search_logs.items()}}
+            candidates_dfs.append(candidate_df)
+
+        logs["summary/subpool_size"] = len(subpool_ids)
+
+        subpool_ids = list(set(subpool_ids))
+
+        logs["summary/subpool_size_unique"] = len(subpool_ids)
+
+        self.log_dict(logs, step=self.progress_tracker.global_round)
+
+        # RUN ACTIVE LEARNING CRITERION
+        selected_ids = self.select(model, datastore, subpool_ids, query_size)
+
+        # add traceability into the datastore
+        self._record_reason(datastore, pd.concat(candidates_dfs, axis=0, ignore_index=False), selected_ids)
+
+        return selected_ids
+
+    def get_anchors(
+        self, model: _FabricModule, datastore: PandasDataStoreForSequenceClassification
+    ) -> Dict[str, List[int]]:
+
+        train_df = datastore.data.loc[(datastore._train_mask()), [SpecialKeys.ID, InputKeys.TARGET]]
+        if len(train_df) == 0 or (self.num_anchors > 0 and len(train_df) < self.num_anchors):
+            self.log("summary/used_anchor_strategy", 0, step=self.progress_tracker.global_round)
+            return {"cold-start": train_df[SpecialKeys.ID].tolist()}
+
+        minority_ids = train_df.loc[train_df[InputKeys.TARGET] == 1, SpecialKeys.ID].tolist() or []
+        majority_ids = train_df.loc[train_df[InputKeys.TARGET] != 1, SpecialKeys.ID].tolist() or []
+
+        # NOTE: we always first deal with minority instances
+        iterable = {
+            "minority": (minority_ids, self.anchor_strategy_minority),
+            "majority": (majority_ids, self.anchor_strategy_majority),
+        }
+
+        anchor_ids = {}
+        num_anchors = self.num_anchors
+        for k, (ids, strategy) in iterable.items():
+
+            if num_anchors <= 0:
+                continue
+
+            if strategy == "all":
+                _ids = ids
+
+            elif strategy == "random":
+                _ids = self.rng.choice(ids, size=min(num_anchors, len(ids)), replace=False).tolist()  # type: ignore
+
+            elif strategy in ("kmeans", "kmeans_sil"):
+                embeddings = datastore.get_train_embeddings(ids)
+                _ids = run_kmeans(
+                    embeddings, ids, num_clusters=num_anchors, rng=self.rng, use_silhouette=strategy == "kmeans_sil"
+                )
+
+            elif strategy == "uncertainty":
+                loader = self.configure_dataloader(datastore.train_loader(with_indices=ids))  # type: ignore
+                self.progress_tracker.pool_tracker.max = len(loader)  # type: ignore
+                _ids = self.compute_most_uncertain(model, loader, num_anchors)  # type: ignore
+
+            else:
+                raise NotImplementedError
+
+            assert len(_ids) == len(set(_ids))  # if we find duplicates, there are bugs
+            anchor_ids[k] = _ids
+            num_anchors -= len(_ids)
+
+        self.log_dict(
+            {**{f"summary/num_{k}_anchors": len(v) for k, v in anchor_ids.items()}, "summary/used_anchor_strategy": 1},
+            step=self.progress_tracker.global_round,
+        )
+
+        return anchor_ids
+
+    def search_pool(
+        self,
+        datastore: PandasDataStoreForSequenceClassification,
+        query: np.ndarray,
+        train_ids: List[int],
+    ) -> Tuple[pd.DataFrame, Dict[str, float]]:
+        """Get neighbours of training instances from the pool."""
+
+        num_neighbours = self.num_neighbours
+        if self.max_search_size is not None:
+            # NOTE: this can create noise in the experimentss
+            num_neighbours = min(self.num_neighbours, math.floor(self.max_search_size / query.shape[0]))
+
+        start_time = time.perf_counter()
+        ids, dists = datastore.search(query=query, query_size=num_neighbours, query_in_set=False)
+        elapsed = time.perf_counter() - start_time
+
+        candidate_df = pd.DataFrame(
+            {
+                SpecialKeys.ID: ids.flatten(),
+                "dists": dists.flatten(),
+                "train_uid": np.repeat(train_ids, ids.shape[1], axis=0).flatten(),
+            }
+        )
+
+        logs = {
+            "timer/search": elapsed,
+            "search/ids_retrieved": len(candidate_df),
+            "search/unique_ids_retrieved": candidate_df[SpecialKeys.ID].nunique(),
+            "search/num_neighbours": num_neighbours,
+        }
+
+        return candidate_df, logs
+
+    def get_subpool_ids(
+        self, candidate_df: pd.DataFrame, datastore: PandasDataStoreForSequenceClassification
+    ) -> List[int]:
+
+        if self.subpool_size is None:
+            return candidate_df[SpecialKeys.ID].unique().tolist()
+
+        return (
+            candidate_df.groupby(SpecialKeys.ID)  # type: ignore
+            .agg(dists=("dists", "mean"), train_uid=("train_uid", "unique"))
+            .reset_index()
+            # convert cosine distance in similarity (i.e., higher means more similar)
+            .assign(scores=lambda _df: 1 - _df["dists"])
+            .sort_values("scores", ascending=False)
+            .head(min(self.subpool_size, len(candidate_df)))[SpecialKeys.ID]
+            .tolist()
+        )

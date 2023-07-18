@@ -31,6 +31,9 @@ def parse_name(x: Dict) -> str:
     elif name == "anchoral":
         name += f"-{x['subpool_size']}-{x['subpool_sampling_strategy']}-{x['anchor_strategy']}-{x['only_minority']}-{x['num_anchors']}"
 
+    elif name == "anchoral2":
+        name += f"-{x['subpool_size']}-{x['anchor_strategy_minority']}-{x['anchor_strategy_majority']}-{x['num_anchors']}"
+
     elif name == "seals":
         name += f"-{x['num_neighbours']}"
 
@@ -288,6 +291,7 @@ def binarize_amazon(ex: Dict[str, List]) -> Dict:
     """Make `religion` the target label."""
     cats = [2790, 3241, 3988, 5886, 8445, 8446, 8453, 9904, 9905, 9906, 10371]
     return {"labels": [int(any(c in l for c in cats)) for l in ex["target_ind"]]}
+
 
 def binarize_amazon_agri(ex: Dict[str, List]) -> Dict:
     """Make `agricultural sciences` the target label."""

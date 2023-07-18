@@ -6,7 +6,7 @@ _target_: src.strategies.AnchorAL
 num_neighbours: 2000
 max_search_size: null
 
-anchor_strategy: random  # all, random, kmeans
+anchor_strategy: random  # all, random, kmeans, kmeans_sil
 only_minority: true
 num_anchors: 50
 

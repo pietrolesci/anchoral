@@ -12,9 +12,9 @@ from src.utilities import (
     MODELS,
     binarize_agnews,
     binarize_amazon,
+    binarize_amazon_agri,
     binarize_eurlex,
     binarize_pubmed,
-    binarize_amazon_agri,
     get_stats_from_dataframe,
 )
 

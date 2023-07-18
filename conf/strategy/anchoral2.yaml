@@ -1,0 +1,12 @@
+defaults:
+  - defaults
+
+_target_: src.strategies.AnchorAL2
+
+num_neighbours: 2000
+max_search_size: null
+
+anchor_strategy_minority: kmeans_sil # all, random, kmeans, kmeans_sil, uncertainty
+anchor_strategy_majority: uncertainty
+num_anchors: 50
+subpool_size: 10000  # if null returns all unique
