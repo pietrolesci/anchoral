@@ -17,7 +17,7 @@ from energizer.datastores import PandasDataStoreForSequenceClassification
 from energizer.enums import InputKeys, SpecialKeys
 from energizer.strategies import RandomStrategy as _RandomStrategy
 from energizer.strategies import UncertaintyBasedStrategy as _UncertaintyBasedStrategy
-from src.estimators import SequenceClassificationMixin
+from src.estimator import SequenceClassificationMixin
 
 
 class PoolSamplingMixin:

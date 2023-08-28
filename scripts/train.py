@@ -9,7 +9,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from transformers.utils.logging import set_verbosity_warning
 
 from energizer.datastores import PandasDataStoreForSequenceClassification
-from src.estimators import EstimatorForSequenceClassification
+from src.estimator import EstimatorForSequenceClassification
 from src.utilities import SEP_LINE, binarize_labels, downsample_positive_class, downsample_test_set
 
 set_verbosity_warning()

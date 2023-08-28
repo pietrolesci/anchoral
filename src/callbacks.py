@@ -4,10 +4,10 @@ from typing import Dict, List, Union
 import pandas as pd
 from lightning.fabric.wrappers import _FabricModule
 
+from energizer.active_learning.base import ActiveEstimator
 from energizer.callbacks import Callback
-from energizer.datastores import PandasDataStoreForSequenceClassification
+from energizer.datastores.classification import PandasDataStoreForSequenceClassification
 from energizer.enums import InputKeys, Interval, OutputKeys, RunningStage, SpecialKeys
-from energizer.estimators.active_estimator import ActiveEstimator
 from energizer.types import METRIC, ROUND_OUTPUT
 
 

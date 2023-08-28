@@ -32,7 +32,9 @@ def parse_name(x: Dict) -> str:
         name += f"-{x['subpool_size']}-{x['subpool_sampling_strategy']}-{x['anchor_strategy']}-{x['only_minority']}-{x['num_anchors']}"
 
     elif name == "anchoral2":
-        name += f"-{x['subpool_size']}-{x['anchor_strategy_minority']}-{x['anchor_strategy_majority']}-{x['num_anchors']}"
+        name += (
+            f"-{x['subpool_size']}-{x['anchor_strategy_minority']}-{x['anchor_strategy_majority']}-{x['num_anchors']}"
+        )
 
     elif name == "seals":
         name += f"-{x['num_neighbours']}"

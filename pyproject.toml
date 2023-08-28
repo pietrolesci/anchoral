@@ -13,12 +13,12 @@ python = ">=3.9,<3.10"
 energizer = { path = "./energizer/", develop = true}
 
 # lightning
+# https://github.com/python-poetry/poetry/issues/6409#issuecomment-1572612891
 torch = {url = "https://download.pytorch.org/whl/cu118/torch-2.0.0%2Bcu118-cp39-cp39-linux_x86_64.whl", platform = "linux", python = ">=3.9 <3.10"}
+# need this because sentence-transformers installs torchvision with CUDA 11.7
+torchvision = {url = "https://download.pytorch.org/whl/cu118/torchvision-0.15.0%2Bcu118-cp39-cp39-linux_x86_64.whl", platform = "linux", python = ">=3.9 <3.10"}
 lightning = { git = "https://github.com/Lightning-AI/lightning.git" }
 torchmetrics = "^1.0.1"
-# einops = "^0.6.1"
-# https://github.com/python-poetry/poetry/issues/6409#issuecomment-1572612891
-# torchvision = {url = "https://download.pytorch.org/whl/cu118/torchvision-0.15.0%2Bcu118-cp39-cp39-linux_x86_64.whl", platform = "linux", python = ">=3.9 <3.10"}
 
 # hydra
 omegaconf = "^2.3.0"
