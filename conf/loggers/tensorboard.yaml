@@ -1,5 +1,5 @@
 tensorboard:
-  _target_: lightning.fabric.loggers.TensorBoardLogger
+  _target_: energizer.loggers.TensorBoardLogger
   root_dir: ./
   name: tb_logs
   version: null

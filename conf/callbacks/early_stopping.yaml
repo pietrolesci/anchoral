@@ -1,6 +1,6 @@
 early_stopping:
   _target_: energizer.callbacks.early_stopping.EarlyStopping
-  monitor: f1_macro
+  monitor: train/f1_class1
   stage: train
   interval: epoch
   mode: max

@@ -1,0 +1,6 @@
+defaults:
+  - defaults
+
+_target_: src.strategies.SEALSWithBADGE
+num_neighbours: 50
+max_search_size: null

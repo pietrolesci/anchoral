@@ -41,7 +41,7 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
 
         train_df = datastore._train_data.loc[(datastore._train_mask()), [SpecialKeys.ID, InputKeys.TARGET]]
         if len(train_df) == 0 or (self.num_anchors > 0 and len(train_df) < self.num_anchors):
-            self.log("summary/used_anchor_strategy", 0, step=self.progress_tracker.global_round)
+            self.log("summary/used_anchor_strategy", 0, step=self.tracker.global_round)
             return {"cold-start": train_df[SpecialKeys.ID].tolist()}
 
         minority_ids = train_df.loc[train_df[InputKeys.TARGET] == 1, SpecialKeys.ID].tolist() or []
@@ -67,7 +67,7 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
 
             # elif strategy == "uncertainty":
             #     loader = self.configure_dataloader(datastore.train_loader(with_indices=ids))  # type: ignore
-            #     self.progress_tracker.pool_tracker.max = len(loader)  # type: ignore
+            #     self.tracker.pool_tracker.max = len(loader)  # type: ignore
             #     _ids = self.compute_most_uncertain(model, loader, num_anchors)  # type: ignore
 
             elif strategy in CLUSTERING_FUNCTIONS:

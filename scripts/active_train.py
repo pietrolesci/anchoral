@@ -2,7 +2,6 @@ import logging
 import shutil
 
 import hydra
-import torch
 from datasets import DatasetDict, load_from_disk
 from hydra.utils import instantiate  # get_original_cwd
 from lightning.fabric import seed_everything
@@ -11,11 +10,9 @@ from tbparse import SummaryReader
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from transformers.utils.logging import set_verbosity_warning
 
-from energizer.datastores import PandasDataStoreForSequenceClassification
+from energizer.active_learning.datastores.classification import ActivePandasDataStoreForSequenceClassification
 from energizer.utilities import local_seed
-from src.utilities import MODELS, SEP_LINE, get_initial_budget
-
-torch.set_float32_matmul_precision("highest")
+from src.utilities import MODELS, SEP_LINE, get_initial_budget, get_stats_from_dataframe
 
 set_verbosity_warning()
 log = logging.getLogger("hydra")
@@ -55,8 +52,7 @@ def main(cfg: DictConfig) -> None:
     ##############################################
 
     # create datastore for active learning
-    datastore = PandasDataStoreForSequenceClassification()
-    datastore.from_dataset_dict(
+    datastore = ActivePandasDataStoreForSequenceClassification.from_dataset_dict(
         dataset_dict=dataset_dict,  # type:ignore
         input_names=["input_ids", "attention_mask"],
         target_name=cfg.dataset.label_column,
@@ -65,7 +61,6 @@ def main(cfg: DictConfig) -> None:
     )
 
     # load index
-    # if cfg.embedding_model is not None and "RandomStrategy" not in cfg.strategy._target_:
     index_path = f"{cfg.dataset.processed_path}/{cfg.index_metric}"
     log.info(f"loading index from {index_path}")
     index_path, meta_path = f"{index_path}.bin", f"{index_path}.json"
@@ -73,18 +68,25 @@ def main(cfg: DictConfig) -> None:
 
     # define initial budget
     if cfg.active_data.budget is not None and cfg.active_data.budget > 0:
-        get_initial_budget(
+        ids = get_initial_budget(
             datastore=datastore,
             positive_budget=cfg.active_data.positive_budget,
             total_budget=cfg.active_data.budget,
             positive_class=1,
             seed=cfg.active_data.seed,
-            validation_perc=cfg.active_data.validation_perc,
-            sampling=cfg.active_data.sampling,
-            logger=log,
         )
-
-    log.info(f"Keeping {cfg.active_data.validation_perc} as validation.")
+        datastore.label(indices=ids, round=-1)
+        stats = get_stats_from_dataframe(
+            df=datastore.get_by_ids(datastore.get_train_ids()),
+            target_name="labels",
+            names=["Negative", "Positive"],
+        )
+        log.info(
+            f"Labelled size: {datastore.labelled_size()} "
+            f"Pool size: {datastore.pool_size()} "
+            f"Test size: {datastore.test_size()}\n"
+            f"Label distribution:\n{stats}"
+        )
 
     # set loaders
     datastore.prepare_for_loading(**OmegaConf.to_container(cfg.data))  # type: ignore
@@ -124,12 +126,12 @@ def main(cfg: DictConfig) -> None:
     # ============ active learning ============ #
     #############################################
     fit_hparams = {**OmegaConf.to_container(cfg.fit), **OmegaConf.to_container(cfg.active_fit)}  # type: ignore
-    estimator.fabric.logger.log_hyperparams(params={**fit_hparams, **OmegaConf.to_container(cfg.active_data)})  # type: ignore
+    estimator.logger.log_hyperparams(params={**fit_hparams, **OmegaConf.to_container(cfg.active_data)})  # type: ignore
 
     estimator.active_fit(datastore, **fit_hparams)
 
-    estimator.fabric.logger.finalize("success")
-    SummaryReader(str(estimator.fabric.logger.log_dir)).scalars.to_parquet("tb_logs.parquet")
+    estimator.logger.finalize("success")
+    SummaryReader(str(estimator.logger.log_dir)).scalars.to_parquet("tb_logs.parquet")
     shutil.rmtree(".model_cache")
 
 

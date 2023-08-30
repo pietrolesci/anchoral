@@ -9,7 +9,7 @@ from sklearn.utils import check_random_state
 from tabulate import tabulate
 from tqdm.auto import tqdm
 
-from energizer.datastores import PandasDataStoreForSequenceClassification
+from energizer.active_learning.datastores.classification import ActivePandasDataStoreForSequenceClassification
 from energizer.enums import InputKeys, SpecialKeys
 from energizer.utilities import sample
 
@@ -142,49 +142,26 @@ def downsample_test_set(
 
 
 def get_initial_budget(
-    datastore: PandasDataStoreForSequenceClassification,
+    datastore: ActivePandasDataStoreForSequenceClassification,
     positive_budget: int,
     total_budget: int,
     positive_class: int,
     seed: int,
-    validation_perc: Optional[float],
-    sampling: Optional[str],
-    logger: Logger,
-) -> None:
+) -> List[int]:
     rng = check_random_state(seed)
 
     pos_uids = (
-        datastore.data.loc[datastore.data[InputKeys.TARGET] == positive_class]
+        datastore._train_data.loc[datastore._train_data[InputKeys.TARGET] == positive_class]
         .sample(positive_budget, random_state=rng)[SpecialKeys.ID]
         .tolist()
     )
     other_uids = (
-        datastore.data.loc[datastore.data[InputKeys.TARGET] != positive_class]
+        datastore._train_data.loc[datastore._train_data[InputKeys.TARGET] != positive_class]
         .sample(total_budget - positive_budget, random_state=rng)[SpecialKeys.ID]
         .tolist()
     )
 
-    ids = pos_uids + other_uids
-
-    datastore.label(
-        indices=ids,
-        round=-1,
-        validation_perc=validation_perc,
-        validation_sampling=sampling,
-    )
-
-    stats = get_stats_from_dataframe(
-        df=datastore.data.loc[datastore._labelled_mask()],
-        target_name=InputKeys.TARGET,
-        names=["Negative", "Positive"],
-    )
-
-    logger.info(
-        f"Labelled size: {datastore.labelled_size()} "
-        f"Pool size: {datastore.pool_size()} "
-        f"Test size: {datastore.test_size()}\n"
-        f"Label distribution:\n{stats}"
-    )
+    return pos_uids + other_uids
 
 
 """

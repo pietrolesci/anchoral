@@ -2,5 +2,5 @@ defaults:
   - defaults
 
 _target_: src.strategies.Tyrogue
-subpool_size: 10000
-r: 3
+r_factor: 3
+clustering_algorithm: kmeans_sampling

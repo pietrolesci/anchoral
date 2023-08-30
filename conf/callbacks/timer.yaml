@@ -1,3 +1,3 @@
 timer:
-  _target_: energizer.callbacks.timer.Timer
+  _target_: energizer.active_learning.callbacks.Timer
 

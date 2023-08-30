@@ -92,8 +92,8 @@ class SequenceClassificationMixin:
         _metrics = {**per_class, **micro}
 
         # log
-        self.log_dict(_metrics, step=self.progress_tracker.safe_global_epoch)  # type: ignore
-        if stage == RunningStage.TEST and hasattr(self.progress_tracker, "global_budget"):  # type: ignore
-            self.log_dict({f"{k}_vs_budget": v for k, v in _metrics.items()}, step=self.progress_tracker.global_budget)  # type: ignore
+        self.log_dict(_metrics, step=self.tracker.safe_global_epoch)  # type: ignore
+        if stage == RunningStage.TEST and hasattr(self.tracker, "global_budget"):  # type: ignore
+            self.log_dict({f"{k}_vs_budget": v for k, v in _metrics.items()}, step=self.tracker.global_budget)  # type: ignore
 
         return {**out, **_metrics}

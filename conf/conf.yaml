@@ -2,6 +2,11 @@ defaults:
   - _self_
   - loggers:
     - tensorboard
+  - /callbacks:
+    - early_stopping
+    - timer
+    - grad_norm
+    - save_outputs
   - optional strategy: null
   - optional dataset: null
   - override hydra/job_logging: colorlog
@@ -30,8 +35,10 @@ estimator:
   accelerator: gpu
   precision: 32
   deterministic: true
+  tf32_mode: high
 
 callbacks: null
+
 loggers: null
 
 data:
@@ -50,8 +57,6 @@ data:
 active_data:
   budget: 100
   positive_budget: 5
-  sampling: random
-  validation_perc: ${active_fit.validation_perc}
   seed: ${seed}
 
 fit:
@@ -59,22 +64,15 @@ fit:
   min_steps: 100
   learning_rate: 0.0002
   optimizer: adamw
-  optimizer_kwargs: null
-  scheduler: null
-  scheduler_kwargs: null
   log_interval: ${log_interval}
   enable_progress_bar: ${enable_progress_bar}
-  num_validation_per_epoch: 1
   limit_train_batches: ${limit_batches}
   limit_validation_batches: ${limit_batches}
 
 # this is incremental to `fit` above
 active_fit:
-  max_rounds: 100
-  max_budget: null
-  query_size: 50
-  validation_perc: null
-  validation_sampling: null
+  max_budget: 1000
+  query_size: 25
   reinit_model: true
   limit_pool_batches: ${limit_batches}
   limit_test_batches: ${limit_batches}
@@ -85,10 +83,13 @@ test:
   limit_batches: ${limit_batches}
 
 strategy: '???'
+
 model: 
   name: bert-tiny
   seed: 42
+
 dataset: '???'
+
 index_metric: all-mpnet-base-v2_cosine
 
 # global settings

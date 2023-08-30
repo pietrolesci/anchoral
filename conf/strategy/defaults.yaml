@@ -1,3 +1,3 @@
-score_fn: least_confidence
-seed: 42
 _target_: '???'
+subpool_size: 10000
+seed: 42

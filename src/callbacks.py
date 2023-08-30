@@ -4,7 +4,7 @@ from typing import Dict, List, Union
 import pandas as pd
 from lightning.fabric.wrappers import _FabricModule
 
-from energizer.active_learning.base import ActiveEstimator
+from energizer.active_learning.strategies.base import ActiveEstimator
 from energizer.callbacks import Callback
 from energizer.datastores.classification import PandasDataStoreForSequenceClassification
 from energizer.enums import InputKeys, Interval, OutputKeys, RunningStage, SpecialKeys
@@ -39,7 +39,7 @@ class SaveOutputs(Callback):
         if self.instance_level and stage == RunningStage.TEST:
             data = pd.DataFrame(columns=[f"logit_{i}" for i in range(model.num_labels)], data=output[OutputKeys.LOGITS])
             data[SpecialKeys.ID] = output[SpecialKeys.ID]
-            data[Interval.ROUND] = getattr(estimator.progress_tracker, "global_round", 0)
+            data[Interval.ROUND] = getattr(estimator.tracker, "global_round", 0)
 
             instance_level_path = path / "instance_level.csv"
             data.to_csv(
@@ -57,17 +57,13 @@ class SaveOutputs(Callback):
         indices: List[int],
     ) -> None:
         counts = dict(datastore.get_by_ids(indices)[InputKeys.TARGET].value_counts())
-        if 1 not in counts:
-            counts[1] = 0  # type: ignore
-        if 0 not in counts:
-            counts[0] = 0.001
+        for i in (0, 1):
+            if 1 not in counts:
+                counts[i] = 0  # type: ignore
 
         estimator.log_dict(
-            {
-                **{f"summary/count_class_{k}": v for k, v in counts.items()},
-                "summary/minority_ratio": counts[1] / counts[0],
-            },
-            step=estimator.progress_tracker.global_round,
+            {f"summary/count_class_{k}": v for k, v in counts.items()},
+            step=estimator.tracker.global_round,
         )
 
     def on_round_end(
@@ -76,10 +72,10 @@ class SaveOutputs(Callback):
 
         # save partial results
         datastore.save_labelled_dataset(self.dirpath)
-        if getattr(estimator, "_reason_df", None) is not None:
-            estimator._reason_df.to_parquet(Path(self.dirpath) / "reason_df.parquet")  # type: ignore
+        # if getattr(estimator, "_reason_df", None) is not None:
+        #     estimator._reason_df.to_parquet(Path(self.dirpath) / "reason_df.parquet")  # type: ignore
 
-        counts = dict(datastore.data.loc[datastore._labelled_mask(), InputKeys.TARGET].value_counts())
+        counts = dict(datastore._train_data.loc[datastore._labelled_mask(), InputKeys.TARGET].value_counts())
         if 1 not in counts:
             counts[1] = 0  # type: ignore
 
@@ -90,7 +86,7 @@ class SaveOutputs(Callback):
                 "summary/pool_size": datastore.pool_size(),
                 "summary/cumulative_minority_ratio": counts[1] / counts[0],
             },
-            step=estimator.progress_tracker.global_round,
+            step=estimator.tracker.global_round,
         )
 
     def on_active_fit_end(

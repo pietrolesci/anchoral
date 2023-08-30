@@ -19,6 +19,8 @@ torch = {url = "https://download.pytorch.org/whl/cu118/torch-2.0.0%2Bcu118-cp39-
 torchvision = {url = "https://download.pytorch.org/whl/cu118/torchvision-0.15.0%2Bcu118-cp39-cp39-linux_x86_64.whl", platform = "linux", python = ">=3.9 <3.10"}
 lightning = { git = "https://github.com/Lightning-AI/lightning.git" }
 torchmetrics = "^1.0.1"
+sentence-transformers = "^2.2.2"
+
 
 # hydra
 omegaconf = "^2.3.0"

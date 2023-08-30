@@ -139,3 +139,4 @@ tests
 
 examples/*/
 examples/*.json*
+*.html

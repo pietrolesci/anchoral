@@ -1,0 +1,5 @@
+defaults:
+  - defaults
+
+_target_: src.strategies.RandomSubsetWithUncertainty
+subpool_size: 10000
