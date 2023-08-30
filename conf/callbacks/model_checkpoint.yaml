@@ -1,9 +1,11 @@
 model_checkpoint:
   _target_: energizer.callbacks.model_checkpoint.ModelCheckpoint
   dirpath: .checkpoints
-  monitor: f1_macro
+  monitor: train/f1_class1
   stage: train
   mode: max
-  save_last: true
+  save_last: false
   save_top_k: 1
   verbose: true
+
+

@@ -61,10 +61,11 @@ def main(cfg: DictConfig) -> None:
     )
 
     # load index
-    index_path = f"{cfg.dataset.processed_path}/{cfg.index_metric}"
-    log.info(f"loading index from {index_path}")
-    index_path, meta_path = f"{index_path}.bin", f"{index_path}.json"
-    datastore.load_index(index_path, meta_path)
+    if "random" not in cfg.strategy["_target_"].lower():
+        index_path = f"{cfg.dataset.processed_path}/{cfg.index_metric}"
+        log.info(f"loading index from {index_path}")
+        index_path, meta_path = f"{index_path}.bin", f"{index_path}.json"
+        datastore.load_index(index_path, meta_path)
 
     # define initial budget
     if cfg.active_data.budget is not None and cfg.active_data.budget > 0:

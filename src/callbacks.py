@@ -4,9 +4,9 @@ from typing import Dict, List, Union
 import pandas as pd
 from lightning.fabric.wrappers import _FabricModule
 
+from energizer.active_learning.datastores.classification import ActivePandasDataStoreForSequenceClassification
 from energizer.active_learning.strategies.base import ActiveEstimator
 from energizer.callbacks import Callback
-from energizer.datastores.classification import PandasDataStoreForSequenceClassification
 from energizer.enums import InputKeys, Interval, OutputKeys, RunningStage, SpecialKeys
 from energizer.types import METRIC, ROUND_OUTPUT
 
@@ -53,7 +53,7 @@ class SaveOutputs(Callback):
         self,
         estimator: ActiveEstimator,
         model: _FabricModule,
-        datastore: PandasDataStoreForSequenceClassification,
+        datastore: ActivePandasDataStoreForSequenceClassification,
         indices: List[int],
     ) -> None:
         counts = dict(datastore.get_by_ids(indices)[InputKeys.TARGET].value_counts())
@@ -67,7 +67,10 @@ class SaveOutputs(Callback):
         )
 
     def on_round_end(
-        self, estimator: ActiveEstimator, datastore: PandasDataStoreForSequenceClassification, output: ROUND_OUTPUT
+        self,
+        estimator: ActiveEstimator,
+        datastore: ActivePandasDataStoreForSequenceClassification,
+        output: ROUND_OUTPUT,
     ) -> None:
 
         # save partial results
@@ -75,7 +78,7 @@ class SaveOutputs(Callback):
         # if getattr(estimator, "_reason_df", None) is not None:
         #     estimator._reason_df.to_parquet(Path(self.dirpath) / "reason_df.parquet")  # type: ignore
 
-        counts = dict(datastore._train_data.loc[datastore._labelled_mask(), InputKeys.TARGET].value_counts())
+        counts = dict(datastore.get_by_ids(datastore.get_train_ids())[InputKeys.TARGET].value_counts())
         if 1 not in counts:
             counts[1] = 0  # type: ignore
 
@@ -92,7 +95,7 @@ class SaveOutputs(Callback):
     def on_active_fit_end(
         self,
         estimator: ActiveEstimator,
-        datastore: PandasDataStoreForSequenceClassification,
+        datastore: ActivePandasDataStoreForSequenceClassification,
         output: List[ROUND_OUTPUT],
     ) -> None:
         datastore.save_labelled_dataset(self.dirpath)

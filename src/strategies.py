@@ -1,10 +1,10 @@
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
 from lightning.fabric.wrappers import _FabricDataLoader, _FabricModule
-from torch import Tensor
+from torch import Tensor, nn
 from torchmetrics import MetricCollection
 
 from energizer.active_learning.datastores.base import (
@@ -35,6 +35,7 @@ class LeastConfidence(SequenceClassificationMixin, UncertaintyBasedStrategy):
         model: _FabricModule,
         batch: Dict,
         batch_idx: int,
+        loss_fn: Optional[Union[nn.Module, Callable]],
         metrics: Optional[MetricCollection] = None,
     ) -> Dict:
         _ = batch.pop(InputKeys.ON_CPU)  # this is already handled in the `evaluation_step`
@@ -64,7 +65,7 @@ class Tyrogue(SequenceClassificationMixin, _Tyrogue):
 
 class RandomSubsetWithUncertainty(SequenceClassificationMixin, RandomSubsetStrategy):
     def __init__(self, *args, subpool_size: int, seed: int = 42, **kwargs) -> None:
-        base_strategy = LeastConfidence(*args, **kwargs)
+        base_strategy = LeastConfidence(*args, seed=seed, **kwargs)
         super().__init__(base_strategy, subpool_size, seed)
 
     def select_pool_subset(

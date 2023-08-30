@@ -7,6 +7,7 @@ defaults:
     - timer
     - grad_norm
     - save_outputs
+    - model_checkpoint
   - optional strategy: null
   - optional dataset: null
   - override hydra/job_logging: colorlog
