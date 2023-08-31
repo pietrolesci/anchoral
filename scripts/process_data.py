@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 from pathlib import Path
 
-from src.utilities import add_features, load_amazoncat, load_eurlex, load_models, load_pubmed
+from src.utilities import add_features, load_amazoncat, load_eurlex, load_pubmed
 
 MODELS = ["all-mpnet-base-v2", "multi-qa-mpnet-base-dot-v1", "all-MiniLM-L12-v2"]
 

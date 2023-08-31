@@ -4,7 +4,7 @@ from os import cpu_count
 from pathlib import Path
 
 import pandas as pd
-from datasets import ClassLabel, Dataset, DatasetDict, Features, disable_caching, load_from_disk
+from datasets import ClassLabel, Dataset, DatasetDict, Features, load_from_disk
 from sklearn.utils import check_random_state
 from transformers import AutoTokenizer
 

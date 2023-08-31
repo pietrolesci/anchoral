@@ -1,7 +1,8 @@
 from logging import Logger
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List
 
 import pandas as pd
+import srsly
 from datasets import ClassLabel, Dataset, DatasetDict, Features
 from omegaconf import OmegaConf
 from sentence_transformers import SentenceTransformer
@@ -12,10 +13,10 @@ from tqdm.auto import tqdm
 from energizer.active_learning.datastores.classification import ActivePandasDataStoreForSequenceClassification
 from energizer.enums import InputKeys, SpecialKeys
 from energizer.utilities import sample
-
-SEP_LINE = f"{'=' * 70}"
 import json
 from pathlib import Path
+
+SEP_LINE = f"{'=' * 70}"
 
 MODELS = {"bert-tiny": "google/bert_uncased_L-2_H-128_A-2", "bert-base": "bert-base-uncased"}
 
@@ -53,14 +54,16 @@ def get_stats_from_dataframe(df: pd.DataFrame, target_name: str, names: List[str
     )
     df["labels"] = [names[i] for i in df.index]
     df = df.sort_index(ascending=True)[df.columns.tolist()[::-1]]
-    return tabulate(df)  # type: ignore
+    return tabulate(df)
 
 
 def binarize_labels(dataset_dict: DatasetDict, target_name: str, positive_class: int, logger: Logger) -> DatasetDict:
     features = dict(dataset_dict["train"].features)
     logger.info(f"Binarizing using class {features[target_name].names[positive_class]} as positive")
     for split in ("train", "test"):
-        logger.info(f"Original {split} label distribution\n{get_stats_from_dataframe(dataset_dict[split].to_pandas(), target_name, features[target_name].names)}")  # type: ignore
+        logger.info(
+            f"Original {split} label distribution\n{get_stats_from_dataframe(dataset_dict[split].to_pandas(), target_name, features[target_name].names)}"
+        )
 
     features[target_name] = ClassLabel(names=["Others", features[target_name].names[positive_class]])  # positive is 1
     logger.info(f"Binarized labels {features[target_name]}")
@@ -81,7 +84,7 @@ def downsample_positive_class(
     dataset_dict: DatasetDict, target_name: str, positive_class: int, proportion: float, seed: int, logger: Logger
 ) -> DatasetDict:
     features = dataset_dict["train"].features
-    df: DataFrame = dataset_dict["train"].to_pandas()  # type: ignore
+    df: pd.DataFrame = dataset_dict["train"].to_pandas()  # type: ignore
 
     current_proportion = (df[target_name] == positive_class).sum() / len(df)
     if current_proportion < proportion:
@@ -109,7 +112,7 @@ def downsample_test_set(
     dataset_dict: DatasetDict, target_name: str, positive_class: int, test_set_size: int, seed: int, logger: Logger
 ) -> DatasetDict:
     features = dataset_dict["test"].features
-    df: DataFrame = dataset_dict["test"].to_pandas()  # type: ignore
+    df: pd.DataFrame = dataset_dict["test"].to_pandas()  # type: ignore
 
     current_size = len(df)
     if current_size < test_set_size:

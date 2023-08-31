@@ -37,7 +37,7 @@ if __name__ == "__main__":
     pbar.update(1)
 
     # ============ STEP 3 ============
-    pbar.set_description(f"Embedding")
+    pbar.set_description("Embedding")
 
     # compute embeddings
     texts = train_df[InputKeys.TEXT].tolist()
