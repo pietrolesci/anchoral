@@ -75,7 +75,7 @@ To speed up the experimentation, we create the HNSW index once and save it to di
 Finally, we tokenize and save the dataset so it is ready to go
 
 ```bash
-./bin/prepare_data.sh
+./bin/prepare_data.sh bert-tiny
 ```
 
 

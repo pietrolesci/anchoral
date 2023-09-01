@@ -18,7 +18,7 @@ from energizer.active_learning.strategies.random import RandomStrategy
 from energizer.active_learning.strategies.two_stage import RandomSubsetStrategy, SEALSStrategy
 from energizer.active_learning.strategies.uncertainty import UncertaintyBasedStrategy
 from energizer.enums import InputKeys, OutputKeys, SpecialKeys
-from src.anchoral import AnchorAL
+from src.anchoral import AnchorAL, SimpleAnchorAL
 from src.estimator import SequenceClassificationMixin
 
 
@@ -40,7 +40,7 @@ class LeastConfidence(SequenceClassificationMixin, UncertaintyBasedStrategy):
     ) -> Dict:
         _ = batch.pop(InputKeys.ON_CPU)  # this is already handled in the `evaluation_step`
         logits = model(**batch).logits
-        scores = self.score_fn(logits)  # type: ignore
+        scores = self.score_fn(logits)
 
         return {OutputKeys.SCORES: scores, OutputKeys.LOGITS: logits}
 
@@ -54,47 +54,48 @@ class BADGE(SequenceClassificationMixin, _BADGE):
         return model.classifier(penultimate_layer_out)
 
 
-class Tyrogue(SequenceClassificationMixin, _Tyrogue):
-    def select_pool_subset(
-        self, model: _FabricModule, loader: _FabricDataLoader, datastore: ActiveDataStoreWithIndex, **kwargs
-    ) -> List[int]:
-        subpool_ids = super().select_pool_subset(model, loader, datastore, **kwargs)
-        self.log("summary/subpool_size", len(subpool_ids), step=self.tracker.global_round)
-        return subpool_ids
-
-
-class RandomSubsetWithUncertainty(SequenceClassificationMixin, RandomSubsetStrategy):
-    def __init__(self, *args, subpool_size: int, seed: int = 42, **kwargs) -> None:
-        base_strategy = LeastConfidence(*args, seed=seed, **kwargs)
-        super().__init__(base_strategy, subpool_size, seed)
+class LoggingForSubpoolSizeMixin:
+    """Wrap `select_pool_subset` to add a call to `self.log_dict`"""
 
     def select_pool_subset(
         self, model: _FabricModule, loader: _FabricDataLoader, datastore: ActiveDataStore, **kwargs
     ) -> List[int]:
-        subpool_ids = super().select_pool_subset(model, loader, datastore, **kwargs)
-        self.log("summary/subpool_size", len(subpool_ids), step=self.tracker.global_round)
+        subpool_ids = super().select_pool_subset(model, loader, datastore, **kwargs)  # type: ignore
+        self.log("summary/subpool_size", len(subpool_ids), step=self.tracker.global_round)  # type: ignore
         return subpool_ids
 
 
-class RandomSubsetWithBADGE(SequenceClassificationMixin, RandomSubsetStrategy):
+class Tyrogue(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, _Tyrogue):
+    ...
+
+
+class RandomSubsetWithUncertainty(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, RandomSubsetStrategy):
     def __init__(self, *args, subpool_size: int, seed: int = 42, **kwargs) -> None:
-        base_strategy = BADGE(*args, **kwargs)
+        base_strategy = LeastConfidence(*args, seed=seed, **kwargs)
+        super().__init__(base_strategy, subpool_size, seed)
+
+
+class RandomSubsetWithBADGE(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, RandomSubsetStrategy):
+    def __init__(self, *args, subpool_size: int, seed: int = 42, **kwargs) -> None:
+        base_strategy = BADGE(*args, seed=seed, **kwargs)
         super().__init__(base_strategy, subpool_size, seed)
 
 
 class LoggingForSeachMixin:
+    """Wrap `search_pool` to add a call to `self.log_dict`"""
+
     def search_pool(
         self,
         datastore: ActiveDataStoreWithIndex,
         search_query_embeddings: Dict[str, np.ndarray],
         search_query_ids: Dict[str, List[int]],
-    ) -> Dict[str, pd.DataFrame]:
+    ) -> pd.DataFrame:
 
         start_time = time.perf_counter()
 
         search_results = super().search_pool(datastore, search_query_embeddings, search_query_ids)  # type: ignore
 
-        ids_retrieved = [i for df in search_results.values() for i in df[SpecialKeys.ID].tolist()]
+        ids_retrieved = search_results[SpecialKeys.ID].tolist()
         logs = {
             "timer/search": time.perf_counter() - start_time,
             "search/ids_retrieved": len(ids_retrieved),
@@ -105,7 +106,9 @@ class LoggingForSeachMixin:
         return search_results
 
 
-class SEALSWithUncertainty(SequenceClassificationMixin, LoggingForSeachMixin, SEALSStrategy):
+class SEALSWithUncertainty(
+    SequenceClassificationMixin, LoggingForSubpoolSizeMixin, LoggingForSeachMixin, SEALSStrategy
+):
     def __init__(
         self,
         *args,
@@ -115,7 +118,7 @@ class SEALSWithUncertainty(SequenceClassificationMixin, LoggingForSeachMixin, SE
         max_search_size: Optional[int] = None,
         **kwargs,
     ) -> None:
-        base_strategy = LeastConfidence(*args, **kwargs)
+        base_strategy = LeastConfidence(*args, seed=seed, **kwargs)
         super().__init__(
             base_strategy=base_strategy,
             subpool_size=subpool_size,
@@ -125,7 +128,7 @@ class SEALSWithUncertainty(SequenceClassificationMixin, LoggingForSeachMixin, SE
         )
 
 
-class SEALSWithBADGE(SequenceClassificationMixin, LoggingForSeachMixin, SEALSStrategy):
+class SEALSWithBADGE(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, LoggingForSeachMixin, SEALSStrategy):
     def __init__(
         self,
         *args,
@@ -135,7 +138,7 @@ class SEALSWithBADGE(SequenceClassificationMixin, LoggingForSeachMixin, SEALSStr
         max_search_size: Optional[int] = None,
         **kwargs,
     ) -> None:
-        base_strategy = BADGE(*args, **kwargs)
+        base_strategy = BADGE(*args, seed=seed, **kwargs)
         super().__init__(
             base_strategy=base_strategy,
             subpool_size=subpool_size,
@@ -145,13 +148,11 @@ class SEALSWithBADGE(SequenceClassificationMixin, LoggingForSeachMixin, SEALSStr
         )
 
 
-class LoggingForAnchors(LoggingForSeachMixin):
-    def select_pool_subset(
-        self, model: _FabricModule, loader: _FabricDataLoader, datastore: ActiveDataStoreWithIndex, **kwargs
-    ) -> List[int]:
-        subpool_ids = super().select_pool_subset(model, loader, datastore, **kwargs)  # type: ignore
-        self.log("summary/subpool_size", len(subpool_ids), step=self.tracker.global_round)  # type: ignore
-        return subpool_ids
+class LoggingForAnchorsAndSearchMixin:
+    """Wrap `select_search_query` to add a call to `self.log_dict`
+
+    Also re-wrap the `search_pool` method because it now returs a dict.
+    """
 
     def select_search_query(
         self, model: _FabricModule, loader: _FabricDataLoader, datastore: ActivePandasDataStoreWithIndex, **kwargs
@@ -163,8 +164,34 @@ class LoggingForAnchors(LoggingForSeachMixin):
         )
         return search_query
 
+    def search_pool(
+        self,
+        datastore: ActiveDataStoreWithIndex,
+        search_query_embeddings: Dict[str, np.ndarray],
+        search_query_ids: Dict[str, List[int]],
+    ) -> Dict[str, pd.DataFrame]:
 
-class AnchorALWithUncertainty(SequenceClassificationMixin, LoggingForAnchors, AnchorAL):
+        start_time = time.perf_counter()
+
+        search_results = super().search_pool(datastore, search_query_embeddings, search_query_ids)  # type: ignore
+        ids_retrieved = [i for v in search_results.values() for i in v[SpecialKeys.ID].tolist()]
+
+        logs = {
+            "timer/search": time.perf_counter() - start_time,
+            "search/ids_retrieved": len(ids_retrieved),
+            "search/unique_ids_retrieved": len(set(ids_retrieved)),
+        }
+        self.log_dict(logs, step=self.tracker.global_round)  # type: ignore
+
+        return search_results
+
+
+class AnchorALWithUncertainty(
+    SequenceClassificationMixin,
+    LoggingForSubpoolSizeMixin,
+    LoggingForAnchorsAndSearchMixin,
+    AnchorAL,
+):
     def __init__(
         self,
         *args,
@@ -175,9 +202,10 @@ class AnchorALWithUncertainty(SequenceClassificationMixin, LoggingForAnchors, An
         anchor_strategy_minority: Optional[str] = None,
         anchor_strategy_majority: Optional[str] = None,
         num_anchors: int,
+        aggregate_by_class_first: bool,
         **kwargs,
     ) -> None:
-        base_strategy = LeastConfidence(*args, **kwargs)
+        base_strategy = LeastConfidence(*args, seed=seed, **kwargs)
         super().__init__(
             base_strategy=base_strategy,
             subpool_size=subpool_size,
@@ -187,10 +215,16 @@ class AnchorALWithUncertainty(SequenceClassificationMixin, LoggingForAnchors, An
             anchor_strategy_minority=anchor_strategy_minority,
             anchor_strategy_majority=anchor_strategy_majority,
             num_anchors=num_anchors,
+            aggregate_by_class_first=aggregate_by_class_first,
         )
 
 
-class AnchorALWithBADGE(SequenceClassificationMixin, LoggingForAnchors, AnchorAL):
+class AnchorALWithBADGE(
+    SequenceClassificationMixin,
+    LoggingForSubpoolSizeMixin,
+    LoggingForAnchorsAndSearchMixin,
+    AnchorAL,
+):
     def __init__(
         self,
         *args,
@@ -201,9 +235,10 @@ class AnchorALWithBADGE(SequenceClassificationMixin, LoggingForAnchors, AnchorAL
         anchor_strategy_minority: Optional[str] = None,
         anchor_strategy_majority: Optional[str] = None,
         num_anchors: int,
+        aggregate_by_class_first: bool,
         **kwargs,
     ) -> None:
-        base_strategy = BADGE(*args, **kwargs)
+        base_strategy = BADGE(*args, seed=seed, **kwargs)
         super().__init__(
             base_strategy=base_strategy,
             subpool_size=subpool_size,
@@ -213,4 +248,29 @@ class AnchorALWithBADGE(SequenceClassificationMixin, LoggingForAnchors, AnchorAL
             anchor_strategy_minority=anchor_strategy_minority,
             anchor_strategy_majority=anchor_strategy_majority,
             num_anchors=num_anchors,
+            aggregate_by_class_first=aggregate_by_class_first,
+        )
+
+
+class SimpleAnchorALWithUncertainty(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, SimpleAnchorAL):
+    def __init__(
+        self,
+        *args,
+        subpool_size: int,
+        seed: int = 42,
+        num_anchors: int,
+        anchor_strategy: str,
+        num_neighbours: int,
+        max_search_size: Optional[int] = None,
+        **kwargs,
+    ) -> None:
+        base_strategy = LeastConfidence(*args, seed=seed, **kwargs)
+        super().__init__(
+            base_strategy=base_strategy,
+            subpool_size=subpool_size,
+            seed=seed,
+            num_neighbours=num_neighbours,
+            max_search_size=max_search_size,
+            num_anchors=num_anchors,
+            anchor_strategy=anchor_strategy,
         )

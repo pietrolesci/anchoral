@@ -46,8 +46,8 @@ class SequenceClassificationMixin:
                 MetricCollection(
                     {
                         "loss": MeanMetric(),
-                        "auroc": AUROC("multiclass", thresholds=30, num_classes=num_classes, average="macro"),
-                        "ap": AveragePrecision("multiclass", thresholds=30, num_classes=num_classes, average="macro"),
+                        # "auroc": AUROC("multiclass", thresholds=30, num_classes=num_classes, average="macro"),
+                        # "ap": AveragePrecision("multiclass", thresholds=30, num_classes=num_classes, average="macro"),
                     }
                 ),
             ],  # type: ignore

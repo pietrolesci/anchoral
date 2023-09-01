@@ -6,7 +6,7 @@ set -e
 
 
 data_dir=$(pwd)/data
-MODEL=bert-tiny
+MODEL=$1
 
 
 echo Preparing AmazonCat-13k

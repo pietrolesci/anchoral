@@ -1,0 +1,8 @@
+defaults:
+  - defaults
+
+_target_: src.strategies.SimpleAnchorALWithUncertainty
+num_neighbours: 50
+max_search_size: null
+num_anchors: 50
+anchor_strategy: kmeans_pp_sampling

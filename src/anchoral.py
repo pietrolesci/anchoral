@@ -14,19 +14,16 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
     def __init__(
         self,
         *args,
-        subpool_size: int,
-        seed: int = 42,
         num_neighbours: int,
         max_search_size: Optional[int] = None,
         anchor_strategy_minority: Optional[str] = None,
         anchor_strategy_majority: Optional[str] = None,
         num_anchors: int,
+        aggregate_by_class_first: bool,
         **kwargs,
     ) -> None:
         super().__init__(
             *args,
-            subpool_size=subpool_size,
-            seed=seed,
             num_neighbours=num_neighbours,
             max_search_size=max_search_size,
             **kwargs,
@@ -34,6 +31,7 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
         self.anchor_strategy_minority = anchor_strategy_minority
         self.anchor_strategy_majority = anchor_strategy_majority
         self.num_anchors = num_anchors
+        self.aggregate_by_class_first = aggregate_by_class_first
 
     def select_search_query(
         self, model: _FabricModule, loader: _FabricDataLoader, datastore: ActivePandasDataStoreWithIndex, **kwargs
@@ -72,9 +70,11 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
 
             elif strategy in CLUSTERING_FUNCTIONS:
                 embeddings = datastore.get_train_embeddings(ids)
+                # print(k, len(ids), embeddings.shape, ids)
                 cluster_ids = CLUSTERING_FUNCTIONS[strategy](
                     embeddings, num_clusters=min(num_anchors, len(ids)), rng=self.rng
                 )
+                # report ids relative to embeddings onto ids relative to the entire set
                 _ids = [ids[i] for i in cluster_ids]
 
             else:
@@ -82,7 +82,7 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
 
             assert len(_ids) == len(set(_ids))  # if we find duplicates, there are bugs
             anchor_ids[k] = _ids
-            num_anchors -= len(_ids)
+            # num_anchors -= len(_ids)  # in case we want to limit the number of anchors
 
         if not len(anchor_ids) > 0:
             anchor_ids = {
@@ -104,12 +104,16 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
         search_query_ids: Dict[str, List[int]],
     ) -> Dict[str, pd.DataFrame]:
         assert search_query_embeddings.keys() == search_query_ids.keys()
-        return {
-            k: super().search_pool(datastore, search_query_embeddings[k], search_query_ids[k])
-            for k in search_query_embeddings
-        }
+        out = {}
+        for k in search_query_embeddings:
+            out[k] = super().search_pool(datastore, search_query_embeddings[k], search_query_ids[k])
+        return out
+        # return {
+        #     k: super().search_pool(datastore, search_query_embeddings[k], search_query_ids[k])
+        #     for k in search_query_embeddings
+        # }
 
-    def get_subpool_from_search_results(
+    def get_subpool_ids_from_search_results(
         self, candidate_df: Dict[str, pd.DataFrame], datastore: ActiveDataStoreWithIndex
     ) -> List[int]:
         def _agg(df: pd.DataFrame) -> pd.DataFrame:
@@ -127,7 +131,7 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
             )
 
         # aggregate by class and then put everything together
-        if self.aggregate_by_class:
+        if self.aggregate_by_class_first:
             list_dfs = [_agg(v_df) for v_df in candidate_df.values()]
             df = pd.concat(list_dfs, ignore_index=False, axis=0)
             # handle duplicates when merging the two datasets (keep only the first because they are sorted)
@@ -139,3 +143,50 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
             df = _agg(df)
 
         return _select(df)
+
+
+class SimpleAnchorAL(BaseSubsetWithSearchStrategy):
+    def __init__(
+        self,
+        *args,
+        num_anchors: int,
+        anchor_strategy: str,
+        num_neighbours: int,
+        max_search_size: Optional[int] = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            *args,
+            num_neighbours=num_neighbours,
+            max_search_size=max_search_size,
+            **kwargs,
+        )
+        self.num_anchors = num_anchors
+        self.anchor_strategy = anchor_strategy
+
+    def select_search_query(
+        self, model: _FabricModule, loader: _FabricDataLoader, datastore: ActiveDataStoreWithIndex, **kwargs
+    ) -> List[int]:
+        train_ids = datastore.get_train_ids()
+        embeddings = datastore.get_train_embeddings(train_ids)
+        cluster_ids = CLUSTERING_FUNCTIONS[self.anchor_strategy](
+            embeddings, num_clusters=min(self.num_anchors, len(train_ids)), rng=self.rng
+        )
+        # report ids relative to embeddings onto ids relative to the entire set
+        return [train_ids[i] for i in cluster_ids]
+
+    def get_query_embeddings(self, datastore: ActiveDataStoreWithIndex, search_query_ids: List[int]) -> np.ndarray:
+        return datastore.get_train_embeddings(search_query_ids)
+
+    def get_subpool_ids_from_search_results(
+        self, candidate_df: pd.DataFrame, datastore: ActiveDataStoreWithIndex
+    ) -> List[int]:
+        df = (
+            candidate_df.groupby(SpecialKeys.ID)
+            .agg(dists=("dists", "mean"), search_query_uid=("search_query_uid", "unique"))
+            .reset_index()
+            # convert cosine distance in similarity (i.e., higher means more similar)
+            .assign(scores=lambda _df: 1 - _df["dists"])
+        )
+
+        return df.sort_values("scores", ascending=False).head(min(self.subpool_size, len(df)))[SpecialKeys.ID].tolist()

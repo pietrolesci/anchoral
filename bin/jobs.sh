@@ -59,3 +59,11 @@ poetry run python ./scripts/active_train.py -m \
     strategy.anchor_strategy_minority=random \
     strategy.anchor_strategy_majority=kmeans_sil,uncertainty,random \
     strategy.subpool_size=25,10000;
+
+
+poetry run python ./scripts/active_train.py \
+    data.seed=42 \
+    model.seed=42 \
+    active_data.seed=42 \
+    dataset=amazon_agri \
+    strategy=randomsubset_leastconf

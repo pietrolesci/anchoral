@@ -1,4 +1,6 @@
+import json
 from logging import Logger
+from pathlib import Path
 from typing import Any, Dict, Generator, List
 
 import pandas as pd
@@ -13,8 +15,6 @@ from tqdm.auto import tqdm
 from energizer.active_learning.datastores.classification import ActivePandasDataStoreForSequenceClassification
 from energizer.enums import InputKeys, SpecialKeys
 from energizer.utilities import sample
-import json
-from pathlib import Path
 
 SEP_LINE = f"{'=' * 70}"
 
