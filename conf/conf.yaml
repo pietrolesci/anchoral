@@ -3,10 +3,10 @@ defaults:
   - loggers:
     - tensorboard
   - /callbacks:
-    - early_stopping
+    # - grad_norm
     - timer
-    - grad_norm
     - save_outputs
+    - early_stopping
     - model_checkpoint
   - optional strategy: null
   - optional dataset: null
