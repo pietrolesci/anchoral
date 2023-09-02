@@ -22,12 +22,7 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
         aggregate_by_class_first: bool,
         **kwargs,
     ) -> None:
-        super().__init__(
-            *args,
-            num_neighbours=num_neighbours,
-            max_search_size=max_search_size,
-            **kwargs,
-        )
+        super().__init__(*args, num_neighbours=num_neighbours, max_search_size=max_search_size, **kwargs)
         self.anchor_strategy_minority = anchor_strategy_minority
         self.anchor_strategy_majority = anchor_strategy_majority
         self.num_anchors = num_anchors
@@ -85,6 +80,7 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
             # num_anchors -= len(_ids)  # in case we want to limit the number of anchors
 
         if not len(anchor_ids) > 0:
+            raise ValueError
             anchor_ids = {
                 "minority": minority_ids,
                 "majority": majority_ids,
@@ -108,10 +104,6 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
         for k in search_query_embeddings:
             out[k] = super().search_pool(datastore, search_query_embeddings[k], search_query_ids[k])
         return out
-        # return {
-        #     k: super().search_pool(datastore, search_query_embeddings[k], search_query_ids[k])
-        #     for k in search_query_embeddings
-        # }
 
     def get_subpool_ids_from_search_results(
         self, candidate_df: Dict[str, pd.DataFrame], datastore: ActiveDataStoreWithIndex
@@ -130,6 +122,7 @@ class AnchorAL(BaseSubsetWithSearchStrategy):
                 df.sort_values("scores", ascending=False).head(min(self.subpool_size, len(df)))[SpecialKeys.ID].tolist()
             )
 
+        # NOTE: so far, empirically, this does not seem to make a difference
         # aggregate by class and then put everything together
         if self.aggregate_by_class_first:
             list_dfs = [_agg(v_df) for v_df in candidate_df.values()]
@@ -155,12 +148,7 @@ class SimpleAnchorAL(BaseSubsetWithSearchStrategy):
         max_search_size: Optional[int] = None,
         **kwargs,
     ) -> None:
-        super().__init__(
-            *args,
-            num_neighbours=num_neighbours,
-            max_search_size=max_search_size,
-            **kwargs,
-        )
+        super().__init__(*args, num_neighbours=num_neighbours, max_search_size=max_search_size, **kwargs)
         self.num_anchors = num_anchors
         self.anchor_strategy = anchor_strategy
 
@@ -190,3 +178,119 @@ class SimpleAnchorAL(BaseSubsetWithSearchStrategy):
         )
 
         return df.sort_values("scores", ascending=False).head(min(self.subpool_size, len(df)))[SpecialKeys.ID].tolist()
+
+
+class MultiClassAnchorAL(BaseSubsetWithSearchStrategy):
+    def __init__(
+        self,
+        *args,
+        num_anchors: int,
+        anchor_strategy: str,
+        anchor_strategy_minority: str,
+        minority_classes_ids: Optional[List[int]],
+        num_neighbours: int,
+        max_search_size: Optional[int] = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, num_neighbours=num_neighbours, max_search_size=max_search_size, **kwargs)
+        self.num_anchors = num_anchors
+        self.anchor_strategy = anchor_strategy
+        self.anchor_strategy_minority = anchor_strategy_minority
+        self.minority_classes_ids = minority_classes_ids or []
+
+    def select_search_query(
+        self, model: _FabricModule, loader: _FabricDataLoader, datastore: ActivePandasDataStoreWithIndex, **kwargs
+    ) -> Dict[str, List[int]]:
+
+        train_df = datastore._train_data.loc[(datastore._train_mask()), [SpecialKeys.ID, InputKeys.TARGET]]
+        if len(train_df) == 0 or (self.num_anchors > 0 and len(train_df) < self.num_anchors):
+            return {"cold-start": train_df[SpecialKeys.ID].tolist()}
+
+        anchor_ids = {}
+        for c in train_df[InputKeys.TARGET].unique().tolist()[::-1]:  # FIXME: remove revert list
+
+            anchor_strategy = self.anchor_strategy_minority if c in self.minority_classes_ids else self.anchor_strategy
+
+            ids = train_df.loc[
+                train_df[InputKeys.TARGET] == c, SpecialKeys.ID
+            ].tolist()  # pyright: ignore[reportGeneralTypeIssues]
+
+            if len(ids) == 0:
+                continue
+
+            elif anchor_strategy == "all":
+                _ids = ids
+
+            elif anchor_strategy == "random":
+                _ids = self.rng.choice(ids, size=min(self.num_anchors, len(ids)), replace=False).tolist()
+
+            elif anchor_strategy in CLUSTERING_FUNCTIONS:
+                embeddings = datastore.get_train_embeddings(ids)
+                cluster_ids = CLUSTERING_FUNCTIONS[anchor_strategy](
+                    embeddings, num_clusters=min(self.num_anchors, len(ids)), rng=self.rng
+                )
+                # report ids relative to embeddings onto ids relative to the entire set
+                _ids = [ids[i] for i in cluster_ids]
+
+            else:
+                raise NotImplementedError
+
+            assert len(_ids) == len(set(_ids)), f"{_ids}"  # if we find duplicates, there are bugs
+            anchor_ids[c] = _ids
+
+        return anchor_ids
+
+    def get_query_embeddings(
+        self, datastore: ActiveDataStoreWithIndex, search_query_ids: Dict[str, List[int]]
+    ) -> Dict[str, np.ndarray]:
+        return {k: datastore.get_train_embeddings(v) for k, v in search_query_ids.items()}
+
+    def search_pool(
+        self,
+        datastore: ActiveDataStoreWithIndex,
+        search_query_embeddings: Dict[str, np.ndarray],
+        search_query_ids: Dict[str, List[int]],
+    ) -> Dict[str, pd.DataFrame]:
+        assert search_query_embeddings.keys() == search_query_ids.keys()
+        out = {}
+        for k in search_query_embeddings:
+            # NOTE: do not put super() in dict or list comprehension as it throws errors
+            out[k] = super().search_pool(datastore, search_query_embeddings[k], search_query_ids[k])
+        return out
+
+    def get_subpool_ids_from_search_results(
+        self, candidate_df: Dict[str, pd.DataFrame], datastore: ActiveDataStoreWithIndex
+    ) -> List[int]:
+        def _agg(df: pd.DataFrame) -> pd.DataFrame:
+            return (
+                df.groupby(SpecialKeys.ID)
+                .agg(dists=("dists", "mean"), search_query_uid=("search_query_uid", "unique"))
+                .reset_index()
+                # convert cosine distance in similarity (i.e., higher means more similar)
+                .assign(scores=lambda _df: 1 - _df["dists"])
+            )
+
+        # # OPTION 1
+        # # aggregate by class and then put everything together
+        # list_dfs = [_agg(v_df) for v_df in candidate_df.values()]
+        # df = pd.concat(list_dfs, ignore_index=False, axis=0)
+
+        # # handle duplicates when merging the two datasets (keep only the first because they are sorted)
+        # df = df.sort_values("scores", ascending=False).drop_duplicates(subset=[SpecialKeys.ID])
+
+        # OPTION 2
+        # put everything together and then aggregate: the intuition for this is that instances that
+        # are close to many classes will get higher scores on average; also, instances that are very
+        # close to only one class will get more weight. However, instances that are very close to one
+        # class but not as close to others, will get less weight on average.
+        df = pd.concat(candidate_df.values(), ignore_index=False, axis=0)
+        df = _agg(df)
+
+        # select closest indices
+        indices = (
+            df.sort_values("scores", ascending=False)  # just to be sure
+            .head(min(self.subpool_size, len(df)))[SpecialKeys.ID]
+            .tolist()
+        )
+
+        return indices

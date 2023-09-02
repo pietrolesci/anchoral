@@ -18,7 +18,7 @@ from energizer.active_learning.strategies.random import RandomStrategy
 from energizer.active_learning.strategies.two_stage import RandomSubsetStrategy, SEALSStrategy
 from energizer.active_learning.strategies.uncertainty import UncertaintyBasedStrategy
 from energizer.enums import InputKeys, OutputKeys, SpecialKeys
-from src.anchoral import AnchorAL, SimpleAnchorAL
+from src.anchoral import AnchorAL, MultiClassAnchorAL, SimpleAnchorAL
 from src.estimator import SequenceClassificationMixin
 
 
@@ -273,4 +273,34 @@ class SimpleAnchorALWithUncertainty(SequenceClassificationMixin, LoggingForSubpo
             max_search_size=max_search_size,
             num_anchors=num_anchors,
             anchor_strategy=anchor_strategy,
+        )
+
+
+class MultiClassAnchorALWithUncertainty(
+    SequenceClassificationMixin, LoggingForSubpoolSizeMixin, LoggingForAnchorsAndSearchMixin, MultiClassAnchorAL
+):
+    def __init__(
+        self,
+        *args,
+        subpool_size: int,
+        seed: int = 42,
+        num_anchors: int,
+        anchor_strategy: str,
+        anchor_strategy_minority: str,
+        minority_classes_ids: Optional[List[int]],
+        num_neighbours: int,
+        max_search_size: Optional[int] = None,
+        **kwargs,
+    ) -> None:
+        base_strategy = LeastConfidence(*args, seed=seed, **kwargs)
+        super().__init__(
+            base_strategy=base_strategy,
+            subpool_size=subpool_size,
+            seed=seed,
+            num_neighbours=num_neighbours,
+            max_search_size=max_search_size,
+            num_anchors=num_anchors,
+            anchor_strategy=anchor_strategy,
+            anchor_strategy_minority=anchor_strategy_minority,
+            minority_classes_ids=minority_classes_ids,
         )
