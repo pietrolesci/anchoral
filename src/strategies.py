@@ -18,7 +18,7 @@ from energizer.active_learning.strategies.random import RandomStrategy
 from energizer.active_learning.strategies.two_stage import RandomSubsetStrategy, SEALSStrategy
 from energizer.active_learning.strategies.uncertainty import UncertaintyBasedStrategy
 from energizer.enums import InputKeys, OutputKeys, SpecialKeys
-from src.anchoral import AnchorAL, MultiClassAnchorAL, SimpleAnchorAL
+from src.anchoral import OLDAnchorAL, AnchorAL, SimpleAnchorAL
 from src.estimator import SequenceClassificationMixin
 
 
@@ -186,11 +186,11 @@ class LoggingForAnchorsAndSearchMixin:
         return search_results
 
 
-class AnchorALWithUncertainty(
+class OLDAnchorALWithUncertainty(
     SequenceClassificationMixin,
     LoggingForSubpoolSizeMixin,
     LoggingForAnchorsAndSearchMixin,
-    AnchorAL,
+    OLDAnchorAL,
 ):
     def __init__(
         self,
@@ -219,11 +219,11 @@ class AnchorALWithUncertainty(
         )
 
 
-class AnchorALWithBADGE(
+class OLDAnchorALWithBADGE(
     SequenceClassificationMixin,
     LoggingForSubpoolSizeMixin,
     LoggingForAnchorsAndSearchMixin,
-    AnchorAL,
+    OLDAnchorAL,
 ):
     def __init__(
         self,
@@ -276,8 +276,8 @@ class SimpleAnchorALWithUncertainty(SequenceClassificationMixin, LoggingForSubpo
         )
 
 
-class MultiClassAnchorALWithUncertainty(
-    SequenceClassificationMixin, LoggingForSubpoolSizeMixin, LoggingForAnchorsAndSearchMixin, MultiClassAnchorAL
+class AnchorALWithUncertainty(
+    SequenceClassificationMixin, LoggingForSubpoolSizeMixin, LoggingForAnchorsAndSearchMixin, AnchorAL
 ):
     def __init__(
         self,

@@ -10,7 +10,7 @@ from energizer.active_learning.strategies.two_stage import BaseSubsetWithSearchS
 from energizer.enums import InputKeys, SpecialKeys
 
 
-class AnchorAL(BaseSubsetWithSearchStrategy):
+class OLDAnchorAL(BaseSubsetWithSearchStrategy):
     def __init__(
         self,
         *args,
@@ -180,7 +180,7 @@ class SimpleAnchorAL(BaseSubsetWithSearchStrategy):
         return df.sort_values("scores", ascending=False).head(min(self.subpool_size, len(df)))[SpecialKeys.ID].tolist()
 
 
-class MultiClassAnchorAL(BaseSubsetWithSearchStrategy):
+class AnchorAL(BaseSubsetWithSearchStrategy):
     def __init__(
         self,
         *args,
