@@ -5,9 +5,9 @@ from lightning.fabric.wrappers import _FabricModule
 from torchmetrics import BootStrapper, MeanMetric, Metric, MetricCollection
 from torchmetrics.classification import AUROC, Accuracy, AveragePrecision, F1Score, Precision, Recall, Specificity
 
+from energizer.active_learning.datastores.classification import ActivePandasDataStoreForSequenceClassification
 from energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from energizer.utilities import ld_to_dl, move_to_cpu
-from energizer.active_learning.datastores.classification import ActivePandasDataStoreForSequenceClassification
 
 # from torchmetrics.wrappers import BootStrapper
 

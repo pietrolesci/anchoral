@@ -1,0 +1,6 @@
+short_name: agnews_original
+text_column: text
+label_column: labels
+uid_column: uid
+prepared_path: /home/pl487/anchoral/data/prepared/agnews_original
+processed_path: /home/pl487/anchoral/data/processed/agnews

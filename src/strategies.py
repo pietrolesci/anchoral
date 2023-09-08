@@ -96,8 +96,8 @@ class LoggingForSubpoolSizeMixin:
     def select_pool_subset(
         self, model: _FabricModule, loader: _FabricDataLoader, datastore: ActiveDataStore, **kwargs
     ) -> List[int]:
-        subpool_ids = super().select_pool_subset(model, loader, datastore, **kwargs)
-        self.log("summary/subpool_size", len(subpool_ids), step=self.tracker.global_round)
+        subpool_ids = super().select_pool_subset(model, loader, datastore, **kwargs)  # type: ignore
+        self.log("summary/subpool_size", len(subpool_ids), step=self.tracker.global_round)  # type: ignore
         return subpool_ids
 
 
@@ -136,7 +136,7 @@ class LoggingForSeachMixin:
 
         start_time = time.perf_counter()
 
-        search_results = super().search_pool(datastore, search_query_embeddings, search_query_ids)
+        search_results = super().search_pool(datastore, search_query_embeddings, search_query_ids)  # type: ignore
 
         ids_retrieved = search_results[SpecialKeys.ID].tolist()
         logs = {
@@ -144,7 +144,7 @@ class LoggingForSeachMixin:
             "search/ids_retrieved": len(ids_retrieved),
             "search/unique_ids_retrieved": len(set(ids_retrieved)),
         }
-        self.log_dict(logs, step=self.tracker.global_round)
+        self.log_dict(logs, step=self.tracker.global_round)  # type: ignore
 
         return search_results
 

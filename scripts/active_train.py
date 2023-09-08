@@ -80,7 +80,7 @@ def main(cfg: DictConfig) -> None:
         stats = get_stats_from_dataframe(
             df=datastore.get_by_ids(datastore.get_train_ids()),
             target_name="labels",
-            names=["Negative", "Positive"],
+            names=datastore.labels,
         )
         log.info(
             f"Labelled size: {datastore.labelled_size()} "
@@ -134,6 +134,7 @@ def main(cfg: DictConfig) -> None:
     estimator.logger.finalize("success")
     SummaryReader(str(estimator.logger.log_dir)).scalars.to_parquet("tb_logs.parquet")
     shutil.rmtree(".model_cache")
+    shutil.rmtree(".checkpoints")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
 defaults:
   - defaults_anchoral
 
-_target_: src.strategies.AnchorALWithEntropy
+_target_: src.strategies.AnchorALWithBADGE

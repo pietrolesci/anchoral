@@ -34,13 +34,14 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str)
     parser.add_argument("--downsample_prop", type=float, default=None)
     parser.add_argument("--downsample_test_size", type=int, default=None)
+    parser.add_argument("--binarize", action="store_true")
     args = parser.parse_args()
 
     # do not cache datasets
     # disable_caching()
 
     data_dir = Path(args.data_dir)
-    
+
     # load data and metadata
     dataset = args.dataset.removesuffix("-agri") if args.dataset == "amazoncat-13k-agri" else args.dataset
     dataset_dict: DatasetDict = load_from_disk(data_dir / "processed" / dataset)  # type: ignore
@@ -53,7 +54,7 @@ if __name__ == "__main__":
 
     # create label
     create_label_fn = LABEL_FN.get(args.dataset, None)
-    if create_label_fn is not None:
+    if args.binarize is True and create_label_fn is not None:
         features = dict(dataset_dict["train"].features)
         features["labels"] = ClassLabel(names=["Negative", "Positive"])
         dataset_dict = dataset_dict.map(
@@ -115,4 +116,6 @@ if __name__ == "__main__":
     dataset_dict = DatasetDict(new_dataset_dict)
 
     # save
-    dataset_dict.save_to_disk(data_dir / "prepared" / f"{args.dataset}_{args.model}")
+    dataset_dict.save_to_disk(
+        data_dir / "prepared" / f"{args.dataset}_{args.downsample_prop or 'original'}_{args.model}"
+    )
