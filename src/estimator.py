@@ -7,6 +7,7 @@ from torchmetrics.classification import AUROC, Accuracy, AveragePrecision, F1Sco
 
 from energizer.enums import InputKeys, OutputKeys, RunningStage, SpecialKeys
 from energizer.utilities import ld_to_dl, move_to_cpu
+from energizer.active_learning.datastores.classification import ActivePandasDataStoreForSequenceClassification
 
 # from torchmetrics.wrappers import BootStrapper
 
@@ -14,8 +15,7 @@ from energizer.utilities import ld_to_dl, move_to_cpu
 # pyright: reportGeneralTypeIssues=false
 
 
-def get_metrics(num_classes: int, average: str) -> Dict[str, Metric]:
-    task = "multiclass"
+def get_metrics(task: str, num_classes: int, average: str) -> Dict[str, Metric]:
     suffix = "perclass" if average == "none" else average
     return {
         f"accuracy_{suffix}": Accuracy(task, num_classes=num_classes, average=average),
@@ -27,28 +27,38 @@ def get_metrics(num_classes: int, average: str) -> Dict[str, Metric]:
 
 
 class SequenceClassificationMixin:
-    def configure_metrics(self, stage: Optional[Union[str, RunningStage]] = None) -> Dict:
+    def configure_metrics(self, stage: Optional[Union[str, RunningStage]] = None) -> Dict[str, MetricCollection]:
         num_classes = self.model.num_labels
+        task = "multiclass"
 
-        metrics = {
-            "metrics": MetricCollection(
+        metrics_dict = {"loss": MetricCollection({"loss": MeanMetric()}, prefix=f"{stage}/")}
+
+        if stage == RunningStage.TEST:
+
+            metrics = MetricCollection(
                 {
-                    **get_metrics(num_classes, "none"),
-                    **get_metrics(num_classes, "micro"),
-                    "auprc_perclass": AveragePrecision(num_classes, average="none", thresholds=None),
-                    "auroc_perclass": AUROC(num_classes, average="none", thresholds=None)
-                    # don't need macro as it is a simple average of the per-class scores
-                    # **get_metrics(num_classes, "macro"),
+                    # NOTE: don't need macro as it is a simple average of the per-class scores
+                    **get_metrics(task, num_classes, "none"),
+                    **get_metrics(task, num_classes, "micro"),
+                    # "auprc_perclass": AveragePrecision(task, num_classes=num_classes, average="none", thresholds=None),
+                    # "auroc_perclass": AUROC(task, num_classes=num_classes, average="none", thresholds=None),
+                    # "bootf1_perclass": BootStrapper(
+                    #     F1Score(task, num_classes=num_classes, average="none"), num_bootstraps=1_000,
+                    # ),
+                    # "bootf1_micro": BootStrapper(
+                    #     F1Score(task, num_classes=num_classes, average="micro"), num_bootstraps=1
+                    # ),
                 },
                 prefix=f"{stage}/",
-            ),
-            "loss": MeanMetric(),
-            "bootstrapped_f1": BootStrapper(
-                F1Score("multiclass", num_classes=num_classes, average="none"), num_bootstraps=200
-            ),
-        }
+            )
+        else:
+            metrics = MetricCollection(
+                {"f1_perclass": F1Score(task, num_classes=num_classes, average="none")}, prefix=f"{stage}/"
+            )
 
-        return {k: v.to(self.device) for k, v in metrics.items()}
+        metrics_dict["metrics"] = metrics
+
+        return {k: v.to(self.device) for k, v in metrics_dict.items()}
 
     def step(
         self,
@@ -57,18 +67,15 @@ class SequenceClassificationMixin:
         batch: Dict,
         batch_idx: int,
         loss_fn,
-        metrics: Dict,
+        metrics: Dict[str, MetricCollection],
     ) -> Dict:
 
         uid = batch.pop(InputKeys.ON_CPU)[SpecialKeys.ID]
         out = model(**batch)
 
         # update metrics
-        preds, target, loss = out.logits, batch[InputKeys.TARGET], out.loss.detach()
-        metrics["metrics"](preds, target)
-        metrics["loss"](loss)
-        # metrics["bootstrapped_f1"](preds, target)
-        # metrics["bootstrapped_acc"](preds, target)
+        metrics["metrics"](out.logits.detach(), batch[InputKeys.TARGET])
+        metrics["loss"](out.loss.detach())
 
         return {
             OutputKeys.LOSS: out.loss,
@@ -84,25 +91,43 @@ class SequenceClassificationMixin:
 
         out = {k: np.concatenate(v) for k, v in data.items()}
 
-        # compute metrics
-        _metrics = {k: move_to_cpu(v.compute()) for k, v in metrics.items()}
+        # compute metrics and move to cpu
+        metrics_on_cpu = {k: move_to_cpu(v.compute()) for k, v in metrics.items()}
 
-        # log
+        # collect logs and modify the key for each metrics
         per_class = {
-            f"{k}{idx}": v[idx] for k, v in _metrics["metrics"].items() for idx in range(v.size) if k.endswith("_class")
+            f"{k.replace('_perclass', '')}_class{idx}": v[idx].item()
+            for k, v in metrics_on_cpu["metrics"].items()
+            for idx in range(v.size)
+            if "_perclass" in k
         }
-        others = {k: v for k, v in _metrics["metrics"].items() if not k.endswith("_class")}
-        loss = {"loss": _metrics["loss"]}
-        # bootstrapped_f1 = {
-        #     f"bootf1_{k}{idx}": v[idx] for k, v in _metrics["bootstrapped_f1"].items() for idx in range(v.size)
-        # }
-        # bootstrapped_acc = {
-        #     f"bootaccuracy_{k}{idx}": v[idx] for k, v in _metrics["bootstrapped_acc"].items() for idx in range(v.size)
-        # }
-        _metrics = {**per_class, **others, **loss}
+        others = {k: v.item() for k, v in metrics_on_cpu["metrics"].items() if "_perclass" not in k}
+        loss = {k: v.item() for k, v in metrics_on_cpu["loss"].items()}
+        logs = {**per_class, **others, **loss, "summary/budget": self.tracker.global_budget}
 
-        self.log_dict(_metrics, step=self.tracker.safe_global_epoch)
-        if stage == RunningStage.TEST and hasattr(self.tracker, "global_budget"):
-            self.log_dict({f"{k}_vs_budget": v for k, v in _metrics.items()}, step=self.tracker.global_budget)
+        self.log_dict(logs, step=self.tracker.global_round)
 
-        return {**out, **_metrics}
+        return {**out, **logs}
+
+    def round_start(self, datastore: ActivePandasDataStoreForSequenceClassification) -> None:
+        # log initial statistics
+        # if self.tracker.global_round == 0:
+        logs = _get_logs(datastore, self.model.num_labels)
+        self.log_dict(logs, step=self.tracker.global_round)
+
+    # def round_end(self, datastore: ActivePandasDataStoreForSequenceClassification, output: Dict) -> Dict:
+    #     logs = _get_logs(datastore, self.model.num_labels)
+    #     self.log_dict(logs, step=self.tracker.global_round)
+
+
+def _get_logs(datastore: ActivePandasDataStoreForSequenceClassification, num_classes: int) -> Dict:
+    # compute label distribution
+    counts: Dict[int, int] = dict(datastore.get_by_ids(datastore.get_train_ids())[InputKeys.TARGET].value_counts())
+    for i in range(num_classes):
+        if i not in counts:
+            counts[i] = 0
+    return {
+        **{f"summary/cumulative_count_class_{k}": v for k, v in counts.items()},
+        "summary/labelled_size": datastore.labelled_size(),
+        "summary/pool_size": datastore.pool_size(),
+    }

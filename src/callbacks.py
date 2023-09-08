@@ -49,23 +49,6 @@ class SaveOutputs(Callback):
                 mode="a" if instance_level_path.exists() else "w",
             )
 
-    def on_query_end(
-        self,
-        estimator: ActiveEstimator,
-        model: _FabricModule,
-        datastore: ActivePandasDataStoreForSequenceClassification,
-        indices: List[int],
-    ) -> None:
-        counts = dict(datastore.get_by_ids(indices)[InputKeys.TARGET].value_counts())
-        for i in (0, 1):
-            if 1 not in counts:
-                counts[i] = 0  # type: ignore
-
-        estimator.log_dict(
-            {f"summary/count_class_{k}": v for k, v in counts.items()},
-            step=estimator.tracker.global_round,
-        )
-
     def on_round_end(
         self,
         estimator: ActiveEstimator,
@@ -75,22 +58,6 @@ class SaveOutputs(Callback):
 
         # save partial results
         datastore.save_labelled_dataset(self.dirpath)
-        # if getattr(estimator, "_reason_df", None) is not None:
-        #     estimator._reason_df.to_parquet(Path(self.dirpath) / "reason_df.parquet")  # type: ignore
-
-        counts = dict(datastore.get_by_ids(datastore.get_train_ids())[InputKeys.TARGET].value_counts())
-        if 1 not in counts:
-            counts[1] = 0  # type: ignore
-
-        estimator.log_dict(
-            {
-                **{f"summary/cumulative_count_class_{k}": v for k, v in counts.items()},
-                "summary/labelled_size": datastore.labelled_size(),
-                "summary/pool_size": datastore.pool_size(),
-                "summary/cumulative_minority_ratio": counts[1] / counts[0],
-            },
-            step=estimator.tracker.global_round,
-        )
 
     def on_active_fit_end(
         self,
@@ -98,4 +65,5 @@ class SaveOutputs(Callback):
         datastore: ActivePandasDataStoreForSequenceClassification,
         output: List[ROUND_OUTPUT],
     ) -> None:
+        # at the end save the labelled dataset (overwrites partial savings)
         datastore.save_labelled_dataset(self.dirpath)
