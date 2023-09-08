@@ -58,7 +58,7 @@ class BADGE(SequenceClassificationMixin, _BADGE):
         return model.classifier(penultimate_layer_out)
 
 
-class Tyrogue(_Tyrogue):
+class Tyrogue(SequenceClassificationMixin, _Tyrogue):
     def __init__(self, *args, seed: int = 42, **kwargs) -> None:
         super().__init__(
             *args,
