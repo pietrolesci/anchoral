@@ -39,9 +39,9 @@ if __name__ == "__main__":
     # do not cache datasets
     # disable_caching()
 
-    # load data and metadata
     data_dir = Path(args.data_dir)
-
+    
+    # load data and metadata
     dataset = args.dataset.removesuffix("-agri") if args.dataset == "amazoncat-13k-agri" else args.dataset
     dataset_dict: DatasetDict = load_from_disk(data_dir / "processed" / dataset)  # type: ignore
 
