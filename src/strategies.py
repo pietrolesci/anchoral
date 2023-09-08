@@ -96,7 +96,7 @@ class LoggingForSubpoolSizeMixin:
     def select_pool_subset(
         self, model: _FabricModule, loader: _FabricDataLoader, datastore: ActiveDataStore, **kwargs
     ) -> List[int]:
-        subpool_ids = super().select_pool_subset(model, loader, datastore, **kwargs)
+        subpool_ids = super().select_pool_subset(model, loader, datastore, **kwargs)  
         self.log("summary/subpool_size", len(subpool_ids), step=self.tracker.global_round)
         return subpool_ids
 
