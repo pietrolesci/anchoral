@@ -1,4 +1,0 @@
-defaults:
-  - defaults
-
-_target_: src.strategies.RandomSubsetWithUncertainty

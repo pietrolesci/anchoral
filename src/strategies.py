@@ -18,17 +18,21 @@ from energizer.active_learning.strategies.random import RandomStrategy
 from energizer.active_learning.strategies.two_stage import RandomSubsetStrategy, SEALSStrategy
 from energizer.active_learning.strategies.uncertainty import UncertaintyBasedStrategy
 from energizer.enums import InputKeys, OutputKeys, SpecialKeys
-from src.anchoral import OLDAnchorAL, AnchorAL, SimpleAnchorAL
+from src.anchoral import AnchorAL  # , OLDAnchorAL, SimpleAnchorAL
 from src.estimator import SequenceClassificationMixin
+
+"""
+Instantiate base methods
+"""
 
 
 class Random(SequenceClassificationMixin, RandomStrategy):
     ...
 
 
-class LeastConfidence(SequenceClassificationMixin, UncertaintyBasedStrategy):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, score_fn="least_confidence", **kwargs)
+class Entropy(SequenceClassificationMixin, UncertaintyBasedStrategy):
+    def __init__(self, *args, seed: int = 42, **kwargs) -> None:
+        super().__init__(*args, score_fn="entropy", seed=seed, **kwargs)
 
     def pool_step(
         self,
@@ -54,24 +58,52 @@ class BADGE(SequenceClassificationMixin, _BADGE):
         return model.classifier(penultimate_layer_out)
 
 
+class Tyrogue(_Tyrogue):
+    def __init__(self, *args, seed: int = 42, **kwargs) -> None:
+        super().__init__(
+            *args,
+            score_fn="entropy",
+            seed=seed,
+            r_factor=3,  # from the paper
+            clustering_algorithm="kmeans_sampling",
+            clustering_kwargs=None,
+            **kwargs,
+        )
+
+    def pool_step(
+        self,
+        model: _FabricModule,
+        batch: Dict,
+        batch_idx: int,
+        loss_fn: Optional[Union[nn.Module, Callable]],
+        metrics: Optional[MetricCollection] = None,
+    ) -> Dict:
+        _ = batch.pop(InputKeys.ON_CPU)  # this is already handled in the `evaluation_step`
+        logits = model(**batch).logits
+        scores = self.score_fn(logits)
+
+        return {OutputKeys.SCORES: scores, OutputKeys.LOGITS: logits}
+
+
+"""
+Instantiate two-stage strategies with random subsampling
+"""
+
+
 class LoggingForSubpoolSizeMixin:
     """Wrap `select_pool_subset` to add a call to `self.log_dict`"""
 
     def select_pool_subset(
         self, model: _FabricModule, loader: _FabricDataLoader, datastore: ActiveDataStore, **kwargs
     ) -> List[int]:
-        subpool_ids = super().select_pool_subset(model, loader, datastore, **kwargs)  # type: ignore
-        self.log("summary/subpool_size", len(subpool_ids), step=self.tracker.global_round)  # type: ignore
+        subpool_ids = super().select_pool_subset(model, loader, datastore, **kwargs)
+        self.log("summary/subpool_size", len(subpool_ids), step=self.tracker.global_round)
         return subpool_ids
 
 
-class Tyrogue(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, _Tyrogue):
-    ...
-
-
-class RandomSubsetWithUncertainty(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, RandomSubsetStrategy):
+class RandomSubsetWithEntropy(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, RandomSubsetStrategy):
     def __init__(self, *args, subpool_size: int, seed: int = 42, **kwargs) -> None:
-        base_strategy = LeastConfidence(*args, seed=seed, **kwargs)
+        base_strategy = Entropy(*args, seed=seed, **kwargs)
         super().__init__(base_strategy, subpool_size, seed)
 
 
@@ -79,6 +111,17 @@ class RandomSubsetWithBADGE(SequenceClassificationMixin, LoggingForSubpoolSizeMi
     def __init__(self, *args, subpool_size: int, seed: int = 42, **kwargs) -> None:
         base_strategy = BADGE(*args, seed=seed, **kwargs)
         super().__init__(base_strategy, subpool_size, seed)
+
+
+class RandomSubsetWithTyrogue(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, RandomSubsetStrategy):
+    def __init__(self, *args, subpool_size: int, seed: int = 42, **kwargs) -> None:
+        base_strategy = Tyrogue(*args, seed=seed, **kwargs)
+        super().__init__(base_strategy, subpool_size, seed)
+
+
+"""
+Instantiate two-stage strategies with SEALS subsampling
+"""
 
 
 class LoggingForSeachMixin:
@@ -93,7 +136,7 @@ class LoggingForSeachMixin:
 
         start_time = time.perf_counter()
 
-        search_results = super().search_pool(datastore, search_query_embeddings, search_query_ids)  # type: ignore
+        search_results = super().search_pool(datastore, search_query_embeddings, search_query_ids)
 
         ids_retrieved = search_results[SpecialKeys.ID].tolist()
         logs = {
@@ -101,14 +144,12 @@ class LoggingForSeachMixin:
             "search/ids_retrieved": len(ids_retrieved),
             "search/unique_ids_retrieved": len(set(ids_retrieved)),
         }
-        self.log_dict(logs, step=self.tracker.global_round)  # type: ignore
+        self.log_dict(logs, step=self.tracker.global_round)
 
         return search_results
 
 
-class SEALSWithUncertainty(
-    SequenceClassificationMixin, LoggingForSubpoolSizeMixin, LoggingForSeachMixin, SEALSStrategy
-):
+class SEALSWithEntropy(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, LoggingForSeachMixin, SEALSStrategy):
     def __init__(
         self,
         *args,
@@ -118,7 +159,7 @@ class SEALSWithUncertainty(
         max_search_size: Optional[int] = None,
         **kwargs,
     ) -> None:
-        base_strategy = LeastConfidence(*args, seed=seed, **kwargs)
+        base_strategy = Entropy(*args, seed=seed, **kwargs)
         super().__init__(
             base_strategy=base_strategy,
             subpool_size=subpool_size,
@@ -146,6 +187,31 @@ class SEALSWithBADGE(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, Lo
             num_neighbours=num_neighbours,
             max_search_size=max_search_size,
         )
+
+
+class SEALSWithTyrogue(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, SEALSStrategy):
+    def __init__(
+        self,
+        *args,
+        subpool_size: int,
+        seed: int = 42,
+        num_neighbours: int,
+        max_search_size: Optional[int] = None,
+        **kwargs,
+    ) -> None:
+        base_strategy = Tyrogue(*args, seed=seed, **kwargs)
+        super().__init__(
+            base_strategy=base_strategy,
+            subpool_size=subpool_size,
+            seed=seed,
+            num_neighbours=num_neighbours,
+            max_search_size=max_search_size,
+        )
+
+
+"""
+Instantiate two-stage strategies with AnchorAL subsampling
+"""
 
 
 class LoggingForAnchorsAndSearchMixin:
@@ -186,113 +252,23 @@ class LoggingForAnchorsAndSearchMixin:
         return search_results
 
 
-class OLDAnchorALWithUncertainty(
-    SequenceClassificationMixin,
-    LoggingForSubpoolSizeMixin,
-    LoggingForAnchorsAndSearchMixin,
-    OLDAnchorAL,
-):
-    def __init__(
-        self,
-        *args,
-        subpool_size: int,
-        seed: int = 42,
-        num_neighbours: int,
-        max_search_size: Optional[int] = None,
-        anchor_strategy_minority: Optional[str] = None,
-        anchor_strategy_majority: Optional[str] = None,
-        num_anchors: int,
-        aggregate_by_class_first: bool,
-        **kwargs,
-    ) -> None:
-        base_strategy = LeastConfidence(*args, seed=seed, **kwargs)
-        super().__init__(
-            base_strategy=base_strategy,
-            subpool_size=subpool_size,
-            seed=seed,
-            num_neighbours=num_neighbours,
-            max_search_size=max_search_size,
-            anchor_strategy_minority=anchor_strategy_minority,
-            anchor_strategy_majority=anchor_strategy_majority,
-            num_anchors=num_anchors,
-            aggregate_by_class_first=aggregate_by_class_first,
-        )
-
-
-class OLDAnchorALWithBADGE(
-    SequenceClassificationMixin,
-    LoggingForSubpoolSizeMixin,
-    LoggingForAnchorsAndSearchMixin,
-    OLDAnchorAL,
-):
-    def __init__(
-        self,
-        *args,
-        subpool_size: int,
-        seed: int = 42,
-        num_neighbours: int,
-        max_search_size: Optional[int] = None,
-        anchor_strategy_minority: Optional[str] = None,
-        anchor_strategy_majority: Optional[str] = None,
-        num_anchors: int,
-        aggregate_by_class_first: bool,
-        **kwargs,
-    ) -> None:
-        base_strategy = BADGE(*args, seed=seed, **kwargs)
-        super().__init__(
-            base_strategy=base_strategy,
-            subpool_size=subpool_size,
-            seed=seed,
-            num_neighbours=num_neighbours,
-            max_search_size=max_search_size,
-            anchor_strategy_minority=anchor_strategy_minority,
-            anchor_strategy_majority=anchor_strategy_majority,
-            num_anchors=num_anchors,
-            aggregate_by_class_first=aggregate_by_class_first,
-        )
-
-
-class SimpleAnchorALWithUncertainty(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, SimpleAnchorAL):
-    def __init__(
-        self,
-        *args,
-        subpool_size: int,
-        seed: int = 42,
-        num_anchors: int,
-        anchor_strategy: str,
-        num_neighbours: int,
-        max_search_size: Optional[int] = None,
-        **kwargs,
-    ) -> None:
-        base_strategy = LeastConfidence(*args, seed=seed, **kwargs)
-        super().__init__(
-            base_strategy=base_strategy,
-            subpool_size=subpool_size,
-            seed=seed,
-            num_neighbours=num_neighbours,
-            max_search_size=max_search_size,
-            num_anchors=num_anchors,
-            anchor_strategy=anchor_strategy,
-        )
-
-
-class AnchorALWithUncertainty(
+class AnchorALWithEntropy(
     SequenceClassificationMixin, LoggingForSubpoolSizeMixin, LoggingForAnchorsAndSearchMixin, AnchorAL
 ):
     def __init__(
         self,
         *args,
-        subpool_size: int,
-        seed: int = 42,
         num_anchors: int,
         anchor_strategy: str,
         anchor_strategy_minority: str,
         minority_classes_ids: Optional[List[int]],
+        subpool_size: int,
+        seed: int = 42,
         num_neighbours: int,
         max_search_size: Optional[int] = None,
         **kwargs,
     ) -> None:
-        base_strategy = LeastConfidence(*args, seed=seed, **kwargs)
+        base_strategy = Entropy(*args, seed=seed, **kwargs)
         super().__init__(
             base_strategy=base_strategy,
             subpool_size=subpool_size,
@@ -304,3 +280,153 @@ class AnchorALWithUncertainty(
             anchor_strategy_minority=anchor_strategy_minority,
             minority_classes_ids=minority_classes_ids,
         )
+
+
+class AnchorALWithBADGE(
+    SequenceClassificationMixin, LoggingForSubpoolSizeMixin, LoggingForAnchorsAndSearchMixin, AnchorAL
+):
+    def __init__(
+        self,
+        *args,
+        num_anchors: int,
+        anchor_strategy: str,
+        anchor_strategy_minority: str,
+        minority_classes_ids: Optional[List[int]],
+        subpool_size: int,
+        seed: int = 42,
+        num_neighbours: int,
+        max_search_size: Optional[int] = None,
+        **kwargs,
+    ) -> None:
+        base_strategy = BADGE(*args, seed=seed, **kwargs)
+        super().__init__(
+            base_strategy=base_strategy,
+            subpool_size=subpool_size,
+            seed=seed,
+            num_neighbours=num_neighbours,
+            max_search_size=max_search_size,
+            num_anchors=num_anchors,
+            anchor_strategy=anchor_strategy,
+            anchor_strategy_minority=anchor_strategy_minority,
+            minority_classes_ids=minority_classes_ids,
+        )
+
+
+class AnchorALWithTyrogue(
+    SequenceClassificationMixin, LoggingForSubpoolSizeMixin, LoggingForAnchorsAndSearchMixin, AnchorAL
+):
+    def __init__(
+        self,
+        *args,
+        num_anchors: int,
+        anchor_strategy: str,
+        anchor_strategy_minority: str,
+        minority_classes_ids: Optional[List[int]],
+        subpool_size: int,
+        seed: int = 42,
+        num_neighbours: int,
+        max_search_size: Optional[int] = None,
+        **kwargs,
+    ) -> None:
+        base_strategy = Tyrogue(*args, seed=seed, **kwargs)
+        super().__init__(
+            base_strategy=base_strategy,
+            subpool_size=subpool_size,
+            seed=seed,
+            num_neighbours=num_neighbours,
+            max_search_size=max_search_size,
+            num_anchors=num_anchors,
+            anchor_strategy=anchor_strategy,
+            anchor_strategy_minority=anchor_strategy_minority,
+            minority_classes_ids=minority_classes_ids,
+        )
+
+
+# class OLDAnchorALWithEntropy(
+#     SequenceClassificationMixin,
+#     LoggingForSubpoolSizeMixin,
+#     LoggingForAnchorsAndSearchMixin,
+#     OLDAnchorAL,
+# ):
+#     def __init__(
+#         self,
+#         *args,
+#         subpool_size: int,
+#         seed: int = 42,
+#         num_neighbours: int,
+#         max_search_size: Optional[int] = None,
+#         anchor_strategy_minority: Optional[str] = None,
+#         anchor_strategy_majority: Optional[str] = None,
+#         num_anchors: int,
+#         aggregate_by_class_first: bool,
+#         **kwargs,
+#     ) -> None:
+#         base_strategy = Entropy(*args, seed=seed, **kwargs)
+#         super().__init__(
+#             base_strategy=base_strategy,
+#             subpool_size=subpool_size,
+#             seed=seed,
+#             num_neighbours=num_neighbours,
+#             max_search_size=max_search_size,
+#             anchor_strategy_minority=anchor_strategy_minority,
+#             anchor_strategy_majority=anchor_strategy_majority,
+#             num_anchors=num_anchors,
+#             aggregate_by_class_first=aggregate_by_class_first,
+#         )
+
+
+# class OLDAnchorALWithBADGE(
+#     SequenceClassificationMixin,
+#     LoggingForSubpoolSizeMixin,
+#     LoggingForAnchorsAndSearchMixin,
+#     OLDAnchorAL,
+# ):
+#     def __init__(
+#         self,
+#         *args,
+#         subpool_size: int,
+#         seed: int = 42,
+#         num_neighbours: int,
+#         max_search_size: Optional[int] = None,
+#         anchor_strategy_minority: Optional[str] = None,
+#         anchor_strategy_majority: Optional[str] = None,
+#         num_anchors: int,
+#         aggregate_by_class_first: bool,
+#         **kwargs,
+#     ) -> None:
+#         base_strategy = BADGE(*args, seed=seed, **kwargs)
+#         super().__init__(
+#             base_strategy=base_strategy,
+#             subpool_size=subpool_size,
+#             seed=seed,
+#             num_neighbours=num_neighbours,
+#             max_search_size=max_search_size,
+#             anchor_strategy_minority=anchor_strategy_minority,
+#             anchor_strategy_majority=anchor_strategy_majority,
+#             num_anchors=num_anchors,
+#             aggregate_by_class_first=aggregate_by_class_first,
+#         )
+
+
+# class SimpleAnchorALWithEntropy(SequenceClassificationMixin, LoggingForSubpoolSizeMixin, SimpleAnchorAL):
+#     def __init__(
+#         self,
+#         *args,
+#         subpool_size: int,
+#         seed: int = 42,
+#         num_anchors: int,
+#         anchor_strategy: str,
+#         num_neighbours: int,
+#         max_search_size: Optional[int] = None,
+#         **kwargs,
+#     ) -> None:
+#         base_strategy = Entropy(*args, seed=seed, **kwargs)
+#         super().__init__(
+#             base_strategy=base_strategy,
+#             subpool_size=subpool_size,
+#             seed=seed,
+#             num_neighbours=num_neighbours,
+#             max_search_size=max_search_size,
+#             num_anchors=num_anchors,
+#             anchor_strategy=anchor_strategy,
+#         )

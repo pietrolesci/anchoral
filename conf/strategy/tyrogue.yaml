@@ -1,6 +1,2 @@
-defaults:
-  - defaults
-
 _target_: src.strategies.Tyrogue
-r_factor: 3
-clustering_algorithm: kmeans_sampling
+seed: 42

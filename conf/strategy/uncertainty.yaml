@@ -1,3 +1,0 @@
-_target_: src.strategies.UncertaintyBasedStrategy
-score_fn: least_confidence
-seed: 42

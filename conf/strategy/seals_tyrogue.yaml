@@ -1,0 +1,4 @@
+defaults:
+  - defaults_seals
+
+_target_: src.strategies.SEALSWithTyrogue

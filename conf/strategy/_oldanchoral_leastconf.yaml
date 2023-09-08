@@ -1,7 +1,7 @@
 defaults:
   - defaults
 
-_target_: src.strategies.OLDAnchorALWithUncertainty
+_target_: src.strategies.OLDAnchorALWithEntropy
 num_neighbours: 50
 max_search_size: null
 anchor_strategy_minority: kmeans_pp_sampling

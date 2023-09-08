@@ -1,7 +1,7 @@
 defaults:
   - defaults
 
-_target_: src.strategies.SimpleAnchorALWithUncertainty
+_target_: src.strategies.SimpleAnchorALWithEntropy
 num_neighbours: 50
 max_search_size: null
 num_anchors: 50

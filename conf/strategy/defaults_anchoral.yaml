@@ -1,9 +1,6 @@
 defaults:
-  - defaults
+  - defaults_seals
 
-_target_: src.strategies.AnchorALWithUncertainty
-num_neighbours: 50
-max_search_size: null
 num_anchors: 50
 anchor_strategy: kmeans_pp_sampling
 anchor_strategy_minority: kmeans_pp_sampling
