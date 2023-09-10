@@ -26,8 +26,8 @@ def parse_name(x: Dict) -> str:
     if name == "randomsubset":
         name += f"-{x['subpool_size']}"
 
-    elif name == "tyrogue":
-        name += f"-{x['subpool_size']}-{x['r']}"
+    # elif name == "tyrogue":
+    #     name += f"-{x['subpool_size']}-{x['r']}"
 
     elif name == "anchoral":
         name += f"-{x['subpool_size']}-{x['subpool_sampling_strategy']}-{x['anchor_strategy']}-{x['only_minority']}-{x['num_anchors']}"
