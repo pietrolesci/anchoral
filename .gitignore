@@ -130,19 +130,16 @@ dmypy.json
 
 # custom
 .ruff_cache
-_graveyard
 data/*
 outputs/*
-tests
 .DS_Store
 .model_cache
+.data_cache
 
 examples/
 examples/*.json*
-*.html
-.data_cache
-test
-data_cache
 results/*
-energizer
 !*.gitkeep
+
+
+_energizer

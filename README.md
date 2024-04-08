@@ -2,7 +2,7 @@
 
 
 ```bash
-git clone --recurse-submodules <repo-URL>
+git clone --recurse-submodules https://github.com/pietrolesci/anchoral.git
 ```
 
 ## Environment
