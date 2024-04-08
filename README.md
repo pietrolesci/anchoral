@@ -1,5 +1,8 @@
 # AnchorAL
 
+Code for the paper "AnchorAL: Computationally Efficient Active Learning for Large and Imbalanced Datasets" published at NAACL 2024
+
+
 
 ```bash
 git clone --recurse-submodules https://github.com/pietrolesci/anchoral.git
