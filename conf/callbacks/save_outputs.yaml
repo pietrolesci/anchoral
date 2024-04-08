@@ -1,0 +1,7 @@
+save_outputs:
+  _target_: src.callbacks.SaveOutputs
+  dirpath: ./logs/
+  instance_level: false
+  batch_level: false
+  epoch_level: false
+

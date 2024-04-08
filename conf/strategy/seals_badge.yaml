@@ -1,0 +1,5 @@
+defaults:
+  - default_search
+  - _self_
+
+name: seals_badge

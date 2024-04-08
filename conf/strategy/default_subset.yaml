@@ -1,0 +1,6 @@
+defaults:
+  - default
+  - _self_
+
+args:
+  subpool_size: 10000

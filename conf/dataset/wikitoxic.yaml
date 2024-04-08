@@ -1,0 +1,8 @@
+name: wikitoxic-.01
+text_column: text
+label_column: labels
+uid_column: uid
+prepared_path: ${data_path}/prepared/wikitoxic-.01
+processed_path: ${data_path}/processed/wikitoxic
+minority_classes:
+  - 1

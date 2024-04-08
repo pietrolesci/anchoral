@@ -1,0 +1,8 @@
+name: amazon-agri
+text_column: text
+label_column: labels
+uid_column: uid
+prepared_path: ${data_path}/prepared/amazoncat-agri
+processed_path: ${data_path}/processed/amazoncat-13k
+minority_classes:
+  - 1

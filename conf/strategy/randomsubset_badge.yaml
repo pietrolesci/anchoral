@@ -1,0 +1,5 @@
+defaults:
+  - default_subset
+  - _self_
+
+name: randomsubset_badge

@@ -1,0 +1,25 @@
+# @package _global_
+defaults:
+  - /callbacks:
+    - early_stopping
+    - model_checkpoint
+    - timer
+    - grad_norm
+    - save_outputs
+
+callbacks:
+  model_checkpoint:
+    stage: train
+    mode: max
+    monitor: train/f1_class1
+    save_last: false
+  early_stopping:
+    stage: train
+    mode: max
+    monitor: train/f1_class1
+
+active_fit:
+  query_size: 25
+
+enable_progress_bar: false
+experiment_group: '???'

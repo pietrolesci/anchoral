@@ -1,0 +1,102 @@
+defaults:
+  - _self_
+  - loggers:
+    - tensorboard
+  - /callbacks:
+    - timer
+    - save_outputs
+    - early_stopping
+    - model_checkpoint
+  - optional strategy: null
+  - optional dataset: null
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
+
+hydra:
+  job:
+    chdir: true
+  run:
+    dir: ./outputs/${experiment_group}/${run_name}
+  job_logging:
+    formatters:
+      colorlog:
+        format: '[%(cyan)s%(asctime)s%(reset)s][%(blue)s%(name)s%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message)s'
+        log_colors:
+          DEBUG: purple
+          INFO: green
+          WARNING: yellow
+          ERROR: red
+          CRITICAL: bold_red
+  sweep:
+    dir: ./outputs/multirun/${experiment_group}
+    subdir: ${run_name}_${hydra.job.id}
+
+estimator:
+  accelerator: gpu
+  precision: 32
+  deterministic: true
+  tf32_mode: high
+
+callbacks: null
+
+loggers: null
+
+data:
+  batch_size: 32
+  eval_batch_size: 256
+  num_workers: 32
+  pin_memory: true
+  drop_last: false
+  persistent_workers: true
+  shuffle: true
+  seed: ${seed}
+  replacement: false
+  max_length: 512
+
+# this is incremental to `data` above
+active_data:
+  budget: 100
+  positive_budget: 5
+  seed: ${seed}
+
+fit:
+  min_steps: 100
+  max_epochs: 10
+  learning_rate: 0.00004
+  optimizer: adamw
+  log_interval: ${log_interval}
+  enable_progress_bar: ${enable_progress_bar}
+  limit_train_batches: ${limit_batches}
+  limit_validation_batches: ${limit_batches}
+
+# this is incremental to `fit` above
+active_fit:
+  max_budget: 5000
+  query_size: 25
+  reinit_model: true
+  limit_pool_batches: ${limit_batches}
+  limit_test_batches: ${limit_batches}
+
+test:
+  log_interval: ${log_interval}
+  enable_progress_bar: ${enable_progress_bar}
+  limit_batches: ${limit_batches}
+
+strategy: '???'
+
+model: 
+  name: bert-base
+  seed: 42
+
+dataset: '???'
+
+index_metric: all-mpnet-base-v2_cosine
+
+# global settings
+log_interval: 1
+enable_progress_bar: true
+limit_batches: null
+seed: 42
+experiment_group: dry_run
+run_name: ${dataset.name}/${model.name}_${strategy.name}_${now:%Y-%m-%d}T${now:%H-%M-%S}
+data_path: <add path>  # no trailing '/'

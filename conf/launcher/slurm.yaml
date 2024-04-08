@@ -1,0 +1,36 @@
+# @package _global_
+defaults:
+  - override /hydra/launcher: submitit_slurm
+
+
+hydra:
+  launcher:
+    timeout_min: 30
+    # cpus_per_task: 12
+    # gpus_per_node: 1
+    # tasks_per_node: 1
+    # mem_gb: 32
+    gres: gpu:1
+    nodes: 1
+    name: ${experiment_group}
+    partition: ampere
+    account: <add account>
+    # comment: null
+    # constraint: null
+    # exclude: null
+    # signal_delay_s: 120
+    # max_num_timeout: 0
+    # additional_parameters: {}
+    # array_parallelism: 256
+    setup:
+      - ". /etc/profile.d/modules.sh"
+      - "module list"
+      - "echo -e 'loading other modules'"
+      - "module load rhel8/default-amp"
+      - "module load cuda/12.1"
+      - "module load cudnn/8.9_cuda-12.1"
+      - "module list"
+
+
+data_path: <add path>
+enable_progress_bar: false

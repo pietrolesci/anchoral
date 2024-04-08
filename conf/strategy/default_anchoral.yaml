@@ -1,0 +1,9 @@
+defaults:
+  - default_search
+  - _self_
+
+args:
+  num_anchors: 10 # for deberta. Default is 50
+  anchor_strategy_minority: kmeans_pp_sampling
+  anchor_strategy_majority: kmeans_pp_sampling
+  minority_classes_ids: null

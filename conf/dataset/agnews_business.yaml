@@ -1,0 +1,8 @@
+name: agnews-business-.01
+text_column: text
+label_column: labels
+uid_column: uid
+prepared_path: ${data_path}/prepared/agnews-business-.01
+processed_path: ${data_path}/processed/agnews
+minority_classes:
+  - 1

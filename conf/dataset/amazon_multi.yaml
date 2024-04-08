@@ -1,0 +1,11 @@
+name: amazon-multi
+text_column: text
+label_column: labels
+uid_column: uid
+prepared_path: ${data_path}/prepared/amazoncat-multi
+processed_path: ${data_path}/processed/amazoncat-13k
+minority_classes:
+  - 0
+  - 1
+  - 2
+  - 3
