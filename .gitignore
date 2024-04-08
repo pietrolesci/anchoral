@@ -140,6 +140,3 @@ examples/
 examples/*.json*
 results/*
 !*.gitkeep
-
-
-_energizer
