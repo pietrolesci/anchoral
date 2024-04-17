@@ -1,5 +1,7 @@
 # AnchorAL
 
+![](./method.png)
+
 Code for the paper "AnchorAL: Computationally Efficient Active Learning for Large and Imbalanced Datasets" published at NAACL 2024. 
 Experimental artefacts and datasets are available on the [HuggingFace Hub](https://huggingface.co/collections/pietrolesci/anchoral-66103ace42da659656c635d2).
 
