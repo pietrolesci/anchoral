@@ -1,19 +1,20 @@
 # AnchorAL
 
-Code for the paper "AnchorAL: Computationally Efficient Active Learning for Large and Imbalanced Datasets" published at NAACL 2024
+Code for the paper "AnchorAL: Computationally Efficient Active Learning for Large and Imbalanced Datasets" published at NAACL 2024. 
+Experimental artefacts and datasets are available on the [HuggingFace Hub](https://huggingface.co/collections/pietrolesci/anchoral-66103ace42da659656c635d2).
+
+To reproduce our experiments, read below.
 
 
+## 1. Setup
+
+First, clone this repo with its submodules
 
 ```bash
 git clone --recurse-submodules https://github.com/pietrolesci/anchoral.git
 ```
 
-## Environment
-
-### Install conda
-
-[source](https://educe-ubc.github.io/conda.html)
-[source](https://developers.google.com/earth-engine/guides/python_install-conda)
+Then, install conda
 
 ```bash
 curl -sL \
@@ -25,14 +26,13 @@ source $HOME/miniconda3/bin/activate
 conda init zsh
 ```
 
-### Install poetry
+and poetry.
 
 ```bash
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-### Install dependencies
-Use poetry to install the environment (if you don't have poetry run )
+Finally, create a new environment with conda and use poetry to install the dependencies.
 
 ```bash
 conda create -n anchoral python=3.9 -y
@@ -41,42 +41,36 @@ poetry install --sync --with dev
 ```
 
 
----
+## 2. Data Preparation
 
-
-## Data Preparation
-
-### Step 1: Download and process
-
-To download the processed data from the hub run
+First, download the processed data from the hub run
 
 ```bash
 ./bin/download_data_from_hub.sh
 ```
 
-To re-process the data locally (this indexes the data with 3 sentence-transformers -- takes a long time)
+or re-process the data locally (this indexes the data with 3 sentence-transformers -- takes a long time!).
 
 ```bash
 ./bin/download_and_process_data.sh
 ```
 
-### Step 2: Create local HNSW index
-
-To speed up the experimentation, we create the HNSW index once and save it to disk. For each embedding in the dataset this will save a different `.bin` file. By default it will create indices using the cosine distance, change this file if you want to experiment with different metrics. 
+Second, create a local HNSW index. 
+To speed up the experimentation, we create the HNSW index once and save it to disk.
+For each embedding in the dataset, this will save a different `.bin` file. 
+By default, it will create indices using the cosine distance, change this file if you want to experiment with different metrics. 
 
 ```bash
 ./bin/create_index.sh
 ```
 
-### Step 3: Prepare data for training
-
-Finally, we tokenize and save the dataset so it is ready to go
+Finally, prepare the data for training, that is, tokenize and save the dataset so it is ready to go.
 
 ```bash
 ./bin/prepare_data.sh bert-base-uncased
 ```
 
-At the end of data preparations you should have the following folder structure
+At the end of the data preparations, you should have the following folder structure.
 
 ```bash
 ./data
@@ -92,10 +86,10 @@ At the end of data preparations you should have the following folder structure
 ```
 
 
-## Step 3: Run experiments
+## 3. Run experiments
 
-You can replicate our experiments by looking at the files `./bin/run_main_experiments`, `./bin/run_ablations`, and `./bin/run_other_models` (more instruction in those files).
-Once you run these experiments, you should obtain the following folder structure
+You can replicate our experiments by looking at the files `./bin/run_main_experiments`, `./bin/run_ablations`, and `./bin/run_other_models` (more instructions in those files).
+Once you run these experiments, you should obtain the following folder structure.
 
 ```bash
 ./outputs
@@ -119,7 +113,7 @@ Once you run these experiments, you should obtain the following folder structure
     └── t5-base
 ```
 
-Each run has the following folder structure
+Each run has the following folder structure.
 
 ```bash
 ├── active_train.log
@@ -134,7 +128,7 @@ Each run has the following folder structure
 └── tensorboard_logs.parquet
 ```
 
-If you limit the time of each run, it can happen that some files are not deleted and tensorboard logs are not exported to parquet.
+If you limit the time of each run, some files may be not deleted and tensorboard logs are not exported to parquet.
 In those cases, use the `./notebooks/01_check_runs.ipynb` to manually export it and possibly delete other (big) files and folders (e.g., `.checkpoints` and `model_cache`) that are not needed.
 
 
@@ -173,15 +167,15 @@ The key to edit is `data_path: <add path>`.
 
 
 
-## Step 4: Analysis
+## 4. Analysis
 
-Once you have run the experiments and created the correct folder structure, as decribed in the previous section, you can run the analysis.
+Once you have run the experiments and created the correct folder structure, as described in the previous section, you can run the analysis.
 
 First, run the `notebooks/01_check_runs.ipynb` to make sure that each run has the necessary files to run the analysis.
 Importantly, you need the `tensorboard_logs.parquet` files. If your run exited before exporting the tensorboard logs to parquet, you can use the notebook to do that.
 
 Second, once you have all the `tensorboard_logs.parquet` files for each run, you can export the necessary metrics from them.
-To do this, use the `notebooks/03_export_experiments.ipynb`. It will create files into the `results/` folder. This artefacts, will be used in the analysis.
+To do this, use the `notebooks/03_export_experiments.ipynb`. It will create files in the `results/` folder. These artefacts will be used in the analysis.
 
 Finally, once you have all the artefacts in the `results/` folder, you can run the analysis.
-You can do this by running the `notebooks/04_analysis.ipynb` notebooks which creates the tables and plots used in the paper.
+You can do this by running the `notebooks/04_analysis.ipynb` notebooks which create the tables and plots used in the paper.
