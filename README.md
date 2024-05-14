@@ -1,8 +1,12 @@
 # AnchorAL: Computationally Efficient Active Learning for Large and Imbalanced Datasets
 
-*Accepted as conference paper at NAACL 2024*
+<font size = "3">*Pietro Lesci \& Andreas Vlachos*</font>
 
-[Paper]() | [ArXiv](https://arxiv.org/abs/2404.05623)
+<br>
+
+This is the official PyTorch implementation for our NAACL 2024 paper: "AnchorAL: Computationally Efficient Active Learning for Large and Imbalanced Datasets".
+
+[![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg)](https://arxiv.org/abs/2404.05623)
 
 > **Abstract:** Active learning for imbalanced classification tasks is challenging as the minority classes naturally occur rarely. Gathering a large pool of unlabelled data is thus essential to capture minority instances. Standard pool-based active learning is computationally expensive on large pools and often reaches low accuracy by overfitting the initial decision boundary, thus failing to explore the input space and find minority instances. To address these issues we propose AnchorAL. At each iteration, AnchorAL chooses class-specific instances from the labelled set, or anchors, and retrieves the most similar unlabelled instances from the pool. This resulting subpool is then used for active learning. Using a small, fixed-sized subpool AnchorAL allows scaling any active learning strategy to large pools. By dynamically selecting different anchors at each iteration it promotes class balance and prevents overfitting the initial decision boundary, thus promoting the discovery of new clusters of minority instances. Experiments across different classification tasks, active learning strategies, and model architectures AnchorAL is (i) faster, often reducing runtime from hours to minutes, (ii) trains more performant models, (iii) and returns more balanced datasets than competing methods.
 
@@ -185,3 +189,10 @@ To do this, use the `notebooks/03_export_experiments.ipynb`. It will create file
 
 Finally, once you have all the artefacts in the `results/` folder, you can run the analysis.
 You can do this by running the `notebooks/04_analysis.ipynb` notebooks which create the tables and plots used in the paper.
+
+
+## In the press
+
+https://www.marktechpost.com/2024/04/10/researchers-at-the-university-of-cambridge-propose-anchoral-a-unique-machine-learning-method-for-active-learning-in-unbalanced-classification-tasks/
+
+https://medium.com/@multiplatform.ai/a-novel-approach-to-active-learning-in-imbalanced-classification-tasks-anchoral-by-university-of-c097e28e9414
