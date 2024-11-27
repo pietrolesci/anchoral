@@ -16,6 +16,10 @@ Experimental artefacts and datasets are available on the [HuggingFace Hub](https
 To reproduce our experiments, read below.
 
 
+> [!TIP]
+> AnchorAL is also implemented and available through the [small-text](https://github.com/webis-de/small-text) library. Check it out!
+
+
 ## 1. Setup
 
 First, clone this repo with its submodules
