@@ -4,8 +4,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 import pandas as pd
-from datasets import Dataset, DatasetDict
-from seaborn import load_dataset
+from datasets import Dataset, DatasetDict, load_dataset
 from sentence_transformers import SentenceTransformer
 
 from src.utilities import sequential_numbers
